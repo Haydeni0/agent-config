@@ -6,8 +6,6 @@ input=$(cat)
 model_name=$(echo "$input" | jq -r '.model.display_name // .model // "?"')
 cwd=$(echo "$input" | jq -r '.cwd // .workspace.current_dir // "~"')
 cost_usd=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
-duration_ms=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
-total_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
 cur_in=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
 cache_create=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
 cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
@@ -83,38 +81,22 @@ effort=$(echo "$input" | jq -r '.effort.level // "medium"')
 thinking_w="${slt}Thinking: ${effort}${rst}"
 
 # ============================================================
-# Widget: input-speed  (cyan) - session average
+# Widget: git-auth-gates  (green=authorised, red=locked)
+# Shows COMMIT_AUTHORISED / PUSH_AUTHORISED env state.
+# NOTE: statusline runs as a child of the Claude Code process, so
+# it inherits the session env - set/unset in the launching shell.
 # ============================================================
-speed_w=""
-total_secs=$((duration_ms / 1000))
-if [ "$total_secs" -gt 0 ] && [ "$total_in" -gt 0 ] 2>/dev/null; then
-    in_speed_raw=$(echo "scale=2; $total_in / $total_secs" | bc -l 2>/dev/null || echo "0")
-    if [ "$(echo "$in_speed_raw >= 1000" | bc -l 2>/dev/null)" = "1" ]; then
-        fmt=$(echo "scale=1; $in_speed_raw / 1000" | bc -l 2>/dev/null)
-        speed_w="${cyn}In: ${fmt}k/s${rst}"
-    else
-        fmt=$(printf "%.1f" "$in_speed_raw" 2>/dev/null || echo "$in_speed_raw")
-        speed_w="${cyn}In: ${fmt}/s${rst}"
-    fi
+gate_w="${red}Gates: C✗ P✗${rst}"
+[ "${COMMIT_AUTHORISED:-}" = "1" ] && gate_w="${grn}Gates: C✓${rst}${red} P✗${rst}"
+[ "${PUSH_AUTHORISED:-}" = "1" ] && gate_w="${grn}Gates: P✓${rst}${red} C✗${rst}"
+if [ "${COMMIT_AUTHORISED:-}" = "1" ] && [ "${PUSH_AUTHORISED:-}" = "1" ]; then
+    gate_w="${grn}Gates: C✓ P✓${rst}"
 fi
-
-# ============================================================
-# Widget: git-root-dir  (cyan)
-# ============================================================
-cd "$cwd" 2>/dev/null || cd ~
-git_root_w=""
-if git rev-parse --git-dir >/dev/null 2>&1; then
-    root_dir=$(git rev-parse --show-toplevel 2>/dev/null)
-    if [ -n "$root_dir" ]; then
-        root_name="${root_dir##*/}"
-        git_root_w="${cyn}${root_name}${rst}"
-    fi
-fi
-[ -z "$git_root_w" ] && git_root_w="${dim}no git${rst}"
 
 # ============================================================
 # Widget: git-branch  (magenta)
 # ============================================================
+cd "$cwd" 2>/dev/null || cd ~
 git_branch_w=""
 if git rev-parse --git-dir >/dev/null 2>&1; then
     branch=$(git branch --show-current 2>/dev/null)
@@ -134,12 +116,11 @@ cwd_w="${cfb}${display_cwd}${rst}"
 # Output
 # ============================================================
 
-# Line 1: model | ctx | cost | thinking | speed
+# Line 1: model | ctx | cost | thinking
 line1="${model_w}${sep}${ctx_w}${sep}${cost_w}${sep}${thinking_w}"
-[ -n "$speed_w" ] && line1+="${sep}${speed_w}"
 
-# Line 2: git-root-dir | git-branch | cwd | backend
-line2="${git_root_w}${sep}${git_branch_w}${sep}${cwd_w}${sep}${backend_w}"
+# Line 2: git-branch | cwd | gates | backend
+line2="${git_branch_w}${sep}${cwd_w}${sep}${gate_w}${sep}${backend_w}"
 
 printf '%s\n' "$line1"
 printf '%s'   "$line2"
