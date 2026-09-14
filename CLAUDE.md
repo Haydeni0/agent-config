@@ -38,6 +38,11 @@
 
 - Assume all repositories use python and uv. See @skills/uv for full uv usage rules.
 
+### Tooling
+
+- Use `rg` over `grep`, `fd` over `find`.
+- Use `jq` for shell JSON parsing.
+
 ### Environment
 
 - For `zsh: command not found` errors, check `$PATH` and `~/.zshenv`.
