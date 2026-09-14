@@ -1,10 +1,11 @@
-"""CLI entrypoint: sync ~/.claude config into opencode, pi, goose, and agy.
+"""CLI entrypoint: sync ~/.claude config into opencode, pi, goose, agy, and no-mistakes.
 
 ~/.claude is the single source of truth. `sync opencode` derives config
 into ~/.config/opencode; `sync pi` writes pointers + inlined context
 into ~/.pi/agent; `sync goose` writes hints + config + providers into
-~/.config/goose; `sync agy` writes rules + skills into ~/.gemini/config.
-Bare `sync` (or `sync all`) runs all four.
+~/.config/goose; `sync agy` writes rules + skills into ~/.gemini/config;
+`sync no-mistakes` merges the config template + machine overlay into
+~/.no-mistakes/config.yaml. Bare `sync` (or `sync all`) runs all five.
 """
 
 import difflib
@@ -20,6 +21,7 @@ from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_sk
 from settings_sync.commands import sync_commands
 from settings_sync.config import sync_config, sync_tui
 from settings_sync.goose import sync_goose_config, sync_goose_hints, sync_goose_providers
+from settings_sync.nomistakes import sync_nomistakes_config
 from settings_sync.pi import sync_pi_config, sync_pi_context, sync_pi_keybindings
 from settings_sync.plugins import sync_superpowers
 from settings_sync.skills import validate_skills
@@ -30,11 +32,13 @@ opencode_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sy
 pi_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync pi config.")
 goose_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync goose config.")
 agy_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync agy config.")
+nomistakes_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync no-mistakes config.")
 
 OPENCODE_STEPS = ("config", "tui", "agents-md", "agents", "commands", "plugins")
 PI_STEPS = ("config", "context", "keybindings")
 GOOSE_STEPS = ("hints", "config", "providers")
 AGY_STEPS = ("settings", "agents-md", "skills")
+NOMISTAKES_STEPS = ("config",)
 
 
 @dataclass(slots=True, frozen=True)
@@ -45,6 +49,7 @@ class Paths:
     goose_dir: Path | None = None
     agy_dir: Path | None = None
     agy_cli_dir: Path | None = None
+    nomistakes_dir: Path | None = None
 
 
 def run_opencode_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
@@ -92,6 +97,22 @@ def run_goose_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[
     if name == "providers":
         return sync_goose_providers(paths.goose_dir / "custom_providers", paths.claude_dir / "goose" / "custom_providers", force, dry_run)
     raise ValueError(f"unknown goose step: {name}")
+
+
+def run_nomistakes_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
+    if paths.nomistakes_dir is None:
+        raise ValueError("nomistakes_dir is required for no-mistakes steps")
+    if name == "config":
+        return [sync_nomistakes_config(paths.nomistakes_dir / "config.yaml", paths.claude_dir / "no-mistakes" / "config.yaml", paths.claude_dir / "no-mistakes" / "config.local.yaml", dry_run)]
+    raise ValueError(f"unknown no-mistakes step: {name}")
+
+
+def run_nomistakes(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = NOMISTAKES_STEPS) -> tuple[list[Outcome], list[Outcome]]:
+    sync_outcomes: list[Outcome] = []
+    for step in steps:
+        sync_outcomes.extend(run_nomistakes_step(step, paths, force, dry_run))
+    skills_outcomes = validate_skills(paths.claude_dir / "skills")
+    return sync_outcomes, skills_outcomes
 
 
 def run_agy_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
@@ -151,6 +172,9 @@ def run_all_tools(paths: Paths, force: bool, dry_run: bool) -> tuple[list[Outcom
     if paths.agy_dir is not None:
         for step in AGY_STEPS:
             sync_outcomes.extend(run_agy_step(step, paths, force, dry_run))
+    if paths.nomistakes_dir is not None:
+        for step in NOMISTAKES_STEPS:
+            sync_outcomes.extend(run_nomistakes_step(step, paths, force, dry_run))
     skills_outcomes = validate_skills(paths.claude_dir / "skills")
     return sync_outcomes, skills_outcomes
 
@@ -216,7 +240,7 @@ def _run_steps(ctx: typer.Context, tool: str, steps: tuple[str, ...]) -> int:
     paths = _ctx_paths(ctx)
     force, dry_run, check, verbose = _ctx_flags(ctx)
     effective_dry = dry_run or check
-    runner = {"opencode": run_opencode, "pi": run_pi, "goose": run_goose, "agy": run_agy}[tool]
+    runner = {"opencode": run_opencode, "pi": run_pi, "goose": run_goose, "agy": run_agy, "nomistakes": run_nomistakes}[tool]
     sync_outcomes, skills_outcomes = runner(paths, force, effective_dry, steps)
     report(sync_outcomes, skills_outcomes, verbose)
     return exit_code(sync_outcomes) or (1 if any(o.status == Status.WARNED for o in skills_outcomes) else 0)
@@ -244,11 +268,12 @@ def callback(
     goose_dir: Path = typer.Option(Path.home() / ".config" / "goose", "--goose-dir", help="Target ~/.config/goose directory."),
     agy_dir: Path = typer.Option(Path.home() / ".gemini" / "config", "--agy-dir", help="Target ~/.gemini/config directory."),
     agy_cli_dir: Path = typer.Option(Path.home() / ".gemini" / "antigravity-cli", "--agy-cli-dir", help="Target ~/.gemini/antigravity-cli directory."),
+    nomistakes_dir: Path = typer.Option(Path.home() / ".no-mistakes", "--nomistakes-dir", help="Target ~/.no-mistakes directory."),
 ) -> None:
-    """Sync ~/.claude config into opencode, pi, goose, and agy. ~/.claude is the source of truth."""
-    ctx.obj = {"paths": Paths(claude_dir=claude_dir, opencode_dir=opencode_dir, pi_dir=pi_dir, goose_dir=goose_dir, agy_dir=agy_dir, agy_cli_dir=agy_cli_dir), "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
+    """Sync ~/.claude config into opencode, pi, goose, agy, and no-mistakes. ~/.claude is the source of truth."""
+    ctx.obj = {"paths": Paths(claude_dir=claude_dir, opencode_dir=opencode_dir, pi_dir=pi_dir, goose_dir=goose_dir, agy_dir=agy_dir, agy_cli_dir=agy_cli_dir, nomistakes_dir=nomistakes_dir), "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
     if ctx.invoked_subcommand is None:
-        typer.echo("Syncing all tools (opencode + pi + goose + agy)...")
+        typer.echo("Syncing all tools (opencode + pi + goose + agy + no-mistakes)...")
         raise typer.Exit(_run_all(ctx))
 
 
@@ -307,9 +332,9 @@ def all(
     check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
 ) -> None:
-    """Sync opencode, pi, goose, and agy."""
+    """Sync opencode, pi, goose, agy, and no-mistakes."""
     _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    typer.echo("Syncing all tools (opencode + pi + goose + agy)...")
+    typer.echo("Syncing all tools (opencode + pi + goose + agy + no-mistakes)...")
     raise typer.Exit(_run_all(ctx))
 
 
@@ -407,10 +432,32 @@ agy_app.command("agents-md")(_make_step_cmd("agy", ("agents-md",)))
 agy_app.command("skills")(_make_step_cmd("agy", ("skills",)))
 
 
+# ---- no-mistakes group ----
+
+@nomistakes_app.callback(invoke_without_command=True)
+def nomistakes_callback(
+    ctx: typer.Context,
+    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
+    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
+) -> None:
+    """Sync no-mistakes config (all steps)."""
+    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
+    if ctx.invoked_subcommand is None:
+        typer.echo("Syncing no-mistakes...")
+        raise typer.Exit(_run_steps(ctx, "nomistakes", NOMISTAKES_STEPS))
+
+
+nomistakes_app.command("config")(_make_step_cmd("nomistakes", ("config",)))
+nomistakes_app.command("skills")(_make_skills_cmd())
+
+
 app.add_typer(opencode_app, name="opencode")
 app.add_typer(pi_app, name="pi")
 app.add_typer(goose_app, name="goose")
 app.add_typer(agy_app, name="agy")
+app.add_typer(nomistakes_app, name="no-mistakes")
 
 
 def main() -> None:

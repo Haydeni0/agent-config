@@ -44,11 +44,33 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-# --- 2. settings-sync (template -> opencode + pi + goose + agy derived files) ---
+# --- 2. settings-sync (template -> opencode + pi + goose + agy + no-mistakes derived files) ---
 log "settings-sync..."
 if ! uv run --directory "$CLAUDE_DIR/settings-sync" sync; then
-  echo "error: settings-sync failed (opencode + pi + goose + agy)" >&2
+  echo "error: settings-sync failed (opencode + pi + goose + agy + no-mistakes)" >&2
   exit 1
+fi
+
+# --- 2b. ~/.agents/skills symlink (vendor-neutral user-level skill dir) ---
+# ~/.agents/skills is the cross-harness convention read by codex, opencode,
+# rovodev, and pi; no-mistakes also installs its skill there. Point it at
+# ~/.claude/skills so skills live in one place. Only ever create or refresh
+# OUR symlink; anything else at the path (real dir, file, foreign symlink)
+# is logged and left alone - never warned, a legitimately populated dir is
+# not a failure.
+agents_skills="$HOME/.agents/skills"
+if [ -d "$agents_skills" ] && [ ! -L "$agents_skills" ]; then
+  log "~/.agents/skills is a real directory; leaving it as-is"
+elif [ -L "$agents_skills" ] && [ "$(readlink "$agents_skills")" != "$CLAUDE_DIR/skills" ]; then
+  log "~/.agents/skills symlink points elsewhere; leaving it as-is"
+elif [ -L "$agents_skills" ]; then
+  log "symlink ~/.agents/skills -> ~/.claude/skills present, skipping"
+elif [ -e "$agents_skills" ]; then
+  log "~/.agents/skills exists but is not a symlink or directory; leaving it as-is"
+else
+  mkdir -p "$HOME/.agents"
+  ln -sfn "$CLAUDE_DIR/skills" "$agents_skills"
+  log "symlinked ~/.agents/skills -> ~/.claude/skills"
 fi
 
 # --- 3. pi packages (declarative: install what's pinned but not yet on disk) ---
@@ -135,6 +157,18 @@ if [ "$needs_evo" -eq 1 ]; then
     else
       log "evo install opencode..."
       evo install opencode || warn "evo install opencode failed"
+      # `evo install opencode` also runs `npx skills add evo-hq/evo`, which
+      # writes evo's skill copies into ~/.agents/skills - our symlink points
+      # that at ~/.claude/skills, so they would land in the tracked skills
+      # dir and settings-sync would amplify them into opencode command
+      # stubs. Remove them: claude-code already has evo's skills via the
+      # plugin (namespaced evo:), and opencode needs only the evo.js plugin.
+      for d in discover finetuning infra-setup optimize report ship subagent; do
+        rm -rf "$CLAUDE_DIR/skills/$d"
+      done
+      # The npx step may also leave a real dir if the symlink was absent;
+      # only the symlink path matters, leave a real dir alone (section 2b
+      # guard will log it).
     fi
   fi
 else
@@ -153,6 +187,19 @@ if [ -f "$wa_dir/package.json" ]; then
   else
     log "web-access: node_modules present, skipping"
   fi
+fi
+
+# --- 6. no-mistakes binary (check-if-missing; `no-mistakes update` owns upgrades) ---
+# Probe with command -v, not a filesystem path: the installer symlinks into
+# ~/.local/bin only when it is on PATH, otherwise /usr/local/bin with sudo,
+# so a path probe would re-trigger a sudo install on every run. The install
+# script also (re)starts the daemon as a side effect.
+if ! command -v no-mistakes >/dev/null 2>&1; then
+  log "installing no-mistakes..."
+  curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh \
+    || warn "no-mistakes install failed"
+else
+  log "no-mistakes present, skipping"
 fi
 
 exit "$exit_code"

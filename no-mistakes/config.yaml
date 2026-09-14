@@ -1,0 +1,12 @@
+# no-mistakes global config template (shared across machines).
+# Merged with config.local.yaml (machine/local keys, not tracked) into
+# ~/.no-mistakes/config.yaml by settings-sync on every run - that file is
+# fully derived, so hand edits there die on the next sync.
+#
+# Keys here must exist in no-mistakes's own config schema: it decodes
+# strictly and fails startup on unknown keys. Keep this minimal - only keys
+# we deliberately set, never a copy of its commented default.
+#
+# Day-to-day choices like `agent:` belong in config.local.yaml, not here -
+# flipping agents is a local decision, and this file is committed.
+

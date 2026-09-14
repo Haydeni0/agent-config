@@ -11,11 +11,32 @@ Backup of `~/.claude` config — the single source of truth for [Claude Code](ht
 - `custom/` — hooks and plugins (includes [caveman](https://github.com/JuliusBrussee/caveman) submodule)
 - `statusline-command.sh` — CLI statusline
 - `opencode/` — base opencode config (`opencode.json`, `tui.json`), synced by settings-sync
-- `settings-sync/` — syncs this config into [opencode](https://opencode.ai), [pi](https://pi.dev), [goose](https://goose.dev), and [agy](https://antigravity.google); see [settings-sync/README.md](settings-sync/README.md)
+- `settings-sync/` — syncs this config into [opencode](https://opencode.ai), [pi](https://pi.dev), [goose](https://goose.dev), [agy](https://antigravity.google), and [no-mistakes](https://github.com/kunchenguid/no-mistakes); see [settings-sync/README.md](settings-sync/README.md)
 - `pi/` — base pi config (pointer template + pinned `packages[]`), wired by `sync`; see [pi/README.md](pi/README.md)
 - `goose/` — base goose config (`config.yaml`, `custom_providers/`), synced by settings-sync; see [goose/README.md](goose/README.md)
 - `gemini/` — base gemini/agy config (`settings.json`), synced by settings-sync
-- `sync.sh` — one-command machine setup: runs settings-sync + installs the machine-local tools the repo declares ([evo](https://github.com/evo-hq/evo) for claude-code/opencode, pi packages incl. [pi-web-access](https://github.com/nicobailon/pi-web-access))
+- `no-mistakes/` — no-mistakes gate config template (`config.yaml`) + machine/local overlay (`config.local.yaml`, untracked), merged by settings-sync into `~/.no-mistakes/config.yaml`; see [no-mistakes/README.md](no-mistakes/README.md)
+- `sync.sh` — one-command machine setup: runs settings-sync + installs the machine-local tools the repo declares ([evo](https://github.com/evo-hq/evo) for claude-code/opencode, pi packages incl. [pi-web-access](https://github.com/nicobailon/pi-web-access)), symlinks `~/.agents/skills`, and installs the no-mistakes binary if missing
+
+## Ownership and routing
+
+This repo is the SOT for agent-harness config (claude code, opencode, pi, goose, agy, no-mistakes): skills, commands, rules files, and the config templates that settings-sync derives per-target. Everything else (shells, editors, OS) lives in the [dotfiles repo](https://github.com/Haydeni0/dotfiles) - `~/.claude` and `~/.dotfiles` together cover the machine.
+
+Routing rules for the cases that look like they belong here but don't:
+
+- **Env vars exported to all shells** (e.g. `NO_MISTAKES_TELEMETRY=0`) → dotfiles `configs/zprofile`, not this repo and not `~/.zshenv`. Login shells see it - including the no-mistakes daemon's login-shell env probe at startup.
+- **Machine/local keys** (agent selection, absolute paths, per-host ports, credentials) → untracked `<tool>/config.local.yaml` overlay (settings-sync deep-merges it over the template), or stay out of the repo entirely. Never in the tracked template, never hand-edited into the derived target - it regenerates every sync. Day-to-day choices like no-mistakes's `agent:` are local, not shared - the template is committed, so a flip there would mean a commit.
+- **`~/.zshenv`** is intentionally machine-local (different env vars per machine), not managed by dotfiles.
+
+`.gitignore` policy: ignore-all by default, whitelist per tracked dir (`!dir/` + `!dir/**`), then re-ignore machine-local files after the whitelist (last match wins). New tracked dir = add whitelist lines.
+
+### Adding a new settings-sync target
+
+1. **Pick the contract**: fully-derived file (no legitimate machine state) → pi-style always-overwrite (`force=True` at the call site, no force gate); target that legitimately holds machine state → goose-style refuse-to-clobber without `--force`.
+2. **Wire it**: `Paths` field defaulting `None`, gate the `run_all_tools` loop on `is not None` (goose pattern, not pi - direct `Paths()` construction in tests must not crash).
+3. **Test isolation**: every CliRunner test that seeds a source for the target MUST pass the new `--<tool>-dir` to tmp - the callback defaults point at the real home, and a seeded source without the flag writes to the developer's real config.
+4. **Docs**: settings-sync README table row + conflicts-and-safety note (what the target owns vs leaves alone).
+5. **Enumeration strings**: grep the old tool list - the module docstring, the "Syncing all tools (...)" echoes, `run_all_tools`, `_run_steps` runner dict, sync.sh's error string, and README comments all enumerate targets and go stale one by one.
 
 ## Typical workflows
 

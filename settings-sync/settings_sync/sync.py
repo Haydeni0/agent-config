@@ -8,6 +8,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Self
 
+import yaml
+
 
 class Status(StrEnum):
     CREATED = "created"
@@ -156,6 +158,50 @@ def sync_json(target: Path, content: str, force: bool = False, dry_run: bool = F
         if existing_obj == new_obj:
             return Outcome(target, Status.UNCHANGED, "identical")
     except json.JSONDecodeError:
+        pass
+
+    if dry_run:
+        return Outcome(target, Status.WOULD_REPLACE, "differs from source", old_content=existing_text, new_content=content)
+
+    if not force:
+        return Outcome(
+            target,
+            Status.SKIPPED,
+            "differs from source; use --force to overwrite",
+            old_content=existing_text,
+            new_content=content,
+        )
+
+    target.write_text(content)
+    return Outcome(target, Status.REPLACED, "overwrote diverging file", old_content=existing_text, new_content=content)
+
+
+def sync_yaml(target: Path, content: str, force: bool = False, dry_run: bool = False) -> Outcome:
+    """Write YAML `content` to `target`, using semantic dict comparison to avoid false-positive drift.
+
+    Same contract as sync_json with YAML parsing: both sides are parsed and
+    compared as objects, so key-order-only differences are UNCHANGED while
+    any real value difference (including an unparseable existing target,
+    which counts as diverging) needs `force` to overwrite.
+    """
+    try:
+        new_obj = yaml.safe_load(content)
+    except yaml.YAMLError as err:
+        return Outcome(target, Status.FAILED, f"invalid YAML in source content: {err}")
+
+    if not target.exists():
+        if dry_run:
+            return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        return Outcome(target, Status.CREATED, "new file", new_content=content)
+
+    existing_text = target.read_text()
+    try:
+        existing_obj = yaml.safe_load(existing_text)
+        if existing_obj == new_obj:
+            return Outcome(target, Status.UNCHANGED, "identical")
+    except yaml.YAMLError:
         pass
 
     if dry_run:

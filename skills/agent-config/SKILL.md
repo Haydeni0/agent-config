@@ -1,15 +1,15 @@
 ---
 name: agent-config
-description: 'Use whenever the user edits, adds to, or asks about config for an AI coding agent harness: Claude Code, opencode, pi, goose, Gemini CLI/Antigravity. Covers installing a skill in any harness, slash commands, agents, permissions (allow/deny rules), hooks, model/provider settings, rules files (CLAUDE.md, AGENTS.md, .goosehints), and cross-harness sync. Also covers post-edit questions - "did I need to do anything else?", "why didn''t my change take effect?", "where does this setting live?". Key: harness config files/dirs (~/.config/opencode/opencode.json, ~/.config/goose, ~/.pi/agent, ~/.gemini) are generated from ~/.claude - a hand edit there must go back into ~/.claude and be synced. In scope for any request touching these harnesses'' settings, skills, commands, rules, or config paths, however small the edit. Not for non-agent config: git, npm, tsconfig, pyproject, shell, editors.'
+description: 'Use whenever the user edits, adds to, or asks about config for an AI coding agent harness: Claude Code, opencode, pi, goose, Gemini CLI/Antigravity, or no-mistakes. Covers installing a skill in any harness, slash commands, agents, permissions (allow/deny rules), hooks, model/provider settings, rules files (CLAUDE.md, AGENTS.md, .goosehints), and cross-harness sync. Also covers post-edit questions - "did I need to do anything else?", "why didn''t my change take effect?", "where does this setting live?". Key: harness config files/dirs (~/.config/opencode/opencode.json, ~/.config/goose, ~/.pi/agent, ~/.gemini, ~/.no-mistakes/config.yaml) are generated from ~/.claude - a hand edit there must go back into ~/.claude and be synced. In scope for any request touching these harnesses'' settings, skills, commands, rules, or config paths, however small the edit. Not for non-agent config: git, npm, tsconfig, pyproject, shell, editors.'
 ---
 
 # Agent Harness Configuration & Authoring
 
-`~/.claude` is the Single Source of Truth (SOT) for all 5 harnesses: Claude Code, Opencode, Pi, Goose, and Antigravity (`agy`). Target harness directories are fully derived and regenerated.
+`~/.claude` is the Single Source of Truth (SOT) for all 6 targets: Claude Code, Opencode, Pi, Goose, Antigravity (`agy`), and no-mistakes. Target harness directories are fully derived and regenerated.
 
 ## Red Flags - STOP
 
-- Editing any file under `~/.config/opencode/`, `~/.gemini/`, `~/.pi/agent/`, or `~/.config/goose/` directly
+- Editing any file under `~/.config/opencode/`, `~/.gemini/`, `~/.pi/agent/`, `~/.config/goose/`, or `~/.no-mistakes/` directly
 - Naming skills with uppercase letters, underscores, or mismatched directory names
 - Calling interactive modal question tools (`ask_question`, `AskUserQuestion`) instead of regular chat text
 - Writing frontmatter with leading whitespace or comments before the initial `---`
@@ -33,6 +33,8 @@ description: 'Use whenever the user edits, adds to, or asks about config for an 
 | `~/.config/goose/config.yaml` | `goose/config.yaml` | `sync goose --force` |
 | `~/.config/goose/.goosehints` | `CLAUDE.md` | `sync goose --force` |
 | `~/.config/goose/custom_providers/*.json` | `goose/custom_providers/*.json` | `sync goose --force` |
+| `~/.no-mistakes/config.yaml` (shared keys: timeouts, auto-fix limits, ...) | `no-mistakes/config.yaml` | `sync no-mistakes` |
+| `~/.no-mistakes/config.yaml` (machine/local keys: `agent`, `agent_path_override`, `worktree_roots`, ...) | `no-mistakes/config.local.yaml` (untracked overlay) | `sync no-mistakes` |
 
 ## Rationalizations
 
@@ -40,6 +42,7 @@ description: 'Use whenever the user edits, adds to, or asks about config for an 
 |---|---|
 | "Faster to edit `~/.config/opencode/opencode.json` directly" | Derived file. Overwritten on next sync/pull. Edit `opencode/opencode.json` in repo. |
 | "Edited `gemini/settings.json`, harness sees it now" | No. Harness reads derived file. Must run `sync agy --force`. |
+| "Hand-edited `~/.no-mistakes/config.yaml`, it works now" | Derived + always-overwrite (pi model). Next sync destroys the edit. Shared keys → `no-mistakes/config.yaml`, machine/local keys (incl. day-to-day `agent` choice) → `config.local.yaml`, then `sync no-mistakes`. |
 | "Only edited docs in `skills/`, don't need tests" | `settings-sync` validates regex & frontmatter. Invalid skill breaks Opencode. Run pytest. |
 | "Can use `ask_question` modal tool here" | Non-portable. Breaks harnesses without modal UI. Always use chat text. |
 

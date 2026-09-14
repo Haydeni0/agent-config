@@ -1,3 +1,6 @@
+# Policy: ignore-all, whitelist per tracked dir (`!dir/` + `!dir/**`), then
+# re-ignore machine-local files after the whitelist (last match wins).
+# New tracked dir = add its whitelist lines here.
 # Ignore everything by default
 *
 
@@ -67,3 +70,8 @@ __pycache__/
 !goose/**
 !gemini/
 !gemini/**
+
+# Track no-mistakes config template (machine overlay stays local)
+!no-mistakes/
+!no-mistakes/**
+no-mistakes/config.local.yaml
