@@ -155,6 +155,57 @@
             "command": "bash ~/.claude/custom/hooks/caveman-mode-tracker.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set 🤖 || true"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set 💬 || true"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set 💬 || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set 💬 || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker clear || true"
+          }
+        ]
       }
     ]
   },
