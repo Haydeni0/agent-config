@@ -52,6 +52,10 @@ settings.local.json
 __pycache__/
 **/__pycache__/
 
+# Re-ignore the machine-local synced-skills cache (GCS-synced first-party
+# Anthropic skills; overrides the !skills/** whitelist above).
+skills/synced/
+
 # Track some special commands
 # From https://raba.pl/resources/claude-statusline
 !statusline-command.sh
