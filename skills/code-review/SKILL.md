@@ -62,7 +62,7 @@ Three-dot (`...`) is mandatory for branch/ref scopes - it diffs from the merge-b
 
 Run the diff. Also run `git log --oneline <base>..HEAD` for commit narrative (where a base ref exists).
 
-Gather instruction files: the root `CLAUDE.md` plus any `CLAUDE.md` in directories touching modified files. Cap the total at 500 lines (truncate with a `...(truncated)...` marker) so a giant `CLAUDE.md` doesn't blow the reviewers' context.
+Gather instruction files, following `@import` lines inside each: the user-level `~/.claude/CLAUDE.md`, the repo root `AGENTS.md` and `CLAUDE.md`, plus any `AGENTS.md` or `CLAUDE.md` in directories touching modified files. Cap the total at 500 lines (truncate with a `...(truncated)...` marker) so a giant instruction file doesn't blow the reviewers' context. Deduplicate: a `CLAUDE.md` that only `@imports` `AGENTS.md` contributes its imported content once.
 
 ### Stage 2: Review (4 parallel subagents)
 

@@ -58,7 +58,7 @@ Build the import graph:
 - Supplement for JS/TS (optional, when `npx` is available): `npx madge --circular <target>` for explicit cycle detection.
 - The graph from grep is approximate. The cross-file lens reads actual code for semantic judgment on top of it.
 
-Gather CLAUDE.md: root `CLAUDE.md` plus any `CLAUDE.md` in the target directory. Cap at 500 lines total (truncate with a `...(truncated)...` marker) so a giant `CLAUDE.md` doesn't blow the reviewers' context.
+Gather instruction files, following `@import` lines inside each: the user-level `~/.claude/CLAUDE.md`, the repo root `AGENTS.md` and `CLAUDE.md`, plus any `AGENTS.md` or `CLAUDE.md` in the target directory. Cap at 500 lines total (truncate with a `...(truncated)...` marker) so a giant instruction file doesn't blow the reviewers' context. Deduplicate: a `CLAUDE.md` that only `@imports` `AGENTS.md` contributes its imported content once.
 
 ### Stage 2: Per-file review (N parallel subagents)
 
