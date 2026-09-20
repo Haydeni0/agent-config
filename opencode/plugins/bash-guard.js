@@ -53,7 +53,7 @@ const KUBECTL_REASON =
 // Cheap pre-check: skip unless something relevant is mentioned. Correctness
 // does not depend on this (the guards return allow when nothing matches), it
 // only keeps the common case fast.
-const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\s+(push|api)\b|\bgh\s+api\b|\bkubectl\b|\bk\b/
+const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\b.*\b(push|api)\b|\bgh\s+api\b|\bkubectl\b|\bk\b/
 
 // S3 guard: flatten separators + quote/subshell/backslash chars so wrapped/compound
 // forms (bash -c "...", $(...), a && b, \rm) tokenize to bare tokens.
@@ -63,6 +63,7 @@ const S3_FLATTEN = /["'`$()|;&\\]/g
 const SEG_FLATTEN = /["'`$()\\]/g
 const SPLIT_SEPS = /[\n;&|]/
 const DELETE_VERBS = new Set(["rm", "rmdir", "shred", "unlink", "trash"])
+const GH_WRITE_METHODS = new Set(["DELETE", "POST", "PATCH", "PUT"])
 
 // Collapse // -> / and /./ -> / so path-normalization bypasses (//mnt/data,
 // /mnt/./data, //, /./) are caught. Does NOT resolve .. (the one .. case we
@@ -75,6 +76,11 @@ export function decide(command) {
   const allow = { deny: false }
   if (typeof command !== "string" || command === "") return allow
   if (!PRECHECK.test(command)) return allow
+
+  // Collapse backslash-newline continuations BEFORE segmenting, so
+  // `gh api -X \<newline> DELETE` can't split a flag from its value across a
+  // segment boundary. Collapsing to a space preserves shell semantics.
+  command = command.replace(/\\\n/g, " ")
 
   // ---------- command-level guards (flattened tokens) ----------
   const tokens = command.replace(S3_FLATTEN, " ").split(/\s+/).filter(Boolean)
@@ -94,55 +100,6 @@ export function decide(command) {
   for (const t of tokens) {
     if (t.startsWith("mkfs")) {
       return { deny: true, reason: `Blocked: mkfs is not permitted. ${MKFS_REASON}` }
-    }
-  }
-
-  // chmod 777: deny chmod with 777 as a subsequent arg (permission weakening).
-  for (let i = 0; i < n; i++) {
-    if (tokens[i] === "chmod") {
-      for (let j = i + 1; j < n; j++) {
-        if (tokens[j] === "777") {
-          return { deny: true, reason: `Blocked: chmod 777 is not permitted. ${CHMOD_REASON}` }
-        }
-      }
-    }
-  }
-
-  // git push --force/-f: deny force push (exact --force, not --force-with-lease).
-  for (let i = 0; i + 2 < n; i++) {
-    if (tokens[i] === "git" && tokens[i + 1] === "push") {
-      for (let j = i + 2; j < n; j++) {
-        if (tokens[j] === "--force" || tokens[j] === "-f") {
-          return { deny: true, reason: `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}` }
-        }
-      }
-    }
-  }
-
-  // gh api write methods: deny DELETE/POST/PATCH/PUT (via -X or --method[=])
-  // or --input (sends a request body). GET is allowed. Catches wrapped forms
-  // (bash -c, $(...)) via the flattened token scan.
-  const GH_WRITE_METHODS = new Set(["DELETE", "POST", "PATCH", "PUT"])
-  for (let i = 0; i + 1 < n; i++) {
-    if (tokens[i] === "gh" && tokens[i + 1] === "api") {
-      for (let j = i + 2; j < n; j++) {
-        const t = tokens[j]
-        if (t === "-X" || t === "--method") {
-          const method = tokens[j + 1]
-          if (method && GH_WRITE_METHODS.has(method)) {
-            return { deny: true, reason: `Blocked: gh api -X ${method} is a write method. ${GH_API_REASON}` }
-          }
-        }
-        if (t.startsWith("--method=")) {
-          const method = t.slice(9)
-          if (GH_WRITE_METHODS.has(method)) {
-            return { deny: true, reason: `Blocked: gh api --method=${method} is a write method. ${GH_API_REASON}` }
-          }
-        }
-        if (t === "--input") {
-          return { deny: true, reason: `Blocked: gh api --input sends a request body. ${GH_API_REASON}` }
-        }
-      }
     }
   }
 
@@ -222,6 +179,123 @@ export function decide(command) {
     const s = seg.replace(SEG_FLATTEN, " ").split(/\s+/).filter(Boolean)
     const sn = s.length
     if (sn === 0) continue
+
+    // git push --force/-f: deny force push (exact --force, not
+    // --force-with-lease). Short-flag clusters containing f (-f, -fq, -qf)
+    // and +refspec (+main:main, unconditional force) count as force; long
+    // flags (--*) other than --force pass. Git global flags before the
+    // subcommand (-C <path>, -c <kv>, --git-dir=...) are skipped so
+    // `git -C /repo push -f` is still recognized as a push. Bounded to this
+    // segment so a `rm -f` later in a && chain can't false-trigger.
+    const GIT_VALUE_FLAGS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"])
+    for (let si = 0; si < sn; si++) {
+      if (s[si] !== "git") continue
+      // find git's subcommand token, skipping global flags and the value
+      // token of value-taking flags
+      let sj = si + 1
+      while (sj < sn) {
+        const t = s[sj]
+        if (GIT_VALUE_FLAGS.has(t)) { sj += 2; continue }
+        if (t.startsWith("-")) { sj++; continue }
+        break
+      }
+      if (sj < sn && s[sj] === "push") {
+        for (let sk = sj + 1; sk < sn; sk++) {
+          const t = s[sk]
+          // --force exact; short-flag clusters containing f (-f, -fq, -qf);
+          // +refspec (+main:main = unconditional force)
+          if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
+            return { deny: true, reason: `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}` }
+          }
+        }
+      }
+    }
+
+    // gh api write methods: deny DELETE/POST/PATCH/PUT (via -X/--method, incl.
+    // attached forms -XDELETE/-X=DELETE/--method=DELETE), --input (sends a
+    // request body, incl. --input=file), and request fields -f/-F/--raw-field/
+    // --field (gh auto-switches the method to POST when fields are present,
+    // incl. attached -fkey=value and shorthand clusters like -if). An explicit
+    // GET method keeps fields allowed (gh's read pattern:
+    // `gh api -X GET search/issues -f q=x`). Value tokens of value-taking
+    // flags are skipped in both passes so a quoted value like
+    // `--jq "-X GET"` can't fake an explicit GET. Bounded to this segment so
+    // a `curl -X POST` or `--input` elsewhere in a && chain can't
+    // false-trigger.
+    const GH_VALUE_FLAGS = new Set(["-H", "-t", "-q", "-p", "--hostname", "--cache", "--template", "--jq", "--preview", "--input", "--raw-field", "--field"])
+    const isFieldToken = (t) => t.startsWith("-") && !t.startsWith("--") && /[fF]/.test(t)
+    for (let si = 0; si + 1 < sn; si++) {
+      if (s[si] !== "gh" || s[si + 1] !== "api") continue
+      // first pass: is an explicit GET method present?
+      let hasGet = false
+      for (let sj = si + 2; sj < sn; sj++) {
+        const t = s[sj]
+        if (t === "-X" || t === "--method") {
+          if (s[sj + 1] === "GET") hasGet = true
+        } else if (t.startsWith("-X")) {
+          if (t.slice(2).replace(/^=/, "") === "GET") hasGet = true
+        } else if (t.startsWith("--method=")) {
+          if (t.slice(9) === "GET") hasGet = true
+        } else if (GH_VALUE_FLAGS.has(t)) {
+          sj++ // skip the flag's value token
+        } else if (isFieldToken(t)) {
+          // shorthand cluster with a field flag: its value follows when the
+          // cluster ends in f/F
+          if ( /[fF]$/.test(t)) sj++
+        }
+      }
+      // second pass: write signals
+      for (let sj = si + 2; sj < sn; sj++) {
+        const t = s[sj]
+        if (t === "-X" || t === "--method") {
+          const method = s[sj + 1]
+          if (method && GH_WRITE_METHODS.has(method)) {
+            return { deny: true, reason: `Blocked: gh api -X ${method} is a write method. ${GH_API_REASON}` }
+          }
+        } else if (t.startsWith("-X")) {
+          const method = t.slice(2).replace(/^=/, "")
+          if (GH_WRITE_METHODS.has(method)) {
+            return { deny: true, reason: `Blocked: gh api ${t} is a write method. ${GH_API_REASON}` }
+          }
+        } else if (t.startsWith("--method=")) {
+          const method = t.slice(9)
+          if (GH_WRITE_METHODS.has(method)) {
+            return { deny: true, reason: `Blocked: gh api ${t} is a write method. ${GH_API_REASON}` }
+          }
+        } else if (t === "--input" || t.startsWith("--input=")) {
+          return { deny: true, reason: `Blocked: gh api ${t} sends a request body. ${GH_API_REASON}` }
+        } else if (t === "--raw-field" || t === "--field") {
+          if (!hasGet) {
+            return { deny: true, reason: `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}` }
+          }
+          sj++ // skip the flag's value token
+        } else if (t.startsWith("--raw-field=") || t.startsWith("--field=")) {
+          if (!hasGet) {
+            return { deny: true, reason: `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}` }
+          }
+        } else if (GH_VALUE_FLAGS.has(t)) {
+          sj++ // skip the flag's value token
+        } else if (isFieldToken(t)) {
+          if (!hasGet) {
+            return { deny: true, reason: `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}` }
+          }
+          if (/[fF]$/.test(t)) sj++ // cluster ends in the field flag: value follows
+        }
+      }
+    }
+
+    // chmod 777: deny chmod with a 777-granting octal mode among its args in
+    // THIS segment (777, 0777, 1777, ... - any octal whose low 9 bits are
+    // 777; bounded so `chmod +x f && echo 777` can't false-trigger).
+    for (let si = 0; si < sn; si++) {
+      if (s[si] === "chmod") {
+        for (let sj = si + 1; sj < sn; sj++) {
+          if (/^[0-7]*777$/.test(s[sj])) {
+            return { deny: true, reason: `Blocked: chmod ${s[sj]} is not permitted. ${CHMOD_REASON}` }
+          }
+        }
+      }
+    }
 
     // rm|rmdir|shred|unlink|trash with a protected path among their args in
     // THIS segment. Flags are skipped so rearrangements (rm -rf, rm -r -f,

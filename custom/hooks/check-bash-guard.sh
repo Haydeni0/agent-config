@@ -23,8 +23,14 @@
 #   sudo:     deny any use of sudo.
 #   dd:       deny any use of dd.
 #   mkfs:     deny any use of mkfs.
-#   chmod 777: deny chmod with 777 arg.
-#   git push: deny git push --force / -f.
+#   chmod 777: deny chmod with a 777-granting octal mode (777, 0777, 1777).
+#   git push: deny git push --force / -f (incl. short-flag clusters like -fq,
+#             -qf) and +refspec (+main:main). Plain push and
+#             --force-with-lease stay allowed.
+#   gh api:   deny write methods (-X/--method DELETE/POST/PATCH/PUT, incl.
+#             attached forms -XDELETE), --input, and request fields
+#             -f/-F/--raw-field/--field (gh auto-switches to POST when
+#             fields are present; an explicit GET keeps fields allowed).
 #
 # Path normalization: // -> / and /./ -> / so bypasses like //mnt/data,
 # /mnt/./data, //, /./ are caught. Does NOT resolve .. (the one .. case
@@ -43,6 +49,11 @@ cmd=$(jq -r '.tool_input.command // ""')
 # Empty / missing command: nothing to enforce, stay silent.
 [ -n "$cmd" ] || exit 0
 
+# Collapse backslash-newline continuations BEFORE segmenting, so
+# `gh api -X \<newline> DELETE` can't split a flag from its value across a
+# segment boundary. Collapsing to a space preserves shell semantics.
+cmd="${cmd//$'\\\n'/ }"
+
 deny() {
     local reason="$1"
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$reason"
@@ -53,7 +64,7 @@ deny() {
 # boundaries (\< \>) so verbs match at the start of the command, after
 # whitespace, or after shell metachars (quotes, parens) - not just after
 # whitespace.
-if ! echo "$cmd" | grep -qE 'aws[[:space:]]+s3(api)?[[:space:]]|/mnt|\<(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\>|git[[:space:]]+(push|api)|gh[[:space:]]+api|\<kubectl\>|\<k\>'; then
+if ! echo "$cmd" | grep -qE 'aws[[:space:]]+s3(api)?[[:space:]]|/mnt|\<(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\>|\<git\>.*\<(push|api)\>|gh[[:space:]]+api|\<kubectl\>|\<k\>'; then
     exit 0
 fi
 
@@ -99,70 +110,6 @@ i=0
 while (( i < n )); do
     if [[ "${tokens[i]}" == mkfs* ]]; then
         deny "Blocked: mkfs is not permitted. mkfs is not permitted for the agent - destructive disk operations. (hook: check-bash-guard.sh)"
-    fi
-    i=$((i + 1))
-done
-
-# chmod 777: deny chmod with 777 as a subsequent arg.
-i=0
-while (( i < n )); do
-    if [[ "${tokens[i]}" == "chmod" ]]; then
-        j=$((i + 1))
-        while (( j < n )); do
-            if [[ "${tokens[j]}" == "777" ]]; then
-                deny "Blocked: chmod 777 is not permitted. chmod 777 is not permitted for the agent - permission weakening. (hook: check-bash-guard.sh)"
-            fi
-            j=$((j + 1))
-        done
-    fi
-    i=$((i + 1))
-done
-
-# git push --force/-f: deny force push (exact --force, not --force-with-lease).
-i=0
-while (( i + 2 < n )); do
-    if [[ "${tokens[i]}" == "git" && "${tokens[i+1]}" == "push" ]]; then
-        j=$((i + 2))
-        while (( j < n )); do
-            if [[ "${tokens[j]}" == "--force" || "${tokens[j]}" == "-f" ]]; then
-                deny "Blocked: git push --force is not permitted. git push --force is not permitted for the agent - run it yourself outside Claude. (hook: check-bash-guard.sh)"
-            fi
-            j=$((j + 1))
-        done
-    fi
-    i=$((i + 1))
-done
-
-# gh api write methods: deny DELETE/POST/PATCH/PUT (via -X or --method[=])
-# or --input (sends a request body). GET is allowed. Catches wrapped forms
-# (bash -c, $(...)) via the flattened token scan.
-i=0
-while (( i + 1 < n )); do
-    if [[ "${tokens[i]}" == "gh" && "${tokens[i+1]}" == "api" ]]; then
-        j=$((i + 2))
-        while (( j < n )); do
-            t="${tokens[j]}"
-            if [[ "$t" == "-X" || "$t" == "--method" ]]; then
-                method="${tokens[j+1]:-}"
-                case "$method" in
-                    DELETE|POST|PATCH|PUT)
-                        deny "Blocked: gh api -X ${method} is a write method. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
-                        ;;
-                esac
-            fi
-            if [[ "$t" == --method=* ]]; then
-                method="${t#--method=}"
-                case "$method" in
-                    DELETE|POST|PATCH|PUT)
-                        deny "Blocked: gh api --method=${method} is a write method. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
-                        ;;
-                esac
-            fi
-            if [[ "$t" == "--input" ]]; then
-                deny "Blocked: gh api --input sends a request body. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
-            fi
-            j=$((j + 1))
-        done
     fi
     i=$((i + 1))
 done
@@ -280,6 +227,161 @@ for seg in "${segs[@]}"; do
     s=($s_norm)
     sn=${#s[@]}
     [ "$sn" -eq 0 ] && continue
+
+    # git push --force/-f: deny force push (exact --force, not
+    # --force-with-lease). Short-flag clusters containing f (-f, -fq, -qf)
+    # and +refspec (+main:main, unconditional force) count as force; long
+    # flags (--*) other than --force pass. Git global flags before the
+    # subcommand (-C <path>, -c <kv>, --git-dir=...) are skipped so
+    # `git -C /repo push -f` is still recognized as a push. Bounded to this
+    # segment so a `rm -f` later in a && chain can't false-trigger.
+    si=0
+    while (( si < sn )); do
+        if [[ "${s[si]}" == "git" ]]; then
+            # find git's subcommand token, skipping global flags and the
+            # value token of value-taking flags
+            sj=$((si + 1))
+            while (( sj < sn )); do
+                t="${s[sj]}"
+                if [[ "$t" == "-C" || "$t" == "-c" || "$t" == "--git-dir" || "$t" == "--work-tree" || "$t" == "--namespace" || "$t" == "--exec-path" || "$t" == "--config-env" ]]; then
+                    sj=$((sj + 2))
+                    continue
+                fi
+                if [[ "$t" == -?* ]]; then
+                    sj=$((sj + 1))
+                    continue
+                fi
+                break
+            done
+            if (( sj < sn )) && [[ "${s[sj]}" == "push" ]]; then
+                sk=$((sj + 1))
+                while (( sk < sn )); do
+                    t="${s[sk]}"
+                    # --force exact; short-flag clusters containing f (-f,
+                    # -fq, -qf); +refspec (+main:main = unconditional force)
+                    if [[ "$t" == "--force" ]] || [[ "$t" != --* && "$t" == -*f* ]] || [[ "$t" == +* ]]; then
+                        deny "Blocked: git push --force is not permitted. git push --force is not permitted for the agent - run it yourself outside Claude. (hook: check-bash-guard.sh)"
+                    fi
+                    sk=$((sk + 1))
+                done
+            fi
+        fi
+        si=$((si + 1))
+    done
+
+    # gh api write methods: deny DELETE/POST/PATCH/PUT (via -X/--method, incl.
+    # attached forms -XDELETE/-X=DELETE/--method=DELETE), --input (sends a
+    # request body, incl. --input=file), and request fields -f/-F/--raw-field/
+    # --field (gh auto-switches the method to POST when fields are present,
+    # incl. attached -fkey=value and shorthand clusters like -if). An explicit
+    # GET method keeps fields allowed (gh's read pattern:
+    # `gh api -X GET search/issues -f q=x`). Value tokens of value-taking
+    # flags are skipped in both passes so a quoted value like
+    # `--jq "-X GET"` can't fake an explicit GET. Bounded to this segment so
+    # a `curl -X POST` or `--input` elsewhere in a && chain can't
+    # false-trigger.
+    si=0
+    while (( si + 1 < sn )); do
+        if [[ "${s[si]}" == "gh" && "${s[si+1]}" == "api" ]]; then
+            # first pass: is an explicit GET method present?
+            has_get=0
+            sj=$((si + 2))
+            while (( sj < sn )); do
+                t="${s[sj]}"
+                case "$t" in
+                    -X|--method) [[ "${s[sj+1]:-}" == "GET" ]] && has_get=1 ;;
+                    -X?*) m="${t#-X}"; [[ "${m#=}" == "GET" ]] && has_get=1 ;;
+                    --method=?*) [[ "${t#--method=}" == "GET" ]] && has_get=1 ;;
+                    -H|-t|-q|-p|-f|-F|--hostname|--cache|--template|--jq|--preview|--input|--raw-field|--field)
+                        sj=$((sj + 1))
+                        ;;
+                    -[!-]*)
+                        # shorthand cluster with a field flag: its value
+                        # follows when the cluster ends in f/F
+                        if [[ "$t" == *[fF]* && "$t" == *[fF] ]]; then
+                            sj=$((sj + 1))
+                        fi
+                        ;;
+                esac
+                sj=$((sj + 1))
+            done
+            # second pass: write signals
+            sj=$((si + 2))
+            while (( sj < sn )); do
+                t="${s[sj]}"
+                case "$t" in
+                    -X|--method)
+                        method="${s[sj+1]:-}"
+                        case "$method" in
+                            DELETE|POST|PATCH|PUT)
+                                deny "Blocked: gh api -X ${method} is a write method. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                                ;;
+                        esac
+                        ;;
+                    -X?*)
+                        method="${t#-X}"; method="${method#=}"
+                        case "$method" in
+                            DELETE|POST|PATCH|PUT)
+                                deny "Blocked: gh api ${t} is a write method. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                                ;;
+                        esac
+                        ;;
+                    --method=?*)
+                        method="${t#--method=}"
+                        case "$method" in
+                            DELETE|POST|PATCH|PUT)
+                                deny "Blocked: gh api ${t} is a write method. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                                ;;
+                        esac
+                        ;;
+                    --input|--input=?*)
+                        deny "Blocked: gh api ${t} sends a request body. gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                        ;;
+                    --raw-field|--field)
+                        if (( ! has_get )); then
+                            deny "Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                        fi
+                        sj=$((sj + 1))
+                        ;;
+                    --raw-field=?*|--field=?*)
+                        if (( ! has_get )); then
+                            deny "Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                        fi
+                        ;;
+                    -H|-t|-q|-p|--hostname|--cache|--template|--jq|--preview)
+                        sj=$((sj + 1))
+                        ;;
+                    -[!-]*)
+                        if [[ "$t" == *[fF]* ]]; then
+                            if (( ! has_get )); then
+                                deny "Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). gh api write methods are not permitted for the agent - run them yourself outside Claude. (hook: check-bash-guard.sh)"
+                            fi
+                            [[ "$t" == *[fF] ]] && sj=$((sj + 1))
+                        fi
+                        ;;
+                esac
+                sj=$((sj + 1))
+            done
+        fi
+        si=$((si + 1))
+    done
+
+    # chmod 777: deny chmod with a 777-granting octal mode among its args in
+    # THIS segment (777, 0777, 1777, ... - any octal whose low 9 bits are
+    # 777; bounded so `chmod +x f && echo 777` can't false-trigger).
+    si=0
+    while (( si < sn )); do
+        if [[ "${s[si]}" == "chmod" ]]; then
+            sj=$((si + 1))
+            while (( sj < sn )); do
+                if [[ "${s[sj]}" =~ ^[0-7]*777$ ]]; then
+                    deny "Blocked: chmod ${s[sj]} is not permitted. chmod 777 is not permitted for the agent - permission weakening. (hook: check-bash-guard.sh)"
+                fi
+                sj=$((sj + 1))
+            done
+        fi
+        si=$((si + 1))
+    done
 
     # rm|rmdir|shred|unlink|trash with a protected path among their args in
     # THIS segment. Flags are skipped so rearrangements (rm -rf, rm -r -f,

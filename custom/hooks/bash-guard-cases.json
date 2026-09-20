@@ -241,7 +241,11 @@
       "commands": [
         "chmod 777 /mnt/data",
         "chmod -R 777 /mnt/data",
-        "bash -c \"chmod -R 777 /mnt/data\""
+        "bash -c \"chmod -R 777 /mnt/data\"",
+        "chmod \\\n777 /tmp/x",
+        "chmod 0777 /tmp/x",
+        "chmod 1777 /tmp/x",
+        "chmod -R 0777 /tmp/x"
       ]
     },
     {
@@ -252,7 +256,42 @@
       "commands": [
         "git push --force origin main",
         "git push -f origin main",
-        "bash -c \"git push --force origin main\""
+        "git push -fq origin main",
+        "git push -qf origin main",
+        "bash -c \"git push --force origin main\"",
+        "bash -c \"git push -fq origin main\"",
+        "git -C /repo push -f",
+        "git -C /repo push --force origin main",
+        "git --git-dir=/x/.git push -f origin",
+        "git -c user.name=x push -f",
+        "bash -c \"git -C /repo push -f\"",
+        "myenv=1 git --config-env user.name=myenv push -f",
+        "git --config-env a=b push --force",
+        "git --git-dir /x/.git push -f origin",
+        "git push origin --force",
+        "git push -f \\\norigin main",
+        "git push origin +main:main",
+        "git push origin +HEAD:main",
+        "bash -c \"git push origin +main:main\""
+      ]
+    },
+    {
+      "name": "git_plain_push_allowed",
+      "label": "plain git push allowed (no force flags in push's own segment)",
+      "expect": "allow",
+      "commands": [
+        "git push",
+        "git push -q",
+        "git push -q origin main",
+        "git push --force-with-lease origin main",
+        "git push -q && git log --oneline -3 && rm -f /tmp/cmsg.txt",
+        "printenv PUSH_AUTHORISED > /dev/null && git commit -q -F /tmp/cmsg.txt && printenv PUSH_AUTHORISED > /dev/null && git push -q && git log --oneline -3 && rm -f /tmp/cmsg.txt",
+        "git tag -f v1.0",
+        "git -C /repo push -q",
+        "git -C /repo push origin main",
+        "git -C /repo status",
+        "git commit -C /repo",
+        "git --config-env a=b status"
       ]
     },
     {
@@ -270,7 +309,25 @@
         "gh api --input payload.json /repos/x/y",
         "gh api /repos/x/y -X DELETE",
         "bash -c \"gh api -X DELETE /repos/x/y\"",
-        "echo $(gh api -X DELETE /repos/x/y)"
+        "echo $(gh api -X DELETE /repos/x/y)",
+        "gh api -X \\\nDELETE /repos/x/y",
+        "gh api -XDELETE /repos/x/y",
+        "gh api -X=DELETE /repos/x/y",
+        "gh api --method=DELETE /repos/x/y",
+        "gh api --input=payload.json /repos/x/y",
+        "bash -c \"gh api -XDELETE /repos/x/y\"",
+        "gh api -f body=hi repos/o/r/issues/123/comments",
+        "gh api -F files[x][content]=@f /repos/x/y",
+        "gh api -fbody=hi repos/o/r",
+        "gh api --raw-field body=x repos/o/r",
+        "gh api --field body=x repos/o/r",
+        "gh api --raw-field=body=x repos/o/r",
+        "bash -c \"gh api -f body=hi repos/o/r\"",
+        "gh api -X DELETE repos/o/r && gh api -f body=hi repos/o/r",
+        "gh api -if body=x /repos/x/y",
+        "gh api -iF body=x /repos/x/y",
+        "gh api --jq \"-X GET\" -f body=x /repos/o/r",
+        "gh api -t \"-X GET\" -f body=x /repos/o/r"
       ]
     },
     {
@@ -282,7 +339,17 @@
         "gh api repos/x/y/issues",
         "gh api --method GET /repos/x/y",
         "gh api -X GET /repos/x/y",
-        "gh api /repos/x/y --jq .name"
+        "gh api /repos/x/y --jq .name",
+        "gh api repos/o/r && curl -X POST https://example.com",
+        "gh api repos/o/r && echo --input",
+        "bash -c \"gh api repos/o/r && curl -X POST https://x.com\"",
+        "gh api -X GET search/issues -f q=is:open",
+        "gh api search/issues -f q=test --method GET",
+        "gh api --method=GET search/issues -f q=x",
+        "gh api -XGET search/issues -f q=x",
+        "gh api -F q=test -X GET search/issues",
+        "gh api -X GET -H \"-X POST\" search/issues",
+        "gh api -X GET -if q=x search/issues"
       ]
     },
     {
@@ -293,7 +360,12 @@
         "",
         "ls -la",
         "echo hello",
-        "aws s3 ls s3://bucket/"
+        "aws s3 ls s3://bucket/",
+        "chmod +x script.sh && echo 777",
+        "chmod 0755 /tmp/x",
+        "chmod 1755 /tmp/x",
+        "git push origin main:main",
+        "git push origin refs/heads/main:refs/heads/main"
       ]
     },
     {

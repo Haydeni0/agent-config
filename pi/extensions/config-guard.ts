@@ -51,11 +51,15 @@ function stripContexts(c: string): string {
 }
 
 function bashWritesTo(command: string, dir: string, home: string): boolean {
-  const c = stripContexts(command).replace(/~/g, home).replace(/\$HOME\b/g, home);
+  // Collapse backslash-newline continuations before segmenting, so
+  // `echo x > \<newline> dir/config.json` can't split a redirect from its
+  // target across the segment split. Collapsing to a space preserves shell
+  // semantics.
+  const c = stripContexts(command.replace(/\\\n/g, " ")).replace(/~/g, home).replace(/\$HOME\b/g, home);
   // dir present as a path token (followed by sep or end) — avoids $dir-foo hits
   const dirRe = new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:[/\\\\]|$)");
   if (!dirRe.test(c)) return false;
-  for (const seg of c.split(/&&|\|\||;|(?<!>)\|(?![&|])/)) {
+  for (const seg of c.split(/[\n\r]+|&&|\|\||;|(?<!>)\|(?![&|])/)) {
     // a redirect only counts if its resolved target is the dir (not /dev/null etc.)
     WRITE_REDIR.lastIndex = 0;
     let m = WRITE_REDIR.exec(seg);
