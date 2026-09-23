@@ -17,6 +17,9 @@ settings.local.json
 !skills/*/
 !skills/**
 
+# Untrack certain local skills
+skills/headless-chromium-rootless-libs
+
 # Track commands
 !commands/
 !commands/*/
