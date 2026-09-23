@@ -103,6 +103,7 @@
     "defaultMode": "auto",
     "disableBypassPermissionsMode": "disable"
   },
+  "model": "opus",
   "skillOverrides": {
     "ponytail-help": "off"
   },
@@ -235,5 +236,10 @@
   "theme": "dark",
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  }
 }
