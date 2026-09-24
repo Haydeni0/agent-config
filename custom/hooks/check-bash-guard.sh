@@ -52,7 +52,9 @@ cmd=$(jq -r '.tool_input.command // ""')
 # Collapse backslash-newline continuations BEFORE segmenting, so
 # `gh api -X \<newline> DELETE` can't split a flag from its value across a
 # segment boundary. Collapsing to a space preserves shell semantics.
-cmd="${cmd//$'\\\n'/ }"
+# Quoted variable patterns keep backslash matching consistent across Bash versions.
+line_continuation=$'\\\n'
+cmd="${cmd//"$line_continuation"/ }"
 
 deny() {
     local reason="$1"
@@ -71,8 +73,8 @@ fi
 # Path normalization: collapse // -> / and /./ -> /.
 normalize_path() {
     local p="$1"
-    p="${p//\/\//\/}"
-    p="${p//\/\.\//\/}"
+    p="${p//\/\///}"
+    p="${p//\/\.\///}"
     p="${p%%/.}"
     printf '%s' "$p"
 }
