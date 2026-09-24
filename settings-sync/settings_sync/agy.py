@@ -1,9 +1,10 @@
-"""Sync AGY (Antigravity) config from ~/.claude."""
+"""Deploy shared AGY (Antigravity) settings and resources."""
 
 from pathlib import Path
 
 from settings_sync.agents_md import sync_agents_md
-from settings_sync.sync import Outcome, Status, sync_dir_symlinks, sync_json
+from settings_sync.merging import sync_json_defaults
+from settings_sync.sync import Outcome, Status, sync_dir_symlinks
 
 
 def sync_agy_settings(
@@ -12,10 +13,10 @@ def sync_agy_settings(
     force: bool = False,
     dry_run: bool = False,
 ) -> Outcome:
-    """Sync ~/.claude/gemini/settings.json -> target settings.json."""
+    """Merge shared Gemini settings into the native settings file."""
     if not source.is_file():
         return Outcome(target, Status.NO_SOURCE, f"settings source not found: {source}")
-    return sync_json(target, source.read_text(), force=force, dry_run=dry_run)
+    return sync_json_defaults(target, source.read_text(), dry_run=dry_run)
 
 
 def sync_agy_agents_md(
@@ -23,9 +24,10 @@ def sync_agy_agents_md(
     claude_md: Path,
     force: bool = False,
     dry_run: bool = False,
+    *, source_root: Path | None = None,
 ) -> Outcome:
     """Sync CLAUDE.md -> AGENTS.md (rewriting @skills/<n> refs)."""
-    return sync_agents_md(target, claude_md, force=force, dry_run=dry_run)
+    return sync_agents_md(target, claude_md, force=force, dry_run=dry_run, source_root=source_root, harness="agy")
 
 
 def sync_agy_skills(

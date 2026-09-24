@@ -40,14 +40,16 @@ def claude_md(tmp_path: pathlib.Path) -> pathlib.Path:
 def goose_home(tmp_path: pathlib.Path) -> pathlib.Path:
     """A full ~/.claude home with goose config, providers, CLAUDE.md, and a skill."""
     home = tmp_path / "claude"
-    (home / "goose").mkdir(parents=True)
-    (home / "goose" / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: false\n")
-    (home / "goose" / "custom_providers").mkdir(parents=True)
-    (home / "goose" / "custom_providers" / "glm.json").write_text(
+    (home / "harnesses/goose").mkdir(parents=True)
+    (home / "harnesses/goose" / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: false\n")
+    (home / "harnesses/goose" / "custom_providers").mkdir(parents=True)
+    (home / "harnesses/goose" / "custom_providers" / "glm.json").write_text(
         json.dumps({"name": "glm", "engine": "openai", "base_url": "http://example/v1"})
     )
-    (home / "CLAUDE.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "rules").mkdir(parents=True, exist_ok=True)
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
     (home / "skills").mkdir(parents=True)
+    (home / "agents").mkdir()
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
     return home
@@ -131,15 +133,15 @@ def test_goose_config_unchanged_when_identical(tmp_path: pathlib.Path, goose_con
     assert outcome.status == Status.UNCHANGED
 
 
-def test_goose_config_skips_diverging_without_force(tmp_path: pathlib.Path, goose_config: pathlib.Path):
+def test_goose_config_updates_declared_keys(tmp_path: pathlib.Path, goose_config: pathlib.Path):
     target = tmp_path / "goose" / "config.yaml"
     target.parent.mkdir(parents=True)
     target.write_text("GOOSE_TELEMETRY_ENABLED: true\n")
 
     outcome = sync_goose_config(target, goose_config)
 
-    assert outcome.status == Status.SKIPPED
-    assert "true" in target.read_text()
+    assert outcome.status == Status.REPLACED
+    assert "false" in target.read_text()
 
 
 def test_goose_config_force_overwrites_diverging(tmp_path: pathlib.Path, goose_config: pathlib.Path):
@@ -205,8 +207,11 @@ def test_goose_providers_force_overwrites_diverging(tmp_path: pathlib.Path, goos
 
 def test_goose_providers_warns_on_orphan(tmp_path: pathlib.Path, goose_providers: pathlib.Path):
     target_dir = tmp_path / "goose" / "custom_providers"
-    target_dir.mkdir(parents=True)
-    (target_dir / "stale.json").write_text("{}")
+    (goose_providers / "stale.json").write_text("{}")
+    sync_goose_providers(target_dir, goose_providers)
+    (goose_providers / "stale.json").unlink()
+
+    (target_dir / "stale.json").write_text('{"local": true}')
 
     outcomes = sync_goose_providers(target_dir, goose_providers)
 
@@ -217,8 +222,9 @@ def test_goose_providers_warns_on_orphan(tmp_path: pathlib.Path, goose_providers
 
 def test_goose_providers_force_deletes_orphan(tmp_path: pathlib.Path, goose_providers: pathlib.Path):
     target_dir = tmp_path / "goose" / "custom_providers"
-    target_dir.mkdir(parents=True)
-    (target_dir / "stale.json").write_text("{}")
+    (goose_providers / "stale.json").write_text("{}")
+    sync_goose_providers(target_dir, goose_providers)
+    (goose_providers / "stale.json").unlink()
 
     outcomes = sync_goose_providers(target_dir, goose_providers, force=True)
 
@@ -245,8 +251,9 @@ def test_goose_providers_dry_run_does_not_create_target_dir(tmp_path: pathlib.Pa
 def test_goose_providers_dry_run_reports_orphan(tmp_path: pathlib.Path, goose_providers: pathlib.Path):
     """--dry-run should report orphans in an existing target dir without deleting."""
     target_dir = tmp_path / "goose" / "custom_providers"
-    target_dir.mkdir(parents=True)
-    (target_dir / "stale.json").write_text("{}")
+    (goose_providers / "stale.json").write_text("{}")
+    sync_goose_providers(target_dir, goose_providers)
+    (goose_providers / "stale.json").unlink()
 
     outcomes = sync_goose_providers(target_dir, goose_providers, dry_run=True)
 
@@ -309,7 +316,7 @@ def test_cli_goose_config_check_detects_drift(tmp_path: pathlib.Path, goose_home
     assert "true" in (goose_dir / "config.yaml").read_text()
 
 
-def test_cli_all_includes_goose(tmp_path: pathlib.Path, goose_home: pathlib.Path):
+def test_cli_all_includes_goose(tmp_path: pathlib.Path, source_home: pathlib.Path):
     """Bare `sync` (sync all) should include goose steps."""
     goose_dir = tmp_path / "goose-config"
     opencode_dir = tmp_path / "opencode"
@@ -318,7 +325,7 @@ def test_cli_all_includes_goose(tmp_path: pathlib.Path, goose_home: pathlib.Path
     result = runner.invoke(
         app,
         [
-            "--claude-dir", str(goose_home),
+            "--claude-dir", str(source_home),
             "--opencode-dir", str(opencode_dir),
             "--pi-dir", str(pi_dir),
             "--goose-dir", str(goose_dir),

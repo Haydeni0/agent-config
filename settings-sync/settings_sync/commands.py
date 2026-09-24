@@ -3,7 +3,8 @@
 from pathlib import Path
 
 from settings_sync.frontmatter import parse
-from settings_sync.sync import Outcome, Status, sync_text
+from settings_sync.sync import Outcome, Status
+from settings_sync.ownership import prune_generated, sync_generated_file
 
 
 def _build_skill_stub(skill_md: Path) -> str | None:
@@ -25,8 +26,11 @@ def sync_commands(
     force: bool = False,
     dry_run: bool = False,
 ) -> list[Outcome]:
+    if not source_dir.is_dir():
+        return [Outcome(source_dir, Status.FAILED, "required commands source directory missing; restore before syncing")]
     outcomes: list[Outcome] = []
-    target_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        target_dir.mkdir(parents=True, exist_ok=True)
 
     expected_names: set[str] = set()
 
@@ -34,7 +38,7 @@ def sync_commands(
         if not source_file.is_file():
             continue
         expected_names.add(source_file.name)
-        outcomes.append(sync_text(target_dir / source_file.name, source_file.read_text(), force, dry_run))
+        outcomes.append(sync_generated_file(target_dir / source_file.name, source_file.read_text(), force, dry_run))
 
     if skills_dir.is_dir():
         for skill_dir in sorted(skills_dir.iterdir(), key=lambda p: p.name):
@@ -47,18 +51,10 @@ def sync_commands(
             if stub is None:
                 continue
             name = skill_dir.name + ".md"
+            if name in expected_names:
+                continue
             expected_names.add(name)
-            outcomes.append(sync_text(target_dir / name, stub, force, dry_run))
+            outcomes.append(sync_generated_file(target_dir / name, stub, force, dry_run))
 
-    for target_file in sorted(target_dir.glob("*.md"), key=lambda p: p.name):
-        if target_file.name not in expected_names:
-            if dry_run:
-                outcomes.append(Outcome(target_file, Status.WOULD_REPLACE, "orphan (would delete)"))
-                continue
-            if not force:
-                outcomes.append(Outcome(target_file, Status.WARNED, "orphan; use --force to remove"))
-                continue
-            target_file.unlink()
-            outcomes.append(Outcome(target_file, Status.REPLACED, "deleted orphan"))
-
+    outcomes.extend(prune_generated(target_dir, expected_names, dry_run))
     return outcomes

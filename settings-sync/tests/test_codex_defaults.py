@@ -10,9 +10,11 @@ from settings_sync.cli import app
 @pytest.fixture
 def defaults_source(tmp_path: Path) -> Path:
     source = tmp_path / "claude"
-    (source / "codex").mkdir(parents=True)
-    (source / "codex" / "config.toml").write_text('model = "example-model"\n[features]\nhooks = true\n')
-    (source / "CLAUDE.md").write_text("# Rules\nSee @skills/uv.\n")
+    (source / "harnesses/codex").mkdir(parents=True)
+    (source / "skills").mkdir()
+    (source / "harnesses/codex" / "config.toml").write_text('model = "example-model"\n[features]\nhooks = true\n')
+    (source / "rules").mkdir(parents=True, exist_ok=True)
+    (source / "rules/global.md").write_text("# Rules\nSee @skills/uv.\n")
     return source
 
 
@@ -41,7 +43,7 @@ def test_defaults_merge_preserves_local_state(tmp_path: Path, defaults_source: P
     }
     assert "# Local preferences" in config.read_text()
     assert "# keep this" in config.read_text()
-    assert (target / "AGENTS.md").read_text() == "# Rules\nSee the `uv` skill.\n"
+    assert (target / "AGENTS.md").read_text().endswith("# Rules\nSee the `uv` skill.\n")
 
 
 @pytest.mark.parametrize("flag", ["--check", "--dry-run"])
@@ -65,7 +67,7 @@ def test_invalid_toml_preserves_target(tmp_path: Path, defaults_source: Path, in
     target.mkdir()
     config = target / "config.toml"
     config.write_text('model = "old-model"\n')
-    invalid = defaults_source / "codex" / "config.toml" if invalid_file == "source" else config
+    invalid = defaults_source / "harnesses/codex" / "config.toml" if invalid_file == "source" else config
     invalid.write_text('model = "unterminated\n')
     original = config.read_bytes()
 

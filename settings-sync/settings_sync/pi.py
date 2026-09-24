@@ -1,48 +1,43 @@
-"""Sync ~/.claude config into ~/.pi/agent (the pi harness)."""
+"""Sync shared source config into ~/.pi/agent (the pi harness)."""
 
 from pathlib import Path
 
+from settings_sync.ownership import sync_generated_file, sync_generated_json
+
 from settings_sync.agents_md import build_agents_md
-from settings_sync.sync import Outcome, Status, sync_json, sync_text
+from settings_sync.merging import sync_json_defaults
+from settings_sync.sync import Outcome, Status
 
 
-def sync_pi_config(target: Path, template: Path, dry_run: bool = False) -> Outcome:
-    """Wholesale-copy the pointer template into <agent>/settings.json.
-
-    pi's settings.json is fully owned by the template (single source of truth
-    in ~/.claude). pi's own state keys (e.g. lastChangelogVersion) are disposable:
-    overwriting them makes pi re-show the changelog once, then pi rewrites the
-    key. Diverging targets are always overwritten (no --force needed), unlike
-    sync_config which protects hand-edits.
-    """
+def sync_pi_config(target: Path, template: Path, dry_run: bool = False, *, source_root: Path | None = None, runtime_home: Path | None = None) -> Outcome:
+    """Apply declared defaults while retaining Pi local state."""
     if not template.is_file():
         return Outcome(target, Status.NO_SOURCE, f"template not found: {template}")
     content = template.read_text()
-    return sync_json(target, content, force=True, dry_run=dry_run)
+    if source_root is not None:
+        import json
+        content = content.replace("${AGENT_CONFIG_REPO}", json.dumps(str(source_root))[1:-1])
+    if runtime_home is not None and runtime_home != Path.home() / ".claude":
+        import json
+        content = content.replace("~/.claude/", json.dumps(str(runtime_home))[1:-1] + "/")
+    return sync_json_defaults(target, content, dry_run=dry_run)
 
 
-def sync_pi_context(target: Path, claude_md: Path, force: bool = False, dry_run: bool = False) -> Outcome:
+def sync_pi_context(target: Path, claude_md: Path, force: bool = False, dry_run: bool = False, *, source_root: Path | None = None) -> Outcome:
     """Inline CLAUDE.md (@imports expanded, @skills/x rewritten) into <agent>/CLAUDE.md.
 
     pi can't expand @ imports, so we inline them here (same transform opencode's
-    AGENTS.md uses, via build_agents_md with rules_path=None). Refuses to clobber
-    a diverging file without --force, matching AGENTS.md handling.
+    AGENTS.md uses, via build_agents_md with rules_path=None). Updates unchanged managed output; locally edited output requires force and a backup.
     """
     if not claude_md.is_file():
         return Outcome(target, Status.NO_SOURCE, f"CLAUDE.md not found: {claude_md}")
-    content = build_agents_md(claude_md, rules_path=None)
-    return sync_text(target, content, force=force, dry_run=dry_run)
+    content = build_agents_md(claude_md, rules_path=None, source_root=source_root, harness="pi")
+    return sync_generated_file(target, content, force=force, dry_run=dry_run)
 
 
-def sync_pi_keybindings(target: Path, source: Path, dry_run: bool = False) -> Outcome:
-    """Wholesale-copy ~/.claude/pi/keybindings.json into <agent>/keybindings.json.
-
-    Same model as sync_pi_config: the source file is the single source of truth
-    and the derived copy is fully owned by it, so a diverging target is always
-    overwritten (no --force needed). Optional — if the source is absent, no
-    keybindings.json is written and sync succeeds (pi falls back to defaults).
-    """
+def sync_pi_keybindings(target: Path, source: Path, dry_run: bool = False, *, force: bool = False) -> Outcome:
+    """Install optional generated keybindings with local-edit protection."""
     if not source.is_file():
         return Outcome(target, Status.NO_SOURCE, f"keybindings source not found: {source}")
     content = source.read_text()
-    return sync_json(target, content, force=True, dry_run=dry_run)
+    return sync_generated_json(target, content, force=force, dry_run=dry_run)

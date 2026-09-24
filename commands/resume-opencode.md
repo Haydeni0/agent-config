@@ -7,18 +7,18 @@ description: Resume an opencode session inside the current Claude Code session. 
 
 Resume an opencode conversation inside this Claude Code session. Reads the opencode SQLite DB, converts a chosen session into a markdown transcript, and ingests it as context so the conversation can continue here.
 
-The converter is a uv project at `~/.claude/opencode-resume/`. Stdlib only (sqlite3, json). Run it via `uv run` from its directory.
+The converter is a uv project at `~/gitrepos/agent-config/opencode-resume/`. Stdlib only (sqlite3, json). Run it via `uv run` from its directory.
 
 ## On invocation
 
 1. Resolve the session and emit the **full transcript** to capture as your context. Run with the user's `$ARGUMENTS` (may be empty):
    ```
-   cd ~/.claude/opencode-resume && uv run python -m opencode_resume.cli $ARGUMENTS
+   cd ~/gitrepos/agent-config/opencode-resume && uv run python -m opencode_resume.cli $ARGUMENTS
    ```
    Capture stdout - this is the prior turn history you continue from.
 2. Print a **truncated preview** to the user so they can sanity-check the right session was converted:
    ```
-   cd ~/.claude/opencode-resume && uv run python -m opencode_resume.cli $ARGUMENTS --preview
+   cd ~/gitrepos/agent-config/opencode-resume && uv run python -m opencode_resume.cli $ARGUMENTS --preview
    ```
    The preview shows the header + first/last few turns with a truncation marker.
 3. State one line: which session you resumed (title + opencode session id), and that the full transcript is now your context.

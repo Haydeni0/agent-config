@@ -9,7 +9,7 @@ Run the complete development cycle for one topic: grill → test-plan → launch
 
 ## On invocation: stage detection
 
-Read the target project's `.claude/plans/` first match wins:
+Read the target project's `.agents/plans/` first match wins:
 
 1. No decisions file for the topic → grill.
 2. Decisions file has `## Design decisions` but no `## Test scenarios` → test-plan.
@@ -22,7 +22,7 @@ Read the target project's `.claude/plans/` first match wins:
 
 Two+ candidate cycles → one plain-text question listing them. Sectionless decisions file = case 1. Hand-written artifacts (no markers) = unapproved drafts of the newest matching cycle → gate, then their review stage.
 
-## Artifacts (all in the target project's `.claude/plans/`)
+## Artifacts (all in the target project's `.agents/plans/`)
 
 - `<date>-<topic>-decisions.md` - sections appended as stages complete: `## Design decisions` (grill end), `## Test scenarios` (test-plan end), `## Outcome` (gate), `## Review nits` (LOW findings that survive). This file is the resume anchor and reviewer input.
 - `<date>-<topic>-spec.md`, `<date>-<topic>-plan.md` - write-spec / writing-plans output, footer carrying `Reviewed: pass|fail <n>` markers appended after each reviewer pass.
@@ -62,3 +62,7 @@ Return: completion summary + full deviation log.
 ## Abort rules
 
 Three abort triggers, all terminate with a full report - they never pause to ask mid-run: (1) review cap exceeded after the second re-review; (2) SPEC-CONFLICT (spec-level escalation - user-owned decisions); (3) subagent crash after one retry. Abort during interview stages: restart that stage from the top (human is present).
+
+## Existing project documents
+
+Use the global legacy-document rule before creating or resuming plans/backlogs: canonical `.agents` when present, legacy `.claude` when it is the only copy, reconcile both before resuming, editing, or migrating. Preserve IDs and checkbox progress.

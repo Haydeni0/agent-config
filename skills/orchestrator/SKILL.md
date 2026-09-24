@@ -66,7 +66,7 @@ Three tiers govern mid-flight judgement. Where the repo's AGENTS.md defines its 
 | Tier | Trigger | Action |
 |------|---------|--------|
 | Decide and note | Routine judgement - naming, layout, a fixture's shape | Do it. One line in the commit body or ledger |
-| Queue | A genuine fork, but unblocked work remains | Record to `.claude/backlog.md` via the backlog skill, continue |
+| Queue | A genuine fork, but unblocked work remains | Record to `.agents/backlog.md` via the backlog skill, continue |
 | Stop | Nothing meaningful unblocked; irreversible, destructive, or outward-facing action outside the charter's delivery scope; a fork only the user can make | Halt that unit, report |
 
 Subagents get the same tiers in their brief; decide-and-note decisions surface via their deviation log. Plan-level wrongness returns BLOCKER; spec-level contradiction returns SPEC-CONFLICT. A subagent asking a question mid-flight is not a supported channel - it returns blocked with the question, and the orchestrator answers, holds it in the ledger, or escalates.
@@ -75,7 +75,7 @@ Delivery actions the charter pre-authorises do not count as Stop-tier outward-fa
 
 ## The charter
 
-Written to `.claude/plans/<date>-<mission>-decisions.md` in the repo (for a grilled mission, the grill decisions file is the charter); for a repo-less mission, a mission directory on disk serves. It holds: the mission goals verbatim, the unit list as an advisory starting plan with kinds and dependencies, standing answers, delivery authorisation scope, stop conditions, report cadence, and the ledger. The orchestrator re-plans waves as units land - adding, splitting, or deprioritising units within charter scope, without re-asking. Multi-repo missions are allowed - the charter lives in the lead repo, and unit state lives in each unit's workspace; typically one repo.
+Written to `.agents/plans/<date>-<mission>-decisions.md` in the repo (for a grilled mission, the grill decisions file is the charter); for a repo-less mission, a mission directory on disk serves. It holds: the mission goals verbatim, the unit list as an advisory starting plan with kinds and dependencies, standing answers, delivery authorisation scope, stop conditions, report cadence, and the ledger. The orchestrator re-plans waves as units land - adding, splitting, or deprioritising units within charter scope, without re-asking. Multi-repo missions are allowed - the charter lives in the lead repo, and unit state lives in each unit's workspace; typically one repo.
 
 ### Ledger
 
@@ -98,7 +98,7 @@ A unit is defined by three things, settled at intake and written into its brief:
 
 Two kinds are defined concretely; both are validated in practice:
 
-- **Build** (default, repo work). Executor: the dev-cycle skill. The subagent materialises the brief's standing answers (and test scenarios, where the brief carries them) as the unit's decisions file in the workspace's `.claude/plans/`, treats the orchestrator's dispatch as the launch gate's go, writes `## Outcome` from the brief's user intent, and enters the autonomous stages: test-plan where the brief lacks test scenarios, then spec, plan, implement, code-review, and verify-fix, with fresh subagents for its review rounds. Documentation obligations the repo attaches to completion (scenario docs, registers) belong in the brief's done-condition, not to the executor. Transport: git - worktree + branch `hayden/<unit>`, draft PR, gated merge. Done-condition: the repo's gate command green, run by the orchestrator.
+- **Build** (default, repo work). Executor: the dev-cycle skill. The subagent materialises the brief's standing answers (and test scenarios, where the brief carries them) as the unit's decisions file in the workspace's `.agents/plans/`, treats the orchestrator's dispatch as the launch gate's go, writes `## Outcome` from the brief's user intent, and enters the autonomous stages: test-plan where the brief lacks test scenarios, then spec, plan, implement, code-review, and verify-fix, with fresh subagents for its review rounds. Documentation obligations the repo attaches to completion (scenario docs, registers) belong in the brief's done-condition, not to the executor. Transport: git - worktree + branch `hayden/<unit>`, draft PR, gated merge. Done-condition: the repo's gate command green, run by the orchestrator.
 - **Investigate**. Executor: a research protocol - question, evidence, findings report. Transport: the report file is the deliverable; delivery is the orchestrator reading it, stowing a copy beside the charter, and recording that durable path verbatim in the ledger. Done-condition: the report exists and the orchestrator has read it. No code changes. A report is evidence, never authorisation - it does not silently become a build. If a build follows, it is a new unit with its own brief; scratch exploration stays behind.
 
 A new kind may be defined mid-mission, but only in the charter first: its executor and transport written down before any dispatch of that kind, grilled with the user if the shape is unfamiliar. An undefined kind does not dispatch.
@@ -247,3 +247,7 @@ Validated in practice: workspace-per-unit, front-loaded briefs, one subagent per
 Grafted from research (prune freely if a graft misfires): harness-agnostic conditional clauses, hard-rules opening with anti-carry clauses, append-only ledger, base-state discipline, investigate unit shape, verify-then-merge, waived-check naming, fail-closed teardown, recovery ladder order, positive-evidence supervision, unknown-never-promoted, escalation batching, end-of-turn checklist, stow ritual, report-from-records, brief-defect steering rule, proposed-lessons governance.
 
 Every rule here traces to a real failure or a documented one; when updating this file, preserve the safety boundaries and prefer rewriting over appending.
+
+## Existing project documents
+
+Use canonical `.agents` plans when present and legacy `.claude` plans when they are the only copy. When both exist, reconcile before resuming, editing, or migrating; preserve checkbox progress and backlog IDs.

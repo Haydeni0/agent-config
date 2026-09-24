@@ -1,22 +1,15 @@
-"""Sync ~/.claude config into ~/.codex (the codex harness)."""
+"""Sync shared source config into ~/.codex (the codex harness)."""
 
-from collections.abc import Mapping, MutableMapping
 from pathlib import Path
+
+from settings_sync.ownership import sync_generated_file
 
 import tomlkit
 from tomlkit.exceptions import ParseError
 
 from settings_sync.agents_md import build_agents_md
-from settings_sync.sync import Outcome, Status, sync_text
-
-
-def _merge_defaults(target: MutableMapping[str, object], source: Mapping[str, object]) -> None:
-    for key, value in source.items():
-        existing = target.get(key)
-        if isinstance(existing, MutableMapping) and isinstance(value, Mapping):
-            _merge_defaults(existing, value)
-        elif existing != value:
-            target[key] = value
+from settings_sync.merging import merge_defaults, install_merged
+from settings_sync.sync import Outcome, Status
 
 
 def sync_codex_config(target: Path, template: Path, dry_run: bool = False) -> Outcome:
@@ -32,27 +25,28 @@ def sync_codex_config(target: Path, template: Path, dry_run: bool = False) -> Ou
     except ParseError as exc:
         return Outcome(target, Status.FAILED, f"invalid Codex template: {exc}")
 
+    if target.is_symlink():
+        return Outcome(target, Status.FAILED, "expected regular configuration file; destination is a symlink")
     try:
         content = target.read_text()
     except FileNotFoundError:
-        content = ""
+        content = None
     try:
-        config = tomlkit.parse(content)
+        config = tomlkit.parse(content or "")
     except ParseError as exc:
         return Outcome(target, Status.FAILED, f"invalid installed Codex config: {exc}")
 
-    _merge_defaults(config, defaults)
-    return sync_text(target, tomlkit.dumps(config), force=True, dry_run=dry_run)
+    merge_defaults(config, defaults)
+    return install_merged(target, tomlkit.dumps(config), content, dry_run)
 
 
-def sync_codex_agents_md(target: Path, claude_md: Path, force: bool = False, dry_run: bool = False) -> Outcome:
+def sync_codex_agents_md(target: Path, claude_md: Path, force: bool = False, dry_run: bool = False, *, source_root: Path | None = None) -> Outcome:
     """Inline CLAUDE.md (@skills/x rewritten) into ~/.codex/AGENTS.md.
 
     Codex reads global instructions from $CODEX_HOME/AGENTS.md. Same transform
-    as opencode's AGENTS.md (build_agents_md with rules_path=None). Refuses to
-    clobber a diverging file without --force, matching AGENTS.md handling.
+    as opencode's AGENTS.md (build_agents_md with rules_path=None). Updates unchanged managed output; locally edited output requires force and a backup.
     """
     if not claude_md.is_file():
         return Outcome(target, Status.NO_SOURCE, f"CLAUDE.md not found: {claude_md}")
-    content = build_agents_md(claude_md, rules_path=None)
-    return sync_text(target, content, force=force, dry_run=dry_run)
+    content = build_agents_md(claude_md, rules_path=None, source_root=source_root, harness="codex")
+    return sync_generated_file(target, content, force=force, dry_run=dry_run)

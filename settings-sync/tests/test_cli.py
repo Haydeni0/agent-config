@@ -9,10 +9,11 @@ from settings_sync.cli import Paths, app, run_opencode
 def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
     home = tmp_path / "claude"
     home.mkdir(parents=True)
-    (home / "CLAUDE.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
-    (home / "opencode").mkdir(parents=True)
-    (home / "opencode" / "opencode.json").write_text(json.dumps({"model": "test/model"}))
-    (home / "opencode" / "tui.json").write_text(json.dumps({"theme": "tokyonight"}))
+    (home / "rules").mkdir(parents=True, exist_ok=True)
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "harnesses/opencode").mkdir(parents=True)
+    (home / "harnesses/opencode" / "opencode.json").write_text(json.dumps({"model": "test/model"}))
+    (home / "harnesses/opencode" / "tui.json").write_text(json.dumps({"theme": "tokyonight"}))
     (home / "agents").mkdir(parents=True)
     (home / "agents" / "reviewer.md").write_text("---\nname: reviewer\ndescription: r\ntools: Read\n---\nBody.\n")
     (home / "commands").mkdir(parents=True)
@@ -20,16 +21,21 @@ def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
     (home / "skills").mkdir(parents=True)
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
-    (home / "pi").mkdir(parents=True)
-    (home / "pi" / "settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}))
-    (home / "goose").mkdir(parents=True)
-    (home / "goose" / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: false\n")
-    (home / "goose" / "custom_providers").mkdir(parents=True)
-    (home / "goose" / "custom_providers" / "test.json").write_text(json.dumps({"name": "test"}))
-    (home / "gemini").mkdir(parents=True)
-    (home / "gemini" / "settings.json").write_text(json.dumps({"model": "gemini-3.7-flash"}))
-    (home / "codex").mkdir()
-    (home / "codex" / "config.toml").write_text('model = "test-model"\n')
+    (home / "harnesses/pi").mkdir(parents=True)
+    (home / "harnesses/pi" / "settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}))
+    (home / "harnesses/goose").mkdir(parents=True)
+    (home / "harnesses/goose" / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: false\n")
+    (home / "harnesses/goose" / "custom_providers").mkdir(parents=True)
+    (home / "harnesses/goose" / "custom_providers" / "test.json").write_text(json.dumps({"name": "test"}))
+    (home / "harnesses/gemini").mkdir(parents=True)
+    (home / "harnesses/gemini" / "settings.json").write_text(json.dumps({"model": "gemini-3.7-flash"}))
+    (home / "harnesses/codex").mkdir()
+    (home / "harnesses/codex" / "config.toml").write_text('model = "test-model"\n')
+    (home / "harnesses/no-mistakes").mkdir()
+    (home / "harnesses/no-mistakes/config.yaml").write_text("{}")
+    (home / "harnesses/claude").mkdir(parents=True)
+    (home / "harnesses/claude/settings.json").write_text("{}")
+    (home / "harnesses/opencode/plugins").mkdir()
     return home
 
 
@@ -77,7 +83,7 @@ def test_all_exits_nonzero_on_conflict(tmp_path: pathlib.Path):
     agy_dir = tmp_path / "gemini-config"
     agy_cli_dir = tmp_path / "gemini-cli"
     opencode.mkdir(parents=True)
-    (opencode / "opencode.json").write_text(json.dumps({"hand": "edited"}))
+    (opencode / "AGENTS.md").write_text("Hand edited instructions")
 
     result = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex")])
 
@@ -160,7 +166,7 @@ def test_opencode_config_only(tmp_path: pathlib.Path):
 def test_run_opencode_pure_returns_outcomes(tmp_path: pathlib.Path):
     claude = _make_claude_home(tmp_path)
     opencode = tmp_path / "config" / "opencode"
-    paths = Paths(claude_dir=claude, opencode_dir=opencode)
+    paths = Paths(source_dir=claude, opencode_dir=opencode)
 
     sync_outcomes, skills_outcomes = run_opencode(paths, force=False, dry_run=False)
 

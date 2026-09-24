@@ -1,88 +1,26 @@
-# Policy: ignore-all, whitelist per tracked dir (`!dir/` + `!dir/**`), then
-# re-ignore machine-local files after the whitelist (last match wins).
-# New tracked dir = add its whitelist lines here.
-# Ignore everything by default
-*
-
-# Track config
-!.gitignore
-!.gitattributes
-!README.md
-!CLAUDE.md
-!settings.json
+# Local state and secrets
+.env
+.env.*
+!.env.example
+credentials.*
+*.pem
 settings.local.json
-
-# Track skills
-!skills/
-!skills/*/
-!skills/**
-
-# Untrack certain local skills
-skills/headless-chromium-rootless-libs
-
-# Track commands
-!commands/
-!commands/*/
-!commands/**
-
-# Track agents
-!agents/
-!agents/*/
-!agents/**
-
-# Track settings-sync (opencode + pi sync tool)
-!settings-sync/
-!settings-sync/*/
-!settings-sync/**
-
-# Track opencode-resume
-!opencode-resume/
-!opencode-resume/*/
-!opencode-resume/**
-
-# Track opencode base config
-!opencode/
-!opencode/*/
-!opencode/**
-
-# Track custom plugins and hooks
-!custom/
-!custom/*/
-!custom/**
-
-# Re-ignore Python bytecode caches (override the custom/skills whitelists
-# above; __pycache__ would otherwise be tracked via !custom/** / !skills/**).
-__pycache__/
-**/__pycache__/
-
-# Re-ignore the machine-local synced-skills cache (GCS-synced first-party
-# Anthropic skills; overrides the !skills/** whitelist above).
+config.local.yaml
+.agents/backlog.md
+.agents/plans/local/
+.claude/
 skills/synced/
+skills/headless-chromium-rootless-libs/
 
-# Track some special commands
-# From https://raba.pl/resources/claude-statusline
-!statusline-command.sh
-
-# Track the machine setup script (runs settings-sync + installs evo/pi packages)
-!sync.sh
-
-# Track hooks
-!hooks/
-!hooks/**
-
-# Track pi config (shared with pi via sync pi)
-!pi/
-!pi/**
-!goose/
-!goose/**
-!gemini/
-!gemini/**
-
-# Track the Codex defaults and setup docs
-!codex/
-!codex/**
-
-# Track no-mistakes config template (machine overlay stays local)
-!no-mistakes/
-!no-mistakes/**
-no-mistakes/config.local.yaml
+# Builds, dependencies, and scratch work
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+node_modules/
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.tmp

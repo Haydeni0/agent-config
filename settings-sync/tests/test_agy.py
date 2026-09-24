@@ -3,7 +3,7 @@ import pathlib
 from typer.testing import CliRunner
 
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
-from settings_sync.cli import Paths, app, run_agy
+from settings_sync.cli import Paths, app
 from settings_sync.sync import Status
 
 
@@ -60,19 +60,12 @@ def test_sync_agy_skills_orphan_handling(tmp_path: pathlib.Path):
     # create orphan
     (target_dir / "old-skill").mkdir(parents=True)
 
-    # Without force, warn
-    outcomes = sync_agy_skills(target_dir, source_dir, force=False)
-    orphan_outcomes = [o for o in outcomes if "old-skill" in str(o.path)]
-    assert len(orphan_outcomes) == 1
-    assert orphan_outcomes[0].status == Status.WARNED
-    assert (target_dir / "old-skill").exists()
+    for force in (False, True):
+        outcomes = sync_agy_skills(target_dir, source_dir, force=force)
+        assert all(o.path.name != "old-skill" for o in outcomes)
+        assert (target_dir / "old-skill").is_dir()
+        assert (target_dir / "uv").is_symlink()
 
-    # With force, removed
-    outcomes = sync_agy_skills(target_dir, source_dir, force=True)
-    orphan_outcomes = [o for o in outcomes if "old-skill" in str(o.path)]
-    assert len(orphan_outcomes) == 1
-    assert orphan_outcomes[0].status == Status.REPLACED
-    assert not (target_dir / "old-skill").exists()
 
 
 def test_sync_agy_skills_dry_run_does_not_create_dir(tmp_path: pathlib.Path):
@@ -94,11 +87,12 @@ runner = CliRunner()
 def test_cli_agy_all(tmp_path: pathlib.Path):
     claude = tmp_path / "claude"
     claude.mkdir(parents=True)
-    (claude / "CLAUDE.md").write_text("# Rules\nSee @skills/uv.\n")
+    (claude / "rules").mkdir(parents=True, exist_ok=True)
+    (claude / "rules/global.md").write_text("# Rules\nSee @skills/uv.\n")
     (claude / "skills" / "uv").mkdir(parents=True)
     (claude / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody\n")
-    (claude / "gemini").mkdir(parents=True)
-    (claude / "gemini" / "settings.json").write_text('{"model": "gemini-3.7-flash"}\n')
+    (claude / "harnesses/gemini").mkdir(parents=True)
+    (claude / "harnesses/gemini" / "settings.json").write_text('{"model": "gemini-3.7-flash"}\n')
 
     agy_dir = tmp_path / "gemini" / "config"
     agy_cli_dir = tmp_path / "gemini" / "antigravity-cli"

@@ -11,6 +11,7 @@ dependencies = [
 
 [project.scripts]
 sync = "settings_sync.cli:main"
+agent-config = "settings_sync.cli:agent_config_main"
 
 [dependency-groups]
 dev = [

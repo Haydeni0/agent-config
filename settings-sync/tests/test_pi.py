@@ -40,13 +40,15 @@ def claude_md(tmp_path: pathlib.Path) -> pathlib.Path:
 def pi_home(tmp_path: pathlib.Path) -> pathlib.Path:
     """A full ~/.claude home with pi template, CLAUDE.md, and a skill."""
     home = tmp_path / "claude"
-    (home / "pi").mkdir(parents=True)
-    (home / "pi" / "settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"]}))
-    (home / "pi" / "keybindings.json").write_text(json.dumps({"app.tree.foldOrUp": ["alt+left"], "app.tree.unfoldOrDown": ["alt+right"]}))
-    (home / "CLAUDE.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "harnesses/pi").mkdir(parents=True)
+    (home / "harnesses/pi" / "settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"]}))
+    (home / "harnesses/pi" / "keybindings.json").write_text(json.dumps({"app.tree.foldOrUp": ["alt+left"], "app.tree.unfoldOrDown": ["alt+right"]}))
+    (home / "rules").mkdir(parents=True, exist_ok=True)
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
     (home / "skills").mkdir(parents=True)
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
+    (home / "commands").mkdir()
     return home
 
 
@@ -65,9 +67,7 @@ def test_pi_config_creates_from_template(tmp_path: pathlib.Path, pi_template: pa
     assert json.loads(target.read_text())["skills"] == ["~/.claude/skills"]
 
 
-def test_pi_config_wholesale_overwrites_diverging_without_force(tmp_path: pathlib.Path, pi_template: pathlib.Path):
-    """pi settings are fully owned by the template; pi's own keys (e.g.
-    lastChangelogVersion) are disposable and self-heal — no --force needed."""
+def test_pi_config_retains_native_state(tmp_path: pathlib.Path, pi_template: pathlib.Path):
     target = tmp_path / "agent" / "settings.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"lastChangelogVersion": "0.80.6"}))
@@ -75,8 +75,7 @@ def test_pi_config_wholesale_overwrites_diverging_without_force(tmp_path: pathli
     outcome = sync_pi_config(target, pi_template)
 
     assert outcome.status == Status.REPLACED
-    assert json.loads(target.read_text()) == {"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}
-    assert "lastChangelogVersion" not in json.loads(target.read_text())
+    assert json.loads(target.read_text()) == {"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"], "lastChangelogVersion": "0.80.6"}
 
 
 def test_pi_config_unchanged_when_identical(tmp_path: pathlib.Path, pi_template: pathlib.Path):
@@ -129,17 +128,15 @@ def test_pi_keybindings_creates_from_source(tmp_path: pathlib.Path, pi_keybindin
     assert json.loads(target.read_text())["app.tree.foldOrUp"] == ["alt+left"]
 
 
-def test_pi_keybindings_wholesale_overwrites_diverging_without_force(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
-    """keybindings.json is fully owned by the source; a hand-edited diverging
-    copy is always overwritten — no --force needed (same as settings.json)."""
+def test_pi_keybindings_preserves_local_edits(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
     target = tmp_path / "agent" / "keybindings.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"hand": "edited"}))
 
     outcome = sync_pi_keybindings(target, pi_keybindings)
 
-    assert outcome.status == Status.REPLACED
-    assert json.loads(target.read_text()) == {"app.tree.foldOrUp": ["alt+left"], "app.tree.unfoldOrDown": ["alt+right"]}
+    assert outcome.status == Status.SKIPPED
+    assert json.loads(target.read_text()) == {"hand": "edited"}
 
 
 def test_pi_keybindings_unchanged_when_identical(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):

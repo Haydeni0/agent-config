@@ -2,11 +2,12 @@
 
 import json
 import os
-import shutil
+import stat
+import tempfile
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from uuid import uuid4
 
 import yaml
 
@@ -65,49 +66,67 @@ def _resolve_link_target(link: Path) -> Path:
 def sync_symlink(target: Path, source: Path, force: bool = False, dry_run: bool = False) -> Outcome:
     """Create or repair a relative symlink at `target` pointing to `source`."""
     desired_rel = os.path.relpath(source, target.parent)
-
+    exists = target.exists() or target.is_symlink()
+    if target.is_symlink() and _resolve_link_target(target) == source.resolve():
+        return Outcome(target, Status.UNCHANGED, "already correct")
+    if target.is_dir() and not target.is_symlink():
+        return Outcome(target, Status.SKIPPED, "real directory preserved; inventory it before migrating")
     if dry_run:
-        if not target.exists() and not target.is_symlink():
-            return Outcome(target, Status.WOULD_CREATE, f"symlink -> {desired_rel}")
-        if target.is_symlink() and _resolve_link_target(target) == source.resolve():
-            return Outcome(target, Status.UNCHANGED, "already correct")
-        return Outcome(target, Status.WOULD_REPLACE, f"-> {desired_rel}")
-
-    if not target.exists() and not target.is_symlink():
+        return Outcome(target, Status.WOULD_REPLACE if exists else Status.WOULD_CREATE, f"symlink -> {desired_rel}")
+    if exists and not force:
+        return Outcome(target, Status.WARNED if target.is_symlink() else Status.SKIPPED, "existing entry differs; resolve ownership before replacing")
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}")
+    try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.symlink_to(desired_rel)
-        return Outcome(target, Status.CREATED, f"symlink -> {desired_rel}")
+        temporary.symlink_to(desired_rel)
+        temporary.replace(target)
+        return Outcome(target, Status.REPLACED if exists else Status.CREATED, f"symlink -> {desired_rel}")
+    except OSError as exc:
+        return Outcome(target, Status.FAILED, f"could not install symlink: {exc}")
+    finally:
+        temporary.unlink(missing_ok=True)
 
+
+
+def write_text_atomic(target: Path, content: str) -> None:
+    """Install a complete UTF-8 file, preserving an existing file's mode."""
     if target.is_symlink():
-        if _resolve_link_target(target) == source.resolve():
-            return Outcome(target, Status.UNCHANGED, "already correct")
-        if not force:
-            return Outcome(
-                target,
-                Status.WARNED,
-                f"symlink points elsewhere; use --force to retarget -> {desired_rel}",
-            )
-        target.unlink()
-        target.symlink_to(desired_rel)
-        return Outcome(target, Status.REPLACED, f"retargeted -> {desired_rel}")
+        raise OSError(f"refusing to replace a symlink: {target}")
+    mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o600
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent, prefix=f".{target.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+            os.fchmod(file.fileno(), mode)
+        if target.is_symlink():
+            raise OSError(f"destination became a symlink: {target}")
+        temporary.replace(target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
-    if not force:
-        return Outcome(
-            target,
-            Status.SKIPPED,
-            f"real file/dir exists at {target}; use --force to replace with symlink",
-        )
 
-    if target.is_dir():
-        shutil.rmtree(target)
-    else:
-        target.unlink()
-    target.symlink_to(desired_rel)
-    return Outcome(target, Status.REPLACED, f"replaced real entry -> {desired_rel}")
+def install_text(target: Path, content: str, existing: str | None) -> Outcome:
+    """Replace an unchanged destination, returning a failed outcome on I/O errors."""
+    try:
+        actual = target.read_text() if target.exists() else None
+        if actual != existing:
+            return Outcome(target, Status.FAILED, "destination changed during sync; retry")
+        write_text_atomic(target, content)
+    except OSError as exc:
+        return Outcome(target, Status.FAILED, f"could not install output: {exc}")
+    status = Status.CREATED if existing is None else Status.REPLACED
+    return Outcome(target, status, "new file" if existing is None else "overwrote diverging file", old_content=existing, new_content=content)
 
 
 def sync_text(target: Path, content: str, force: bool = False, dry_run: bool = False) -> Outcome:
     """Write `content` to `target`, refusing to clobber a diverging file without force."""
+    if target.is_symlink():
+        return Outcome(target, Status.FAILED, "expected a regular file; destination is a symlink")
     if dry_run:
         if not target.exists():
             return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
@@ -117,9 +136,7 @@ def sync_text(target: Path, content: str, force: bool = False, dry_run: bool = F
         return Outcome(target, Status.WOULD_REPLACE, "differs from source", old_content=existing, new_content=content)
 
     if not target.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
-        return Outcome(target, Status.CREATED, "new file", new_content=content)
+        return install_text(target, content, None)
 
     existing = target.read_text()
     if existing == content:
@@ -134,12 +151,13 @@ def sync_text(target: Path, content: str, force: bool = False, dry_run: bool = F
             new_content=content,
         )
 
-    target.write_text(content)
-    return Outcome(target, Status.REPLACED, "overwrote diverging file", old_content=existing, new_content=content)
+    return install_text(target, content, existing)
 
 
 def sync_json(target: Path, content: str, force: bool = False, dry_run: bool = False) -> Outcome:
     """Write JSON `content` to `target`, using semantic dict comparison to avoid false-positive drift."""
+    if target.is_symlink():
+        return Outcome(target, Status.FAILED, "expected a regular file; destination is a symlink")
     try:
         new_obj = json.loads(content)
     except json.JSONDecodeError as err:
@@ -148,9 +166,7 @@ def sync_json(target: Path, content: str, force: bool = False, dry_run: bool = F
     if not target.exists():
         if dry_run:
             return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
-        return Outcome(target, Status.CREATED, "new file", new_content=content)
+        return install_text(target, content, None)
 
     existing_text = target.read_text()
     try:
@@ -172,8 +188,7 @@ def sync_json(target: Path, content: str, force: bool = False, dry_run: bool = F
             new_content=content,
         )
 
-    target.write_text(content)
-    return Outcome(target, Status.REPLACED, "overwrote diverging file", old_content=existing_text, new_content=content)
+    return install_text(target, content, existing_text)
 
 
 def sync_yaml(target: Path, content: str, force: bool = False, dry_run: bool = False) -> Outcome:
@@ -184,6 +199,8 @@ def sync_yaml(target: Path, content: str, force: bool = False, dry_run: bool = F
     any real value difference (including an unparseable existing target,
     which counts as diverging) needs `force` to overwrite.
     """
+    if target.is_symlink():
+        return Outcome(target, Status.FAILED, "expected a regular file; destination is a symlink")
     try:
         new_obj = yaml.safe_load(content)
     except yaml.YAMLError as err:
@@ -192,9 +209,7 @@ def sync_yaml(target: Path, content: str, force: bool = False, dry_run: bool = F
     if not target.exists():
         if dry_run:
             return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
-        return Outcome(target, Status.CREATED, "new file", new_content=content)
+        return install_text(target, content, None)
 
     existing_text = target.read_text()
     try:
@@ -216,8 +231,7 @@ def sync_yaml(target: Path, content: str, force: bool = False, dry_run: bool = F
             new_content=content,
         )
 
-    target.write_text(content)
-    return Outcome(target, Status.REPLACED, "overwrote diverging file", old_content=existing_text, new_content=content)
+    return install_text(target, content, existing_text)
 
 
 def sync_dir_symlinks(
@@ -227,6 +241,8 @@ def sync_dir_symlinks(
     dry_run: bool = False,
 ) -> list[Outcome]:
     """Symlink each directory in source_dir into target_dir and handle orphans."""
+    from settings_sync.ownership import prune_generated, sync_generated_symlink
+
     if not source_dir.is_dir():
         return [Outcome(target_dir, Status.NO_SOURCE, f"source dir not found: {source_dir}")]
 
@@ -240,23 +256,9 @@ def sync_dir_symlinks(
             continue
         source_names.add(source_sub.name)
         target_sub = target_dir / source_sub.name
-        outcomes.append(sync_symlink(target_sub, source_sub, force=force, dry_run=dry_run))
+        outcomes.append(sync_generated_symlink(target_sub, source_sub, force=force, dry_run=dry_run))
 
-    if target_dir.is_dir():
-        for target_sub in sorted(target_dir.iterdir(), key=lambda p: p.name):
-            if target_sub.name not in source_names:
-                if dry_run:
-                    outcomes.append(Outcome(target_sub, Status.WOULD_REPLACE, "orphan (would delete)"))
-                    continue
-                if not force:
-                    outcomes.append(Outcome(target_sub, Status.WARNED, "orphan; use --force to remove"))
-                    continue
-                if target_sub.is_dir() and not target_sub.is_symlink():
-                    shutil.rmtree(target_sub)
-                else:
-                    target_sub.unlink()
-                outcomes.append(Outcome(target_sub, Status.REPLACED, "deleted orphan"))
-
+    outcomes.extend(prune_generated(target_dir, source_names, dry_run))
     return outcomes
 
 
@@ -267,9 +269,12 @@ def sync_dir_files(
     force: bool = False,
     dry_run: bool = False,
     transform: Callable[[Path], tuple[str, list[str]]] | None = None,
-    sync_fn: Callable[[Path, str, bool, bool], Outcome] = sync_text,
+    sync_fn: Callable[[Path, str, bool, bool], Outcome] | None = None,
 ) -> list[Outcome]:
     """Sync files matching pattern from source_dir to target_dir with orphan cleanup."""
+    from settings_sync.ownership import prune_generated, sync_generated_file
+
+    sync_fn = sync_fn or sync_generated_file
     outcomes: list[Outcome] = []
     if not source_dir.is_dir():
         return [Outcome(target_dir, Status.NO_SOURCE, f"source dir not found: {source_dir}")]
@@ -294,16 +299,5 @@ def sync_dir_files(
 
         outcomes.append(sync_fn(target_file, content, force=force, dry_run=dry_run))
 
-    if target_dir.is_dir():
-        for target_file in sorted(target_dir.glob(pattern), key=lambda p: p.name):
-            if target_file.name not in source_names:
-                if dry_run:
-                    outcomes.append(Outcome(target_file, Status.WOULD_REPLACE, "orphan (would delete)"))
-                    continue
-                if not force:
-                    outcomes.append(Outcome(target_file, Status.WARNED, "orphan not in source; use --force to remove"))
-                    continue
-                target_file.unlink()
-                outcomes.append(Outcome(target_file, Status.REPLACED, "deleted orphan"))
-
+    outcomes.extend(prune_generated(target_dir, source_names, dry_run))
     return outcomes

@@ -1,0 +1,10 @@
+{
+  "model": "Gemini 3.7 Flash (High)",
+  "agentMode": "accept-edits",
+  "toolPermission": "always-proceed",
+  "artifactReview": "always-proceed",
+  "colorScheme": "dark",
+  "enableTelemetry": false,
+  "showTips": false,
+  "showFeedbackSurvey": false
+}

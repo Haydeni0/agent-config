@@ -57,7 +57,7 @@ def test_skill_stub_includes_arguments_placeholder(tmp_path: pathlib.Path):
     assert "$ARGUMENTS" in (target / "grill-me.md").read_text()
 
 
-def test_orphan_deleted_with_force(tmp_path: pathlib.Path):
+def test_unknown_file_preserved_with_force(tmp_path: pathlib.Path):
     source = tmp_path / "claude" / "commands"
     source.mkdir(parents=True)
     skills = tmp_path / "claude" / "skills"
@@ -67,15 +67,18 @@ def test_orphan_deleted_with_force(tmp_path: pathlib.Path):
 
     outcomes = sync_commands(target, source, skills, force=True)
 
-    assert not (target / "stale.md").exists()
+    assert (target / "stale.md").read_text() == "old"
 
 
-def test_orphan_warned_without_force(tmp_path: pathlib.Path):
+def test_modified_managed_orphan_preserved(tmp_path: pathlib.Path):
     source = tmp_path / "claude" / "commands"
     source.mkdir(parents=True)
     skills = tmp_path / "claude" / "skills"
     target = tmp_path / "config" / "opencode" / "commands"
     target.mkdir(parents=True)
+    (source / "stale.md").write_text("shared")
+    sync_commands(target, source, skills)
+    (source / "stale.md").unlink()
     (target / "stale.md").write_text("old")
 
     outcomes = sync_commands(target, source, skills)

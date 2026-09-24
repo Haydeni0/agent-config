@@ -18,6 +18,8 @@ def validate_skills(skills_dir: Path) -> list[Outcome]:
             continue
         name = skill_dir.name
         skill_md = skill_dir / "SKILL.md"
+        if not skill_md.is_file() and any(skill_dir.rglob("SKILL.md")):
+            continue
         if not skill_md.is_file():
             outcomes.append(Outcome(skill_dir, Status.WARNED, f"{name}: missing SKILL.md, opencode will skip"))
             continue

@@ -17,7 +17,7 @@ mode: the skill is idempotent (maintains, never reinstalls).
 | `AGENTS.md` | Always | Shape from template, substance from repo |
 | `CLAUDE.md` | Always | One line: `@AGENTS.md` |
 | `MEMORY.md` | Always | Seeded with the template's single example entry |
-| `.claude/backlog.md` | Always | One convention, no overhead |
+| `.agents/backlog.md` | Always | One convention, no overhead |
 | `CONTRIBUTING.md` | Never | Manual reference only - create by hand if the repo's contribution model needs it |
 | `README.md` | Never | The kit's own doc (tool-support matrix, what-goes-where, sources) - read it if the user asks why the kit is shaped this way |
 
@@ -51,7 +51,7 @@ same findings as file-derived.
 Gather, in roughly this order:
 
 - **Existing files**: AGENTS.md / CLAUDE.md / README / MEMORY.md /
-  `.claude/` present? (drives create-vs-merge and the fold question)
+  `.agents/` or legacy `.claude/` present? (drives create-vs-merge and the fold question)
 - **Command surface**: Taskfile / Makefile / justfile / package.json
   scripts / pyproject / Cargo.toml / scripts dir - what exists, what
   the runner is
@@ -129,10 +129,10 @@ correct in passing if wrong, don't ask):
 - Land: AGENTS.md (from the template), CLAUDE.md (copy this skill's
   `CLAUDE.md` verbatim - it is exactly the import line), MEMORY.md
   (copy this skill's `MEMORY.md` template verbatim: frontmatter +
-  example entry), `.claude/backlog.md` (create per the backlog
+  example entry), `.agents/backlog.md` (create per the backlog
   skill's template if that skill is available; otherwise a `# Backlog`
-  header with an `## Open` section) - repo root and `.claude/` only.
-  Never touch `.claude/settings.json`, never scaffold `.claude/plans/`.
+  header with an `## Open` section) - repo root and `.agents/` only.
+  Never touch `.claude/settings.json`, never scaffold `.agents/plans/`.
 - Workflow docs (requirements / decisions / questions / progress) are
   NOT provisioned - they emerge from workflows (dev-cycle writes its
   own artifacts; a QUESTIONS.md appears the first time something
@@ -176,3 +176,7 @@ to the files themselves:
 
 Never widen scope in audit mode - no new sections beyond what the
 repo earned, no workflow docs, no settings.json.
+
+## Existing project documents
+
+Use the global legacy-document rule before creating or resuming plans/backlogs: canonical `.agents` when present, legacy `.claude` when it is the only copy, reconcile both before resuming, editing, or migrating. Preserve IDs and checkbox progress.

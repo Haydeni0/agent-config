@@ -63,7 +63,7 @@ def test_sync_symlink_retarget_with_force(tmp_path: pathlib.Path):
     assert target.resolve() == source2.resolve()
 
 
-def test_sync_symlink_replaces_real_file_or_dir_with_force(tmp_path: pathlib.Path):
+def test_sync_symlink_replaces_file_but_preserves_directory(tmp_path: pathlib.Path):
     source = tmp_path / "source"
     source.mkdir()
 
@@ -83,8 +83,8 @@ def test_sync_symlink_replaces_real_file_or_dir_with_force(tmp_path: pathlib.Pat
     dir_target.mkdir()
     (dir_target / "nested.txt").write_text("nested")
     outcome_dir_force = sync_symlink(dir_target, source, force=True)
-    assert outcome_dir_force.status == Status.REPLACED
-    assert dir_target.is_symlink()
+    assert outcome_dir_force.status == Status.SKIPPED
+    assert (dir_target / "nested.txt").read_text() == "nested"
 
 
 def test_sync_symlink_dry_run(tmp_path: pathlib.Path):
@@ -218,16 +218,14 @@ def test_sync_dir_symlinks_creates_and_cleans_orphans(tmp_path: pathlib.Path):
     target_dir.mkdir(parents=True)
     (target_dir / "orphan-skill").mkdir(parents=True)
 
-    # Without force -> warn on orphan
-    outcomes = sync_dir_symlinks(target_dir, source_dir, force=False)
-    assert any(o.status == Status.WARNED and "orphan-skill" in str(o.path) for o in outcomes)
-    assert (target_dir / "skill-a").is_symlink()
-    assert (target_dir / "orphan-skill").exists()
-
-    # With force -> orphan removed
+    sync_dir_symlinks(target_dir, source_dir)
+    (source_dir / "skill-a").rmdir()
     outcomes = sync_dir_symlinks(target_dir, source_dir, force=True)
-    assert any(o.status == Status.REPLACED and "orphan-skill" in str(o.path) for o in outcomes)
-    assert not (target_dir / "orphan-skill").exists()
+    assert (target_dir / "orphan-skill").is_dir()
+    assert not (target_dir / "skill-a").is_symlink()
+    assert (target_dir / "skill-b").is_symlink()
+    assert any(o.path.name == "skill-a" and o.status == Status.REPLACED for o in outcomes)
+
 
 
 def test_sync_dir_files_with_orphans(tmp_path: pathlib.Path):
@@ -239,13 +237,9 @@ def test_sync_dir_files_with_orphans(tmp_path: pathlib.Path):
     target_dir.mkdir(parents=True)
     (target_dir / "orphan.json").write_text('{"name": "orphan"}')
 
-    # Without force -> warn on orphan
-    outcomes = sync_dir_files(target_dir, source_dir, pattern="*.json", force=False, sync_fn=sync_json)
-    assert any(o.status == Status.WARNED and "orphan.json" in str(o.path) for o in outcomes)
-    assert (target_dir / "provider-a.json").is_file()
-
-    # With force -> orphan deleted
-    outcomes = sync_dir_files(target_dir, source_dir, pattern="*.json", force=True, sync_fn=sync_json)
-    assert any(o.status == Status.REPLACED and "orphan.json" in str(o.path) for o in outcomes)
-    assert not (target_dir / "orphan.json").exists()
-
+    sync_dir_files(target_dir, source_dir, pattern="*.json")
+    (source_dir / "provider-a.json").unlink()
+    outcomes = sync_dir_files(target_dir, source_dir, pattern="*.json", force=True)
+    assert (target_dir / "orphan.json").read_text() == '{"name": "orphan"}'
+    assert not (target_dir / "provider-a.json").exists()
+    assert any(o.path.name == "provider-a.json" and o.status == Status.REPLACED for o in outcomes)

@@ -32,9 +32,10 @@ def claude_md(tmp_path: pathlib.Path) -> pathlib.Path:
 def codex_home(tmp_path: pathlib.Path) -> pathlib.Path:
     """A full ~/.claude home with codex template, CLAUDE.md, and a skill."""
     home = tmp_path / "claude"
-    (home / "codex").mkdir(parents=True)
-    (home / "codex" / "config.toml").write_text(CONFIG_TEMPLATE)
-    (home / "CLAUDE.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "harnesses/codex").mkdir(parents=True)
+    (home / "harnesses/codex" / "config.toml").write_text(CONFIG_TEMPLATE)
+    (home / "rules").mkdir(parents=True, exist_ok=True)
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
     (home / "skills").mkdir(parents=True)
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")

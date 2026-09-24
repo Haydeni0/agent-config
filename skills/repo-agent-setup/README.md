@@ -14,7 +14,7 @@ and published vendor + community guidance (sources at the bottom).
 | `AGENTS.md` | Always | The single source of truth for agent instructions. Opener, commands, doc map, autonomy tiers, working rules, maintenance rules |
 | `CLAUDE.md` | Always | One line: `@AGENTS.md`. Claude Code reads CLAUDE.md, not AGENTS.md - the import loads the same content with no drift |
 | `MEMORY.md` | Always | Append-only lessons-learned: verified facts, evidence, commit refs. Seeded with the template's example entry |
-| `.claude/backlog.md` | Always | Deferred work items, surfaced at session start |
+| `.agents/backlog.md` | Always | Deferred work items, surfaced at session start |
 | `CONTRIBUTING.md` | Never | Manual reference for contribution-as-prompt - create by hand if a repo's contribution model needs it |
 | `Safety section` | Never | Hand-add from the AGENTS.md template when a repo's danger warrants detection-command machinery; simple danger rules go in Working rules |
 
@@ -47,7 +47,7 @@ duplicate files to drift.
   log with a prune rule; promote stabilized learnings into AGENTS.md.
 - **README.md**: humans only - install, usage, what the project is.
   Never the agent rules (agents don't reliably read READMEs).
-- **`.claude/backlog.md`**: deferred work items, surfaced at session
+- **`.agents/backlog.md`**: deferred work items, surfaced at session
   start. Not agent rules.
 - **`.claude/skills/<name>/SKILL.md`**: multi-step procedures, loaded
   on demand. When a section of AGENTS.md grows into a procedure
@@ -58,7 +58,7 @@ duplicate files to drift.
 - **Workflow docs (requirements / decisions / questions / progress)
   are not provisioned** - they emerge from the workflows a repo
   actually runs. The Documents map records what exists; the queue
-  target is always `.claude/backlog.md`.
+  target is always `.agents/backlog.md`.
 
 ## Things this template deliberately does not do
 

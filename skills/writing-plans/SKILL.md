@@ -1,7 +1,7 @@
 ---
 name: writing-plans
 description: >
-  Use when the user asks for an implementation plan for a multi-step task - typically after write-spec produced an approved spec. Produces a checkbox-tracked plan file (`.claude/plans/YYYY-MM-DD-<feature>-plan.md`) with exact file changes and verification steps. Not auto-triggered: never invoke unless the user asks for a plan or an approved spec calls for one.
+  Use when the user asks for an implementation plan for a multi-step task - typically after write-spec produced an approved spec. Produces a checkbox-tracked plan file (`.agents/plans/YYYY-MM-DD-<feature>-plan.md`) with exact file changes and verification steps. Not auto-triggered: never invoke unless the user asks for a plan or an approved spec calls for one.
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-plans)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
@@ -25,7 +25,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Context:** If working in an isolated worktree, it should have been created via a git worktree at execution time (create manually if isolation is wanted).
 
-**Save plans to:** `.claude/plans/YYYY-MM-DD-<feature-name>-plan.md` (specs go alongside as `<date>-<topic>-spec.md`)
+**Save plans to:** `.agents/plans/YYYY-MM-DD-<feature-name>-plan.md` (specs go alongside as `<date>-<topic>-spec.md`)
 - (User preferences for plan location override this default)
 
 ## Scope Check
@@ -164,7 +164,7 @@ If you find issues, fix them inline. No need to re-review — just fix and move 
 
 After saving the plan, offer execution choice:
 
-**"Plan complete and saved to `.claude/plans/<filename>.md`. Two execution options:**
+**"Plan complete and saved to `.agents/plans/<filename>.md`. Two execution options:**
 
 **1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
 
@@ -179,3 +179,7 @@ After saving the plan, offer execution choice:
 **If Inline Execution chosen:**
 - **REQUIRED SUB-SKILL:** Use executing-plans
 - Batch execution with checkpoints for review
+
+## Existing project documents
+
+Use the global legacy-document rule before creating or resuming plans/backlogs: canonical `.agents` when present, legacy `.claude` when it is the only copy, reconcile both before resuming, editing, or migrating. Preserve IDs and checkbox progress.

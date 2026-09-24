@@ -1,3 +1,4 @@
+from pathlib import Path
 import copy
 import pathlib
 
@@ -224,13 +225,15 @@ def test_sync_yaml_bare_no_scalar_quoted_round_trips_as_string(tmp_path):
 # ---- CLI ----
 
 
-def test_cli_no_mistakes_end_to_end(tmp_path):
+def test_cli_no_mistakes_end_to_end(tmp_path: Path, isolated_home: Path):
     claude = tmp_path / "claude"
     nm_dir = tmp_path / "no-mistakes"
-    source = claude / "no-mistakes" / "config.yaml"
-    source.parent.mkdir(parents=True)
+    source = claude / "harnesses/no-mistakes" / "config.yaml"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("agent: claude\n")
-    (claude / "no-mistakes" / "config.local.yaml").write_text("agent_path_override:\n  claude: /usr/local/bin/local-claude\n")
+    overlay = isolated_home / ".config/agent-config/overlays/no-mistakes.yaml"
+    overlay.parent.mkdir(parents=True)
+    overlay.write_text("agent_path_override:\n  claude: /usr/local/bin/local-claude\n")
 
     runner = CliRunner()
     result = runner.invoke(
@@ -251,13 +254,14 @@ def test_cli_no_mistakes_end_to_end(tmp_path):
     assert "local-claude" in text
 
 
-def test_cli_bare_sync_includes_nomistakes(tmp_path):
-    claude = tmp_path / "claude"
+def test_cli_bare_sync_includes_nomistakes(tmp_path: Path, source_home: Path):
+    claude = source_home
     nm_dir = tmp_path / "no-mistakes"
-    source = claude / "no-mistakes" / "config.yaml"
-    source.parent.mkdir(parents=True)
+    source = claude / "harnesses/no-mistakes" / "config.yaml"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("agent: claude\n")
-    (claude / "CLAUDE.md").write_text("# rules\n")
+    (claude / "rules").mkdir(parents=True, exist_ok=True)
+    (claude / "rules/global.md").write_text("# rules\n")
 
     runner = CliRunner()
     result = runner.invoke(
@@ -280,8 +284,8 @@ def test_cli_bare_sync_includes_nomistakes(tmp_path):
 def test_cli_check_reports_drift_nonzero(tmp_path):
     claude = tmp_path / "claude"
     nm_dir = tmp_path / "no-mistakes"
-    source = claude / "no-mistakes" / "config.yaml"
-    source.parent.mkdir(parents=True)
+    source = claude / "harnesses/no-mistakes" / "config.yaml"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("agent: claude\n")
     nm_dir.mkdir()
     (nm_dir / "config.yaml").write_text("hand: edit\n")

@@ -4,7 +4,8 @@ import json
 import re
 from pathlib import Path
 
-from settings_sync.sync import Outcome, Status, sync_json
+from settings_sync.sync import Outcome, Status
+from settings_sync.merging import merge_defaults, sync_json_defaults
 
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"
 TUI_SCHEMA = "https://opencode.ai/tui.json"
@@ -45,46 +46,46 @@ def _strip_jsonc(text: str) -> str:
     return _TRAILING_COMMA.sub(r"\1", stripped)
 
 
-def _merge_legacy_jsonc(target: Path, config: dict) -> bool:
-    jsonc = target.with_suffix(".jsonc")
-    if not jsonc.is_file():
-        return True
-    try:
-        legacy = json.loads(_strip_jsonc(jsonc.read_text()))
-    except json.JSONDecodeError:
-        return False
-    for key, value in legacy.items():
-        if key == "$schema":
-            continue
-        config[key] = value
-    jsonc.unlink()
-    return True
-
-
 def build_config(base_path: Path) -> dict:
     if base_path.is_file():
         config = json.loads(base_path.read_text())
     else:
         config = {}
+    if not isinstance(config, dict):
+        raise ValueError("configuration must be a JSON object")
     config.setdefault("$schema", OPENCODE_SCHEMA)
     return config
 
 
 def sync_config(target: Path, base_path: Path, force: bool = False, dry_run: bool = False) -> Outcome:
+    legacy_path = target.with_suffix(".jsonc")
     try:
         config = build_config(base_path)
-    except json.JSONDecodeError as err:
-        return Outcome(target, Status.FAILED, f"invalid JSON in {base_path}: {err}")
-
-    if not dry_run:
-        if not _merge_legacy_jsonc(target, config):
-            return Outcome(
-                target,
-                Status.WARNED,
-                f"could not parse existing {target.with_suffix('.jsonc')}; fix or remove it manually",
-            )
+        if legacy_path.is_symlink() or legacy_path.exists() and not legacy_path.is_file():
+            return Outcome(target, Status.FAILED, f"legacy entry is not a regular file; preserve and resolve {legacy_path}")
+        legacy_text = legacy_path.read_text() if legacy_path.is_file() else None
+        if legacy_text is not None:
+            legacy = json.loads(_strip_jsonc(legacy_text))
+            installed = json.loads(target.read_text()) if target.exists() else {}
+            if not isinstance(legacy, dict) or not isinstance(installed, dict):
+                raise ValueError("legacy and installed JSON must be objects")
+            conflicts = [key for key in legacy if key != "$schema" and key in installed and legacy[key] != installed[key]]
+            if conflicts and not force:
+                return Outcome(target, Status.SKIPPED, f"legacy config conflicts on {', '.join(conflicts)}; reconcile or use --force")
+            merge_defaults(legacy, config)
+            config = legacy
+    except (OSError, ValueError) as err:
+        return Outcome(target, Status.FAILED, f"could not prepare configuration: {err}")
     content = json.dumps(config, indent=2) + "\n"
-    return sync_json(target, content, force=force, dry_run=dry_run)
+    outcome = sync_json_defaults(target, content, dry_run=dry_run)
+    if legacy_text is not None and not dry_run and outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
+        try:
+            if legacy_path.is_symlink() or legacy_path.read_text() != legacy_text:
+                return Outcome(target, Status.FAILED, "legacy file changed during sync; preserved, retry after reconciling")
+            legacy_path.unlink()
+        except OSError as exc:
+            return Outcome(target, Status.FAILED, f"output installed but legacy cleanup failed: {exc}")
+    return outcome
 
 
 def build_tui(base_path: Path) -> dict:
@@ -102,4 +103,4 @@ def sync_tui(target: Path, base_path: Path, force: bool = False, dry_run: bool =
     except json.JSONDecodeError as err:
         return Outcome(target, Status.FAILED, f"invalid JSON in {base_path}: {err}")
     content = json.dumps(config, indent=2) + "\n"
-    return sync_json(target, content, force=force, dry_run=dry_run)
+    return sync_json_defaults(target, content, dry_run=dry_run)

@@ -1,207 +1,17 @@
-"""CLI entrypoint: sync ~/.claude config into opencode, pi, goose, agy, codex, and no-mistakes.
-
-~/.claude is the single source of truth. `sync opencode` derives config
-into ~/.config/opencode; `sync pi` writes pointers + inlined context
-into ~/.pi/agent; `sync goose` writes hints + config + providers into
-~/.config/goose; `sync agy` writes rules + skills into ~/.gemini/config;
-`sync codex` merges shared config.toml defaults + writes AGENTS.md into ~/.codex;
-`sync no-mistakes` merges the config template + machine overlay into
-~/.no-mistakes/config.yaml. Bare `sync` (or `sync all`) runs all six.
-"""
+"""Deploy shared sources into native harness homes; inspect drift and bootstrap dependencies."""
 
 import difflib
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import typer
 
-from settings_sync.agents import sync_agents_dir
-from settings_sync.agents_md import sync_agents_md
-from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
-from settings_sync.commands import sync_commands
-from settings_sync.codex import sync_codex_agents_md, sync_codex_config
-from settings_sync.config import sync_config, sync_tui
-from settings_sync.goose import sync_goose_config, sync_goose_hints, sync_goose_providers
-from settings_sync.nomistakes import sync_nomistakes_config
-from settings_sync.pi import sync_pi_config, sync_pi_context, sync_pi_keybindings
-from settings_sync.plugins import sync_superpowers
+from settings_sync.paths import Paths, resolve_paths
+from settings_sync.registry import HARNESSES, Harness, run_all_tools, run_harness, run_opencode, select_harnesses
 from settings_sync.skills import validate_skills
 from settings_sync.sync import Outcome, Status
 
 app = typer.Typer(add_completion=False, no_args_is_help=False)
-opencode_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync opencode config.")
-pi_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync pi config.")
-goose_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync goose config.")
-agy_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync agy config.")
-nomistakes_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync no-mistakes config.")
-codex_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync codex config.")
-
-OPENCODE_STEPS = ("config", "tui", "agents-md", "agents", "commands", "plugins")
-PI_STEPS = ("config", "context", "keybindings")
-GOOSE_STEPS = ("hints", "config", "providers")
-AGY_STEPS = ("settings", "agents-md", "skills")
-NOMISTAKES_STEPS = ("config",)
-CODEX_STEPS = ("config", "agents-md")
-
-
-@dataclass(slots=True, frozen=True)
-class Paths:
-    claude_dir: Path
-    opencode_dir: Path
-    pi_dir: Path | None = None
-    goose_dir: Path | None = None
-    agy_dir: Path | None = None
-    agy_cli_dir: Path | None = None
-    nomistakes_dir: Path | None = None
-    codex_dir: Path | None = None
-
-
-def run_opencode_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    if name == "config":
-        return [sync_config(paths.opencode_dir / "opencode.json", paths.claude_dir / "opencode" / "opencode.json", force, dry_run)]
-    if name == "tui":
-        return [sync_tui(paths.opencode_dir / "tui.json", paths.claude_dir / "opencode" / "tui.json", force, dry_run)]
-    if name == "agents-md":
-        return [sync_agents_md(paths.opencode_dir / "AGENTS.md", paths.claude_dir / "CLAUDE.md", force, dry_run, rules_path=paths.claude_dir / "opencode" / "rules.md")]
-    if name == "agents":
-        return sync_agents_dir(paths.opencode_dir / "agents", paths.claude_dir / "agents", force, dry_run)
-    if name == "commands":
-        return sync_commands(
-            paths.opencode_dir / "commands",
-            paths.claude_dir / "commands",
-            paths.claude_dir / "skills",
-            force,
-            dry_run,
-        )
-    if name == "plugins":
-        cache = paths.claude_dir / "plugins" / "cache"
-        return [sync_superpowers(paths.opencode_dir / "plugins" / "superpowers.js", cache, force, dry_run)]
-    raise ValueError(f"unknown opencode step: {name}")
-
-
-def run_pi_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    if paths.pi_dir is None:
-        raise ValueError("pi_dir is required for pi steps")
-    if name == "config":
-        return [sync_pi_config(paths.pi_dir / "settings.json", paths.claude_dir / "pi" / "settings.json", dry_run)]
-    if name == "context":
-        return [sync_pi_context(paths.pi_dir / "CLAUDE.md", paths.claude_dir / "CLAUDE.md", force, dry_run)]
-    if name == "keybindings":
-        return [sync_pi_keybindings(paths.pi_dir / "keybindings.json", paths.claude_dir / "pi" / "keybindings.json", dry_run)]
-    raise ValueError(f"unknown pi step: {name}")
-
-
-def run_goose_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    if paths.goose_dir is None:
-        raise ValueError("goose_dir is required for goose steps")
-    if name == "hints":
-        return [sync_goose_hints(paths.goose_dir / ".goosehints", paths.claude_dir / "CLAUDE.md", force, dry_run)]
-    if name == "config":
-        return [sync_goose_config(paths.goose_dir / "config.yaml", paths.claude_dir / "goose" / "config.yaml", force, dry_run)]
-    if name == "providers":
-        return sync_goose_providers(paths.goose_dir / "custom_providers", paths.claude_dir / "goose" / "custom_providers", force, dry_run)
-    raise ValueError(f"unknown goose step: {name}")
-
-
-def run_nomistakes_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    if paths.nomistakes_dir is None:
-        raise ValueError("nomistakes_dir is required for no-mistakes steps")
-    if name == "config":
-        return [sync_nomistakes_config(paths.nomistakes_dir / "config.yaml", paths.claude_dir / "no-mistakes" / "config.yaml", paths.claude_dir / "no-mistakes" / "config.local.yaml", dry_run)]
-    raise ValueError(f"unknown no-mistakes step: {name}")
-
-
-def run_nomistakes(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = NOMISTAKES_STEPS) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in steps:
-        sync_outcomes.extend(run_nomistakes_step(step, paths, force, dry_run))
-    skills_outcomes = validate_skills(paths.claude_dir / "skills")
-    return sync_outcomes, skills_outcomes
-
-
-def run_agy_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    if paths.agy_dir is None:
-        raise ValueError("agy_dir is required for agy steps")
-    if name == "settings":
-        target = (paths.agy_cli_dir / "settings.json") if paths.agy_cli_dir else (paths.agy_dir / "settings.json")
-        return [sync_agy_settings(target, paths.claude_dir / "gemini" / "settings.json", force, dry_run)]
-    if name == "agents-md":
-        return [sync_agy_agents_md(paths.agy_dir / "AGENTS.md", paths.claude_dir / "CLAUDE.md", force, dry_run)]
-    if name == "skills":
-        return sync_agy_skills(paths.agy_dir / "skills", paths.claude_dir / "skills", force, dry_run)
-    raise ValueError(f"unknown agy step: {name}")
-
-
-def run_codex_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    if paths.codex_dir is None:
-        raise ValueError("codex_dir is required for codex steps")
-    if name == "config":
-        return [sync_codex_config(paths.codex_dir / "config.toml", paths.claude_dir / "codex" / "config.toml", dry_run=dry_run)]
-    if name == "agents-md":
-        return [sync_codex_agents_md(paths.codex_dir / "AGENTS.md", paths.claude_dir / "CLAUDE.md", force, dry_run)]
-    raise ValueError(f"unknown codex step: {name}")
-
-
-def run_opencode(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = OPENCODE_STEPS) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in steps:
-        sync_outcomes.extend(run_opencode_step(step, paths, force, dry_run))
-    skills_outcomes = validate_skills(paths.claude_dir / "skills")
-    return sync_outcomes, skills_outcomes
-
-
-def run_pi(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = PI_STEPS) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in steps:
-        sync_outcomes.extend(run_pi_step(step, paths, force, dry_run))
-    skills_outcomes = validate_skills(paths.claude_dir / "skills")
-    return sync_outcomes, skills_outcomes
-
-
-def run_goose(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = GOOSE_STEPS) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in steps:
-        sync_outcomes.extend(run_goose_step(step, paths, force, dry_run))
-    skills_outcomes = validate_skills(paths.claude_dir / "skills")
-    return sync_outcomes, skills_outcomes
-
-
-def run_agy(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = AGY_STEPS) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in steps:
-        sync_outcomes.extend(run_agy_step(step, paths, force, dry_run))
-    skills_outcomes = validate_skills(paths.claude_dir / "skills")
-    return sync_outcomes, skills_outcomes
-
-
-def run_codex(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = CODEX_STEPS) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in steps:
-        sync_outcomes.extend(run_codex_step(step, paths, force, dry_run))
-    return sync_outcomes, []
-
-
-def run_all_tools(paths: Paths, force: bool, dry_run: bool) -> tuple[list[Outcome], list[Outcome]]:
-    sync_outcomes: list[Outcome] = []
-    for step in OPENCODE_STEPS:
-        sync_outcomes.extend(run_opencode_step(step, paths, force, dry_run))
-    for step in PI_STEPS:
-        sync_outcomes.extend(run_pi_step(step, paths, force, dry_run))
-    if paths.goose_dir is not None:
-        for step in GOOSE_STEPS:
-            sync_outcomes.extend(run_goose_step(step, paths, force, dry_run))
-    if paths.agy_dir is not None:
-        for step in AGY_STEPS:
-            sync_outcomes.extend(run_agy_step(step, paths, force, dry_run))
-    if paths.nomistakes_dir is not None:
-        for step in NOMISTAKES_STEPS:
-            sync_outcomes.extend(run_nomistakes_step(step, paths, force, dry_run))
-    if paths.codex_dir is not None:
-        for step in CODEX_STEPS:
-            sync_outcomes.extend(run_codex_step(step, paths, force, dry_run))
-    skills_outcomes = validate_skills(paths.claude_dir / "skills")
-    return sync_outcomes, skills_outcomes
 
 
 _FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE, Status.WOULD_SKIP}
@@ -215,7 +25,7 @@ def _run_skills(ctx: typer.Context) -> int:
     """Run validate_skills and report. One exit-code policy for all skills invocations."""
     paths = _ctx_paths(ctx)
     _, _, _, verbose = _ctx_flags(ctx)
-    outcomes = validate_skills(paths.claude_dir / "skills")
+    outcomes = validate_skills(paths.source_dir / "skills")
     report([], outcomes, verbose=True)
     return 1 if any(o.status == Status.WARNED for o in outcomes) else 0
 
@@ -265,8 +75,8 @@ def _run_steps(ctx: typer.Context, tool: str, steps: tuple[str, ...]) -> int:
     paths = _ctx_paths(ctx)
     force, dry_run, check, verbose = _ctx_flags(ctx)
     effective_dry = dry_run or check
-    runner = {"opencode": run_opencode, "pi": run_pi, "goose": run_goose, "agy": run_agy, "nomistakes": run_nomistakes, "codex": run_codex}[tool]
-    sync_outcomes, skills_outcomes = runner(paths, force, effective_dry, steps)
+    sync_outcomes = run_harness(select_harnesses(tool)[0], paths, force, effective_dry, steps)
+    skills_outcomes: list[Outcome] = []
     report(sync_outcomes, skills_outcomes, verbose)
     return exit_code(sync_outcomes) or (1 if any(o.status == Status.WARNED for o in skills_outcomes) else 0)
 
@@ -287,19 +97,24 @@ def callback(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
     check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-    claude_dir: Path = typer.Option(Path.home() / ".claude", "--claude-dir", help="Source ~/.claude directory."),
-    opencode_dir: Path = typer.Option(Path.home() / ".config" / "opencode", "--opencode-dir", help="Target ~/.config/opencode directory."),
-    pi_dir: Path = typer.Option(Path.home() / ".pi" / "agent", "--pi-dir", help="Target ~/.pi/agent directory."),
-    goose_dir: Path = typer.Option(Path.home() / ".config" / "goose", "--goose-dir", help="Target ~/.config/goose directory."),
-    agy_dir: Path = typer.Option(Path.home() / ".gemini" / "config", "--agy-dir", help="Target ~/.gemini/config directory."),
-    agy_cli_dir: Path = typer.Option(Path.home() / ".gemini" / "antigravity-cli", "--agy-cli-dir", help="Target ~/.gemini/antigravity-cli directory."),
-    nomistakes_dir: Path = typer.Option(Path.home() / ".no-mistakes", "--nomistakes-dir", help="Target ~/.no-mistakes directory."),
-    codex_dir: Path = typer.Option(Path.home() / ".codex", "--codex-dir", help="Target ~/.codex directory."),
+    claude_dir: Path | None = typer.Option(None, "--source", "--claude-dir", help="Shared configuration source directory."),
+    opencode_dir: Path | None = typer.Option(None, "--opencode-dir", help="Target opencode directory."),
+    pi_dir: Path | None = typer.Option(None, "--pi-dir", help="Target ~/.pi/agent directory."),
+    goose_dir: Path | None = typer.Option(None, "--goose-dir", help="Target goose directory."),
+    agy_dir: Path | None = typer.Option(None, "--agy-dir", help="Target ~/.gemini/config directory."),
+    agy_cli_dir: Path | None = typer.Option(None, "--agy-cli-dir", help="Target ~/.gemini/antigravity-cli directory."),
+    nomistakes_dir: Path | None = typer.Option(None, "--nomistakes-dir", help="Target ~/.no-mistakes directory."),
+    codex_dir: Path | None = typer.Option(None, "--codex-dir", help="Target CODEX_HOME directory."),
+    claude_home: Path | None = typer.Option(None, "--claude-home", help="Claude runtime destination."),
 ) -> None:
-    """Sync ~/.claude config into opencode, pi, goose, agy, codex, and no-mistakes. ~/.claude is the source of truth."""
-    ctx.obj = {"paths": Paths(claude_dir=claude_dir, opencode_dir=opencode_dir, pi_dir=pi_dir, goose_dir=goose_dir, agy_dir=agy_dir, agy_cli_dir=agy_cli_dir, nomistakes_dir=nomistakes_dir, codex_dir=codex_dir), "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
+    """Deploy shared configuration from the selected source checkout into native harness homes."""
+    try:
+        paths = resolve_paths(claude_dir, opencode_dir, pi_dir, goose_dir, agy_dir, agy_cli_dir, nomistakes_dir, codex_dir, claude_home)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    ctx.obj = {"paths": paths, "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
     if ctx.invoked_subcommand is None:
-        typer.echo("Syncing all tools (opencode + pi + goose + agy + codex + no-mistakes)...")
+        typer.echo("Syncing: " + ", ".join(h.name for h in HARNESSES))
         raise typer.Exit(_run_all(ctx))
 
 
@@ -360,153 +175,112 @@ def all(
 ) -> None:
     """Sync opencode, pi, goose, agy, codex, and no-mistakes."""
     _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    typer.echo("Syncing all tools (opencode + pi + goose + agy + codex + no-mistakes)...")
+    typer.echo("Syncing: " + ", ".join(h.name for h in HARNESSES))
     raise typer.Exit(_run_all(ctx))
 
 
-# ---- opencode group ----
+def _make_group_callback(harness: Harness):
+    def group(
+        ctx: typer.Context,
+        force: bool = typer.Option(False, "--force"),
+        dry_run: bool = typer.Option(False, "--dry-run"),
+        check: bool = typer.Option(False, "--check"),
+        verbose: bool = typer.Option(False, "--verbose", "-v"),
+    ) -> None:
+        _update_ctx_flags(ctx, force, dry_run, check, verbose)
+        if ctx.invoked_subcommand is None:
+            raise typer.Exit(_run_steps(ctx, harness.name, tuple(step.name for step in harness.steps)))
+    return group
 
-@opencode_app.callback(invoke_without_command=True)
-def opencode_callback(
+
+for harness in HARNESSES:
+    group = typer.Typer(add_completion=False, no_args_is_help=False, help=f"Sync {harness.name} configuration.")
+    group.callback(invoke_without_command=True)(_make_group_callback(harness))
+    for step in harness.steps:
+        group.command(step.name)(_make_step_cmd(harness.name, (step.name,)))
+    if harness.validate_skills is not None:
+        group.command("skills")(_make_skills_cmd())
+    app.add_typer(group, name=harness.name)
+
+
+
+agent_config_app = typer.Typer(add_completion=False, no_args_is_help=True, help="Manage shared agent configuration.")
+agent_config_app.callback()(callback)
+
+
+def _selection(name: str | None) -> tuple[Harness, ...]:
+    try:
+        return select_harnesses(name)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@agent_config_app.command("sync")
+def sync_command(
     ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
+    harness: str | None = typer.Argument(None),
+    step: str | None = typer.Argument(None),
+    force: bool = typer.Option(False, "--force"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
-    """Sync opencode config (all steps)."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing opencode...")
-        raise typer.Exit(_run_steps(ctx, "opencode", OPENCODE_STEPS))
+    _update_ctx_flags(ctx, force=force, dry_run=dry_run, verbose=verbose)
+    paths = _ctx_paths(ctx)
+    selected_force, selected_dry, check, selected_verbose = _ctx_flags(ctx)
+    try:
+        outcomes = [outcome for selected in _selection(harness)
+                    for outcome in run_harness(selected, paths, selected_force, selected_dry or check, (step,) if step else None)]
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    report(outcomes, [], selected_verbose)
+    raise typer.Exit(exit_code(outcomes))
 
 
-opencode_app.command("config")(_make_step_cmd("opencode", ("config",)))
-opencode_app.command("tui")(_make_step_cmd("opencode", ("tui",)))
-opencode_app.command("agents-md")(_make_step_cmd("opencode", ("agents-md",)))
-opencode_app.command("agents")(_make_step_cmd("opencode", ("agents",)))
-opencode_app.command("commands")(_make_step_cmd("opencode", ("commands",)))
-opencode_app.command("plugins")(_make_step_cmd("opencode", ("plugins",)))
-opencode_app.command("skills")(_make_skills_cmd())
+@agent_config_app.command("check")
+def check_command(ctx: typer.Context, harness: str | None = typer.Argument(None), step: str | None = typer.Argument(None)) -> None:
+    _update_ctx_flags(ctx, check=True)
+    sync_command(ctx, harness, step, False, False, False)
 
 
-# ---- pi group ----
-
-@pi_app.callback(invoke_without_command=True)
-def pi_callback(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-) -> None:
-    """Sync pi config (pointers + inlined context)."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing pi...")
-        raise typer.Exit(_run_steps(ctx, "pi", PI_STEPS))
+@agent_config_app.command("doctor")
+def doctor_command(ctx: typer.Context, harness: str | None = typer.Argument(None)) -> None:
+    from settings_sync.diagnostics import doctor
+    outcomes = doctor(_ctx_paths(ctx), _selection(harness))
+    report(outcomes, [], verbose=False)
+    # Show effective paths even when all outputs are current.
+    paths = _ctx_paths(ctx)
+    typer.echo(f"Source: {paths.source_dir}")
+    for selected in _selection(harness):
+        typer.echo(f"{selected.name}: {selected.destination(paths)}; instructions: {paths.source_dir / 'rules/global.md'}")
+    raise typer.Exit(exit_code(outcomes))
 
 
-pi_app.command("config")(_make_step_cmd("pi", ("config",)))
-pi_app.command("context")(_make_step_cmd("pi", ("context",)))
-pi_app.command("keybindings")(_make_step_cmd("pi", ("keybindings",)))
-pi_app.command("skills")(_make_skills_cmd())
 
+@agent_config_app.command("bootstrap")
+def bootstrap_command(ctx: typer.Context, harness: str | None = typer.Argument(None), dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+    import os
+    import shutil
+    import subprocess
+    paths = _ctx_paths(ctx)
+    force, global_dry, check, verbose = _ctx_flags(ctx)
+    selected = _selection(harness)
+    if harness is None:
+        selected = tuple(item for item in selected if item.name != "no-mistakes" and shutil.which(item.host))
+    failures = 0
+    for item in selected:
+        typer.echo(f"Bootstrap {item.name}: {paths.source_dir / 'scripts/bootstrap.sh'}")
+        if dry_run or global_dry or check:
+            continue
+        outcomes = run_harness(item, paths, force, False)
+        report(outcomes, [], False)
+        failures |= exit_code(outcomes)
+        result = subprocess.run(["bash", str(paths.source_dir / "scripts/bootstrap.sh"), str(paths.source_dir), item.name],
+                                env={**os.environ, "OPENCODE_CONFIG_DIR": str(paths.opencode_dir), "AGENT_CONFIG_PI_HOME": str(paths.target("pi")), "AGENT_CONFIG_NOMISTAKES_HOME": str(paths.target("nomistakes"))}, check=False)
+        failures |= int(result.returncode != 0)
+    raise typer.Exit(failures)
 
-# ---- goose group ----
-
-@goose_app.callback(invoke_without_command=True)
-def goose_callback(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-) -> None:
-    """Sync goose config (all steps)."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing goose...")
-        raise typer.Exit(_run_steps(ctx, "goose", GOOSE_STEPS))
-
-
-goose_app.command("hints")(_make_step_cmd("goose", ("hints",)))
-goose_app.command("config")(_make_step_cmd("goose", ("config",)))
-goose_app.command("providers")(_make_step_cmd("goose", ("providers",)))
-goose_app.command("skills")(_make_skills_cmd())
-
-
-# ---- agy group ----
-
-@agy_app.callback(invoke_without_command=True)
-def agy_callback(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-) -> None:
-    """Sync agy config (all steps)."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing agy...")
-        raise typer.Exit(_run_steps(ctx, "agy", AGY_STEPS))
-
-
-agy_app.command("settings")(_make_step_cmd("agy", ("settings",)))
-agy_app.command("agents-md")(_make_step_cmd("agy", ("agents-md",)))
-agy_app.command("skills")(_make_step_cmd("agy", ("skills",)))
-
-
-# ---- no-mistakes group ----
-
-@nomistakes_app.callback(invoke_without_command=True)
-def nomistakes_callback(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-) -> None:
-    """Sync no-mistakes config (all steps)."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing no-mistakes...")
-        raise typer.Exit(_run_steps(ctx, "nomistakes", NOMISTAKES_STEPS))
-
-
-nomistakes_app.command("config")(_make_step_cmd("nomistakes", ("config",)))
-nomistakes_app.command("skills")(_make_skills_cmd())
-
-
-# ---- codex group ----
-
-@codex_app.callback(invoke_without_command=True)
-def codex_callback(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-) -> None:
-    """Sync codex config (all steps)."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing codex...")
-        raise typer.Exit(_run_steps(ctx, "codex", CODEX_STEPS))
-
-
-codex_app.command("config")(_make_step_cmd("codex", ("config",)))
-codex_app.command("agents-md")(_make_step_cmd("codex", ("agents-md",)))
-
-
-app.add_typer(opencode_app, name="opencode")
-app.add_typer(pi_app, name="pi")
-app.add_typer(goose_app, name="goose")
-app.add_typer(agy_app, name="agy")
-app.add_typer(nomistakes_app, name="no-mistakes")
-app.add_typer(codex_app, name="codex")
-
+def agent_config_main() -> None:
+    agent_config_app()
 
 def main() -> None:
     app()

@@ -31,7 +31,8 @@ def test_transforms_and_writes_all_source_agents(tmp_path: pathlib.Path):
     assert "permission" in fm
 
 
-def test_orphan_target_warned_without_force(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("force", [False, True])
+def test_unknown_target_preserved(tmp_path: pathlib.Path, force: bool):
     source = tmp_path / "claude" / "agents"
     source.mkdir(parents=True)
     (source / "reviewer.md").write_text(AGENT_A)
@@ -39,22 +40,23 @@ def test_orphan_target_warned_without_force(tmp_path: pathlib.Path):
     target.mkdir(parents=True)
     (target / "orphan.md").write_text("stale")
 
-    outcomes = sync_agents_dir(target, source)
+    outcomes = sync_agents_dir(target, source, force=force)
 
-    orphan = next(o for o in outcomes if o.path.name == "orphan.md")
-    assert orphan.status == Status.WARNED
+    assert all(o.path.name != "orphan.md" for o in outcomes)
     assert (target / "orphan.md").read_text() == "stale"
 
 
-def test_orphan_target_deleted_with_force(tmp_path: pathlib.Path):
+def test_managed_orphan_removed(tmp_path: pathlib.Path):
     source = tmp_path / "claude" / "agents"
     source.mkdir(parents=True)
     (source / "reviewer.md").write_text(AGENT_A)
     target = tmp_path / "config" / "opencode" / "agents"
     target.mkdir(parents=True)
-    (target / "orphan.md").write_text("stale")
+    (source / "orphan.md").write_text(AGENT_A)
+    sync_agents_dir(target, source)
+    (source / "orphan.md").unlink()
 
-    outcomes = sync_agents_dir(target, source, force=True)
+    outcomes = sync_agents_dir(target, source)
 
     orphan = next(o for o in outcomes if o.path.name == "orphan.md")
     assert orphan.status == Status.REPLACED

@@ -1,0 +1,6 @@
+{
+  "name": "agent-config-pi-tests",
+  "private": true,
+  "type": "module",
+  "devDependencies": {"jiti": "2.7.0"}
+}

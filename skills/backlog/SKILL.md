@@ -5,7 +5,7 @@ description: Use when the user defers a side topic mid-work, suspends the curren
 
 # Backlog
 
-Append deferred side topics to `.claude/backlog.md` at the git root so they survive to a later session. Chat-only acknowledgments rot with scrollback; the file is the record.
+Append deferred side topics to `.agents/backlog.md` at the git root so they survive to a later session. Chat-only acknowledgments rot with scrollback; the file is the record.
 
 ## When
 
@@ -17,8 +17,8 @@ Append deferred side topics to `.claude/backlog.md` at the git root so they surv
 
 ## Capture
 
-1. Resolve target: git root + `.claude/backlog.md`. If cwd is not a git repo, cwd + `.claude/backlog.md`.
-2. Create with this template if missing:
+1. Resolve target: git root + `.agents/backlog.md`. If cwd is not a git repo, cwd + `.agents/backlog.md`.
+2. If only `.claude/backlog.md` exists, read and keep using that legacy file until this project is deliberately migrated. If both files exist, surface both and reconcile before editing. Preserve IDs. Create the canonical file with this template only when neither exists:
 
    ```markdown
    # Backlog

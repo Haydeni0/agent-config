@@ -44,7 +44,7 @@ def test_unchanged_when_identical(tmp_path: pathlib.Path):
     assert outcome.status == Status.UNCHANGED
 
 
-def test_skips_when_target_differs_without_force(tmp_path: pathlib.Path):
+def test_updates_declared_keys_without_force(tmp_path: pathlib.Path):
     base = tmp_path / "claude" / "opencode.json"
     base.parent.mkdir(parents=True)
     base.write_text(json.dumps({"model": "new"}))
@@ -54,8 +54,8 @@ def test_skips_when_target_differs_without_force(tmp_path: pathlib.Path):
 
     outcome = sync_config(target, base)
 
-    assert outcome.status == Status.SKIPPED
-    assert json.loads(target.read_text())["model"] == "hand-edited"
+    assert outcome.status == Status.REPLACED
+    assert json.loads(target.read_text())["model"] == "new"
 
 
 def test_force_overwrites_diverging_target(tmp_path: pathlib.Path):
@@ -98,7 +98,7 @@ def test_migrates_jsonc_into_opencode_json(tmp_path: pathlib.Path):
 
     assert outcome.status == Status.CREATED
     written = json.loads(target.read_text())
-    assert written["model"] == "y"
+    assert written["model"] == "x"
     assert not jsonc.exists()
 
 
@@ -114,5 +114,5 @@ def test_jsonc_parse_failure_leaves_jsonc_intact(tmp_path: pathlib.Path):
 
     outcome = sync_config(target, base)
 
-    assert outcome.status == Status.WARNED
+    assert outcome.status == Status.FAILED
     assert jsonc.exists()

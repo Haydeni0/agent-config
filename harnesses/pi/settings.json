@@ -1,0 +1,20 @@
+{
+  "skills": [
+    "~/.claude/skills"
+  ],
+  "prompts": [
+    "~/.claude/commands"
+  ],
+  "extensions": [
+    "${AGENT_CONFIG_REPO}/harnesses/pi/extensions"
+  ],
+  "themes": [
+    "${AGENT_CONFIG_REPO}/harnesses/pi/themes"
+  ],
+  "packages": [
+    "npm:@evo-hq/pi-evo@0.7.0",
+    "npm:pi-subagents@0.34.0",
+    "npm:pi-schedule-prompt@0.4.1",
+    "git:github.com/gregjohnso/pi-monitor@475aafb60124176015f7d185a37f173735cb9ceb"
+  ]
+}
