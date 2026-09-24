@@ -29,21 +29,20 @@ Keep credentials, tokens and private config contents out of chat and tracked doc
 
 ## 2. Obtain the migration version in an independent checkout
 
-**Obtain the commit or branch containing the migration first.** A guide copied from another machine does not mean its implementation has been published. If it is still uncommitted there, obtain an explicit source patch/new-file transfer or wait for publication. An ordinary clone contains committed files only.
+The migration implementation and this guide are on `main` in [Haydeni0/agent-config](https://github.com/Haydeni0/agent-config). Use the new repository name even if the legacy checkout still points at `claude-config`.
 
-Use a destination outside every runtime home. If it already exists, inspect it and preserve its work instead of cloning over it. For a new destination, set `migration_ref` to the published, reviewed commit or remote branch, then:
+Use a destination outside every runtime home. If it already exists, inspect it and preserve its work instead of cloning over it. For a new destination:
 
 ```bash
-repo_url=$(git -C "$legacy_repo" remote get-url origin)
-git clone "$repo_url" "$source_repo"
-git -C "$source_repo" switch --detach "${migration_ref:?Set the reviewed migration ref first}"
-git -C "$source_repo" switch -c hayden/migrate-agent-config
+repo_url="https://github.com/Haydeni0/agent-config.git"
+git clone --branch main "$repo_url" "$source_repo"
 git -C "$source_repo" submodule update --init --recursive
+git -C "$source_repo" rev-parse HEAD
 ```
 
-Choose another `hayden/` branch name if needed. The checkout must have independent Git metadata. For a local clone, use `git clone --no-hardlinks`; a linked worktree depending on the old runtime repo is unsuitable.
+The HTTPS URL works for reading this public repo. To use SSH, replace `repo_url` before cloning with this machine's configured SSH host or alias and the repository path `Haydeni0/agent-config.git`. Preserve the machine's authentication method when updating an existing checkout's origin.
 
-The GitHub repository is `Haydeni0/agent-config`. If the cloned origin still names `claude-config`, update the new checkout's origin to `agent-config`, retaining this machine's SSH host alias or HTTPS authentication method.
+Record the printed revision in the machine's migration notes. If a specific reviewed revision is required, check it out before initializing submodules. Keep the normal checkout on `main` tracking `origin/main`; create a `hayden/` branch if reconciling local source edits requires changes. The checkout must have independent Git metadata. For a local clone, use `git clone --no-hardlinks`; a linked worktree depending on the old runtime repo is unsuitable.
 
 **Keep the old live repo at its existing revision until cutover.** Pulling the restructuring into `~/.claude` can remove files that running harnesses still use.
 
