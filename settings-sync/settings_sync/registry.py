@@ -9,7 +9,7 @@ from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
 from settings_sync.claude import claude_home, sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
 from settings_sync.commands import sync_commands
-from settings_sync.codex import sync_codex_agents_md, sync_codex_config
+from settings_sync.codex import sync_codex_agents_md, sync_codex_config, sync_codex_sqlite_home
 from settings_sync.config import sync_config, sync_tui
 from settings_sync.goose import sync_goose_config, sync_goose_hints, sync_goose_providers
 from settings_sync.nomistakes import sync_nomistakes_config
@@ -77,7 +77,10 @@ HARNESSES = (
     ), lambda p: p.nomistakes_dir, "no-mistakes"),
     Harness("codex", (
         Step("skills", lambda p, f, d: sync_shared_skills(p, d), ("skills",)),
-        Step("config", lambda p, f, d: [sync_codex_config(p.target("codex") / "config.toml", p.source_dir / "harnesses/codex/config.toml", dry_run=d)], ("harnesses/codex/config.toml",)),
+        Step("config", lambda p, f, d: [
+            sync_codex_sqlite_home(p.source_dir / "harnesses/codex/config.toml", dry_run=d),
+            sync_codex_config(p.target("codex") / "config.toml", p.source_dir / "harnesses/codex/config.toml", dry_run=d),
+        ], ("harnesses/codex/config.toml",)),
         Step("agents-md", lambda p, f, d: [sync_codex_agents_md(p.target("codex") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
     ), lambda p: p.codex_dir, "codex"),
 )

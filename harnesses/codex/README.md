@@ -11,6 +11,8 @@ codex
 
 The defaults select Astra, high reasoning, fast service, and full access with command approvals disabled. Edit `harnesses/codex/config.toml` here, then sync again. Plain `codex` loads the resulting user config automatically.
 
+SQLite runtime state lives at `/var/tmp/hayden.dorahy/codex-sqlite`. The same absolute path resolves to node-local storage on each cluster machine, keeping WAL files off the shared home filesystem. Config sync creates the directory with mode `0700`; Codex also initializes a missing directory when first launched on a new node.
+
 Explicit profiles, trusted project config, and command-line flags can override these defaults. See [Codex configuration precedence](https://learn.chatgpt.com/docs/config-file/config-basic#configuration-precedence).
 
 For a custom Codex home, pass `--codex-dir /path/to/codex-home` before the `codex` sync subcommand. Use the same directory as the client’s `CODEX_HOME`.
@@ -20,6 +22,7 @@ For a custom Codex home, pass `--codex-dir /path/to/codex-home` before the `code
 | Source in the checkout | Target in `~/.codex` | Mechanism |
 |---|---|---|
 | `harnesses/codex/config.toml` | `config.toml` | merge declared keys; retain local keys and formatting |
+| `harnesses/codex/config.toml` `sqlite_home` | configured local path | create directory with mode `0700` |
 | `rules/global.md` | `AGENTS.md` | `@skills/<n>` rewritten to `the \`<n>\` skill` (codex reads global instructions from `$CODEX_HOME/AGENTS.md`) |
 | `skills/` | (native) | codex reads `~/.agents/skills` (user-scope root); local sync links that at `~/.claude/skills` |
 

@@ -1,8 +1,10 @@
 import pathlib
+import stat
 
 import pytest
 from typer.testing import CliRunner
 
+import settings_sync.codex as codex
 from settings_sync.cli import app
 from settings_sync.codex import sync_codex_agents_md, sync_codex_config
 from settings_sync.sync import Status
@@ -106,6 +108,69 @@ def test_codex_config_no_source_when_template_missing(tmp_path: pathlib.Path):
     assert outcome.status == Status.NO_SOURCE
 
 
+def write_sqlite_template(path: pathlib.Path, sqlite_home: pathlib.Path) -> None:
+    path.write_text(f'sqlite_home = "{sqlite_home}"\n')
+
+
+def test_codex_sqlite_home_creates_private_directory(tmp_path: pathlib.Path):
+    template = tmp_path / "config.toml"
+    sqlite_home = tmp_path / "runtime" / "codex-sqlite"
+    write_sqlite_template(template, sqlite_home)
+
+    outcome = codex.sync_codex_sqlite_home(template)
+
+    assert outcome.status == Status.CREATED
+    assert stat.S_IMODE(sqlite_home.stat().st_mode) == 0o700
+
+
+def test_codex_sqlite_home_repairs_permissions(tmp_path: pathlib.Path):
+    template = tmp_path / "config.toml"
+    sqlite_home = tmp_path / "codex-sqlite"
+    sqlite_home.mkdir(mode=0o755)
+    write_sqlite_template(template, sqlite_home)
+
+    outcome = codex.sync_codex_sqlite_home(template)
+
+    assert outcome.status == Status.REPLACED
+    assert stat.S_IMODE(sqlite_home.stat().st_mode) == 0o700
+
+
+def test_codex_sqlite_home_dry_run_creates_nothing(tmp_path: pathlib.Path):
+    template = tmp_path / "config.toml"
+    sqlite_home = tmp_path / "codex-sqlite"
+    write_sqlite_template(template, sqlite_home)
+
+    outcome = codex.sync_codex_sqlite_home(template, dry_run=True)
+
+    assert outcome.status == Status.WOULD_CREATE
+    assert not sqlite_home.exists()
+
+
+def test_codex_sqlite_home_rejects_relative_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    template = tmp_path / "config.toml"
+    template.write_text('sqlite_home = "relative/codex-sqlite"\n')
+
+    outcome = codex.sync_codex_sqlite_home(template)
+
+    assert outcome.status == Status.FAILED
+    assert not (tmp_path / "relative").exists()
+
+
+def test_codex_sqlite_home_rejects_symlink(tmp_path: pathlib.Path):
+    template = tmp_path / "config.toml"
+    real_directory = tmp_path / "real"
+    real_directory.mkdir(mode=0o755)
+    sqlite_home = tmp_path / "codex-sqlite"
+    sqlite_home.symlink_to(real_directory, target_is_directory=True)
+    write_sqlite_template(template, sqlite_home)
+
+    outcome = codex.sync_codex_sqlite_home(template)
+
+    assert outcome.status == Status.FAILED
+    assert stat.S_IMODE(real_directory.stat().st_mode) == 0o755
+
+
 # ---- sync_codex_agents_md (inlined CLAUDE.md; refuse-to-clobber without --force) ----
 
 
@@ -157,6 +222,18 @@ def test_cli_codex_config_creates_config(tmp_path: pathlib.Path, codex_home: pat
 
     assert result.exit_code == 0
     assert (codex_dir / "config.toml").read_text() == CONFIG_TEMPLATE
+
+
+def test_cli_codex_config_provisions_sqlite_home(tmp_path: pathlib.Path, codex_home: pathlib.Path):
+    sqlite_home = tmp_path / "codex-sqlite"
+    write_sqlite_template(codex_home / "harnesses/codex/config.toml", sqlite_home)
+    codex_dir = tmp_path / "codex-target"
+
+    result = runner.invoke(app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "codex", "config"])
+
+    assert result.exit_code == 0
+    assert sqlite_home.is_dir()
+    assert stat.S_IMODE(sqlite_home.stat().st_mode) == 0o700
 
 
 def test_cli_codex_agents_md_creates_inlined(tmp_path: pathlib.Path, codex_home: pathlib.Path):

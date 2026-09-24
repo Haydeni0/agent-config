@@ -1,5 +1,6 @@
 """Sync shared source config into ~/.codex (the codex harness)."""
 
+import stat
 from pathlib import Path
 
 from settings_sync.ownership import sync_generated_file
@@ -10,6 +11,50 @@ from tomlkit.exceptions import ParseError
 from settings_sync.agents_md import build_agents_md
 from settings_sync.merging import merge_defaults, install_merged
 from settings_sync.sync import Outcome, Status
+
+CODEX_SQLITE_HOME_MODE = 0o700
+
+
+def sync_codex_sqlite_home(template: Path, dry_run: bool = False) -> Outcome:
+    """Provision the configured SQLite runtime directory on the local machine."""
+    if not template.is_file():
+        return Outcome(template, Status.NO_SOURCE, f"template not found: {template}")
+    try:
+        defaults = tomlkit.parse(template.read_text())
+    except ParseError as exc:
+        return Outcome(template, Status.FAILED, f"invalid Codex template: {exc}")
+
+    configured = defaults.get("sqlite_home")
+    if configured is None:
+        return Outcome(template, Status.UNCHANGED, "sqlite_home not configured")
+    if not isinstance(configured, str):
+        return Outcome(template, Status.FAILED, "sqlite_home must be a string path")
+
+    sqlite_home = Path(configured)
+    if not sqlite_home.is_absolute():
+        return Outcome(sqlite_home, Status.FAILED, "sqlite_home must be an absolute path")
+    if sqlite_home.is_symlink():
+        return Outcome(sqlite_home, Status.FAILED, "sqlite_home must not be a symlink")
+
+    try:
+        if not sqlite_home.exists():
+            if dry_run:
+                return Outcome(sqlite_home, Status.WOULD_CREATE, "private SQLite runtime directory")
+            sqlite_home.mkdir(parents=True, mode=CODEX_SQLITE_HOME_MODE)
+            sqlite_home.chmod(CODEX_SQLITE_HOME_MODE)
+            return Outcome(sqlite_home, Status.CREATED, "private SQLite runtime directory")
+        if not sqlite_home.is_dir():
+            return Outcome(sqlite_home, Status.FAILED, "sqlite_home exists but is not a directory")
+
+        mode = stat.S_IMODE(sqlite_home.stat().st_mode)
+        if mode == CODEX_SQLITE_HOME_MODE:
+            return Outcome(sqlite_home, Status.UNCHANGED, "private SQLite runtime directory")
+        if dry_run:
+            return Outcome(sqlite_home, Status.WOULD_REPLACE, f"directory mode {mode:o}; expected 700")
+        sqlite_home.chmod(CODEX_SQLITE_HOME_MODE)
+        return Outcome(sqlite_home, Status.REPLACED, f"directory mode {mode:o} -> 700")
+    except OSError as exc:
+        return Outcome(sqlite_home, Status.FAILED, f"could not provision SQLite runtime directory: {exc}")
 
 
 def sync_codex_config(target: Path, template: Path, dry_run: bool = False) -> Outcome:
