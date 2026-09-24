@@ -12,6 +12,10 @@ sqlite_home = "/var/tmp/hayden.dorahy/codex-sqlite"
 [features]
 hooks = true
 
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "git-branch", "approval-mode", "context-used", "context-window-size", "estimated-thread-cost"]
+status_line_use_colors = true
+
 # Custom model provider (e.g. GLM coding plan). Codex only supports
 # wire_api = "responses" - the endpoint must speak the Responses API.
 # Uncomment and fill in once the endpoint is confirmed (see z.ai docs):
