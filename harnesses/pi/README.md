@@ -57,7 +57,7 @@ curl -fsSL https://pi.dev/install.sh | sh
 #   npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
 # 2. get your config repo at ~/gitrepos/agent-config (clone once, or refresh)
-git clone git@github-haydeni0:Haydeni0/claude-config.git ~/gitrepos/agent-config   # first time
+git clone git@github-haydeni0:Haydeni0/agent-config.git ~/gitrepos/agent-config   # first time
 git -C ~/gitrepos/agent-config pull                                               # existing machine
 
 # 3. install and select source (needs uv: https://docs.astral.sh/uv/)

@@ -43,6 +43,8 @@ git -C "$source_repo" submodule update --init --recursive
 
 Choose another `hayden/` branch name if needed. The checkout must have independent Git metadata. For a local clone, use `git clone --no-hardlinks`; a linked worktree depending on the old runtime repo is unsuitable.
 
+The GitHub repository is `Haydeni0/agent-config`. If the cloned origin still names `claude-config`, update the new checkout's origin to `agent-config`, retaining this machine's SSH host alias or HTTPS authentication method.
+
 **Keep the old live repo at its existing revision until cutover.** Pulling the restructuring into `~/.claude` can remove files that running harnesses still use.
 
 Confirm the new checkout contains `rules/global.md`, `harnesses/claude/settings.json`, `settings-sync/`, `scripts/verify.sh` and this guide. Reconcile local commits and uncommitted source edits into the new layout using this mapping:

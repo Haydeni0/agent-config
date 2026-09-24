@@ -5,7 +5,7 @@ Shared configuration for Claude Code, Codex, Opencode, Pi, Goose, Antigravity, a
 ## Setup
 
 ```bash
-git clone --recurse-submodules git@github-haydeni0:Haydeni0/claude-config.git ~/gitrepos/agent-config
+git clone --recurse-submodules git@github-haydeni0:Haydeni0/agent-config.git ~/gitrepos/agent-config
 cd ~/gitrepos/agent-config
 uv tool install --editable ./settings-sync
 mkdir -p ~/.config/agent-config
