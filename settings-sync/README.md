@@ -1,8 +1,8 @@
 # settings-sync
 
-Syncs `~/.claude` config into [opencode](https://opencode.ai) (`~/.config/opencode`), [pi](https://pi.dev) (`~/.pi/agent`), and [goose](https://goose.dev) (`~/.config/goose`). `~/.claude` stays the single source of truth; the target dirs are fully derived and regenerated on each run.
+Syncs `~/.claude` config into opencode, pi, goose, agy, Codex, and no-mistakes. `~/.claude` owns the managed artifacts listed below; each harness keeps its own local state.
 
-`~/.claude` is your git repo — `git pull` on any machine, then `sync`. Skills and commands are read directly by all three tools (no duplication); only the things each tool can't read natively are derived.
+`~/.claude` is your git repo - `git pull` on any machine, then `sync`. Shared skills and commands use each harness's native discovery where available; the tables below identify the artifacts that need conversion.
 
 ## What it syncs
 
@@ -64,6 +64,17 @@ goose discovers skills and agents from `~/.claude` natively (backward-compat pat
 
 Fully derived, pi-style: regenerated on every sync with no force gate, so hand edits to `~/.no-mistakes/config.yaml` die on the next sync. Which key goes in the template vs the overlay, template rules, agent switching, and update flow live in [`no-mistakes/README.md`](../no-mistakes/README.md). This target manages **only** `config.yaml` - everything else in `~/.no-mistakes` (binary, daemon state, db, worktrees, evidence) is untouched.
 
+### codex
+
+| Source in `~/.claude` | Target in `~/.codex` | Mechanism |
+|---|---|---|
+| `codex/config.toml` | `config.toml` | merge declared defaults; preserve local keys and formatting; plain `codex` loads them |
+| `CLAUDE.md` | `AGENTS.md` | `@skills/<n>` rewritten (same transform as opencode's AGENTS.md) |
+| `skills/` | (native) | codex reads `~/.agents/skills`, which sync.sh symlinks at `~/.claude/skills`; inspect discovery with Codex's `/skills` |
+
+Commands, hooks, and plugins are not bridged - codex uses different formats. See [`codex/README.md`](../codex/README.md).
+
+Codex config tables merge recursively. The template owns the keys it declares; local keys, including project trust, hook approvals, and UI state, create no drift. Removing a template key leaves its installed value in place. Invalid TOML fails before writing. Use `--codex-dir` to target a custom `CODEX_HOME`.
 
 ## Usage
 
@@ -71,7 +82,7 @@ Fully derived, pi-style: regenerated on every sync with no force gate, so hand e
 # In the examples below, `sync` is the invocation from Run above, i.e.
 # `uv run --directory ~/.claude/settings-sync sync` (or your `ssync` alias).
 
-# sync everything (opencode + pi + goose + agy + no-mistakes); refuse on conflict, exit 1 if any conflict
+# sync everything (opencode + pi + goose + agy + codex + no-mistakes); refuse on conflict, exit 1 if any conflict
 sync
 sync all                       # explicit
 
@@ -80,11 +91,13 @@ sync opencode                  # all opencode steps
 sync pi                        # pointers + inlined context
 sync goose                     # hints + config + providers
 sync agy                       # rules + skills
+sync codex                     # shared defaults + global AGENTS.md -> ~/.codex
 sync no-mistakes               # config template + machine overlay -> ~/.no-mistakes
 sync opencode config           # one step (config|tui|agents-md|agents|commands|plugins|skills)
 sync pi config                 # one step (config|context|keybindings)
 sync goose config              # one step (hints|config|providers)
 sync agy agents-md             # one step (agents-md|skills)
+sync codex config              # one step (config|agents-md)
 sync no-mistakes config        # one step (config)
 
 # flags (accepted before or after group/subcommand)
@@ -95,18 +108,19 @@ sync --verbose                 # show diffs for changed text artifacts
 sync --pi-dir /tmp/glm-pi pi   # target a different pi agent dir
 ```
 
-Common flags (`--force`, `--dry-run`, `--check`, `--verbose`) work anywhere in the command line (e.g. `sync --check agy`, `sync agy --check`, or `sync agy settings --force`). Path override options (`--claude-dir`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`) go before the tool subcommand.
+Common flags (`--force`, `--dry-run`, `--check`, `--verbose`) work anywhere in the command line (e.g. `sync --check agy`, `sync agy --check`, or `sync agy settings --force`). Path override options (`--claude-dir`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`) go before the tool subcommand.
 
 ## Run
 
 Stateless — no install step, just run it from the repo each time (needs [uv](https://docs.astral.sh/uv/)):
 
 ```bash
-uv run --directory ~/.claude/settings-sync sync          # sync everything (opencode + pi + goose + agy + no-mistakes)
+uv run --directory ~/.claude/settings-sync sync          # sync everything (opencode + pi + goose + agy + codex + no-mistakes)
 uv run --directory ~/.claude/settings-sync sync opencode # granular
 uv run --directory ~/.claude/settings-sync sync pi       # granular
 uv run --directory ~/.claude/settings-sync sync goose    # granular
 uv run --directory ~/.claude/settings-sync sync agy      # granular
+uv run --directory ~/.claude/settings-sync sync codex    # granular
 uv run --directory ~/.claude/settings-sync sync no-mistakes # granular
 # tip: alias ssync='uv run --directory ~/.claude/settings-sync sync' for brevity
 ```
@@ -119,6 +133,7 @@ No persistent install, no shim on PATH — `git pull` and you're on the latest v
 - `--force` removes/replaces conflicting managed paths, reconciles orphaned agent files (target `.md` not in source), and retargets wrong symlinks.
 - No files are deleted without `--force`.
 - **Exception — pi config:** `settings.json` is always overwritten (wholesale copy; the template is SOT). `--force` is not needed for it.
+- **Codex defaults:** template keys are merged into `config.toml` on every sync, preserving other keys and formatting. `AGENTS.md` keeps the normal force gate.
 - opencode manages only: `opencode.json`, `tui.json`, `AGENTS.md`, `agents/`, `commands`, `plugins/superpowers.js`. Everything else in `~/.config/opencode` is left untouched.
 - pi manages only: `settings.json`, `keybindings.json`, `CLAUDE.md`. Everything else in `~/.pi/agent` (auth, sessions, bin, models.json) is left untouched.
 - goose manages only: `.goosehints`, `config.yaml`, `custom_providers/`. Everything else in `~/.config/goose` (sessions, permission.yaml, secrets.yaml, prompts/) is left untouched.

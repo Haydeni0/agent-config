@@ -78,6 +78,10 @@ skills/synced/
 !gemini/
 !gemini/**
 
+# Track the Codex defaults and setup docs
+!codex/
+!codex/**
+
 # Track no-mistakes config template (machine overlay stays local)
 !no-mistakes/
 !no-mistakes/**

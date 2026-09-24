@@ -270,6 +270,7 @@ def test_cli_bare_sync_includes_nomistakes(tmp_path):
             "--agy-dir", str(tmp_path / "agy"),
             "--agy-cli-dir", str(tmp_path / "agy-cli"),
             "--nomistakes-dir", str(nm_dir),
+            "--codex-dir", str(tmp_path / "codex"),
         ],
     )
     assert result.exit_code == 0, result.output

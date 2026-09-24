@@ -1,11 +1,12 @@
-"""CLI entrypoint: sync ~/.claude config into opencode, pi, goose, agy, and no-mistakes.
+"""CLI entrypoint: sync ~/.claude config into opencode, pi, goose, agy, codex, and no-mistakes.
 
 ~/.claude is the single source of truth. `sync opencode` derives config
 into ~/.config/opencode; `sync pi` writes pointers + inlined context
 into ~/.pi/agent; `sync goose` writes hints + config + providers into
 ~/.config/goose; `sync agy` writes rules + skills into ~/.gemini/config;
+`sync codex` merges shared config.toml defaults + writes AGENTS.md into ~/.codex;
 `sync no-mistakes` merges the config template + machine overlay into
-~/.no-mistakes/config.yaml. Bare `sync` (or `sync all`) runs all five.
+~/.no-mistakes/config.yaml. Bare `sync` (or `sync all`) runs all six.
 """
 
 import difflib
@@ -19,6 +20,7 @@ from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
 from settings_sync.commands import sync_commands
+from settings_sync.codex import sync_codex_agents_md, sync_codex_config
 from settings_sync.config import sync_config, sync_tui
 from settings_sync.goose import sync_goose_config, sync_goose_hints, sync_goose_providers
 from settings_sync.nomistakes import sync_nomistakes_config
@@ -33,12 +35,14 @@ pi_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync pi 
 goose_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync goose config.")
 agy_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync agy config.")
 nomistakes_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync no-mistakes config.")
+codex_app = typer.Typer(add_completion=False, no_args_is_help=False, help="Sync codex config.")
 
 OPENCODE_STEPS = ("config", "tui", "agents-md", "agents", "commands", "plugins")
 PI_STEPS = ("config", "context", "keybindings")
 GOOSE_STEPS = ("hints", "config", "providers")
 AGY_STEPS = ("settings", "agents-md", "skills")
 NOMISTAKES_STEPS = ("config",)
+CODEX_STEPS = ("config", "agents-md")
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,6 +54,7 @@ class Paths:
     agy_dir: Path | None = None
     agy_cli_dir: Path | None = None
     nomistakes_dir: Path | None = None
+    codex_dir: Path | None = None
 
 
 def run_opencode_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
@@ -128,6 +133,16 @@ def run_agy_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Ou
     raise ValueError(f"unknown agy step: {name}")
 
 
+def run_codex_step(name: str, paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
+    if paths.codex_dir is None:
+        raise ValueError("codex_dir is required for codex steps")
+    if name == "config":
+        return [sync_codex_config(paths.codex_dir / "config.toml", paths.claude_dir / "codex" / "config.toml", dry_run=dry_run)]
+    if name == "agents-md":
+        return [sync_codex_agents_md(paths.codex_dir / "AGENTS.md", paths.claude_dir / "CLAUDE.md", force, dry_run)]
+    raise ValueError(f"unknown codex step: {name}")
+
+
 def run_opencode(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = OPENCODE_STEPS) -> tuple[list[Outcome], list[Outcome]]:
     sync_outcomes: list[Outcome] = []
     for step in steps:
@@ -160,6 +175,13 @@ def run_agy(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = A
     return sync_outcomes, skills_outcomes
 
 
+def run_codex(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] = CODEX_STEPS) -> tuple[list[Outcome], list[Outcome]]:
+    sync_outcomes: list[Outcome] = []
+    for step in steps:
+        sync_outcomes.extend(run_codex_step(step, paths, force, dry_run))
+    return sync_outcomes, []
+
+
 def run_all_tools(paths: Paths, force: bool, dry_run: bool) -> tuple[list[Outcome], list[Outcome]]:
     sync_outcomes: list[Outcome] = []
     for step in OPENCODE_STEPS:
@@ -175,6 +197,9 @@ def run_all_tools(paths: Paths, force: bool, dry_run: bool) -> tuple[list[Outcom
     if paths.nomistakes_dir is not None:
         for step in NOMISTAKES_STEPS:
             sync_outcomes.extend(run_nomistakes_step(step, paths, force, dry_run))
+    if paths.codex_dir is not None:
+        for step in CODEX_STEPS:
+            sync_outcomes.extend(run_codex_step(step, paths, force, dry_run))
     skills_outcomes = validate_skills(paths.claude_dir / "skills")
     return sync_outcomes, skills_outcomes
 
@@ -240,7 +265,7 @@ def _run_steps(ctx: typer.Context, tool: str, steps: tuple[str, ...]) -> int:
     paths = _ctx_paths(ctx)
     force, dry_run, check, verbose = _ctx_flags(ctx)
     effective_dry = dry_run or check
-    runner = {"opencode": run_opencode, "pi": run_pi, "goose": run_goose, "agy": run_agy, "nomistakes": run_nomistakes}[tool]
+    runner = {"opencode": run_opencode, "pi": run_pi, "goose": run_goose, "agy": run_agy, "nomistakes": run_nomistakes, "codex": run_codex}[tool]
     sync_outcomes, skills_outcomes = runner(paths, force, effective_dry, steps)
     report(sync_outcomes, skills_outcomes, verbose)
     return exit_code(sync_outcomes) or (1 if any(o.status == Status.WARNED for o in skills_outcomes) else 0)
@@ -269,11 +294,12 @@ def callback(
     agy_dir: Path = typer.Option(Path.home() / ".gemini" / "config", "--agy-dir", help="Target ~/.gemini/config directory."),
     agy_cli_dir: Path = typer.Option(Path.home() / ".gemini" / "antigravity-cli", "--agy-cli-dir", help="Target ~/.gemini/antigravity-cli directory."),
     nomistakes_dir: Path = typer.Option(Path.home() / ".no-mistakes", "--nomistakes-dir", help="Target ~/.no-mistakes directory."),
+    codex_dir: Path = typer.Option(Path.home() / ".codex", "--codex-dir", help="Target ~/.codex directory."),
 ) -> None:
-    """Sync ~/.claude config into opencode, pi, goose, agy, and no-mistakes. ~/.claude is the source of truth."""
-    ctx.obj = {"paths": Paths(claude_dir=claude_dir, opencode_dir=opencode_dir, pi_dir=pi_dir, goose_dir=goose_dir, agy_dir=agy_dir, agy_cli_dir=agy_cli_dir, nomistakes_dir=nomistakes_dir), "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
+    """Sync ~/.claude config into opencode, pi, goose, agy, codex, and no-mistakes. ~/.claude is the source of truth."""
+    ctx.obj = {"paths": Paths(claude_dir=claude_dir, opencode_dir=opencode_dir, pi_dir=pi_dir, goose_dir=goose_dir, agy_dir=agy_dir, agy_cli_dir=agy_cli_dir, nomistakes_dir=nomistakes_dir, codex_dir=codex_dir), "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
     if ctx.invoked_subcommand is None:
-        typer.echo("Syncing all tools (opencode + pi + goose + agy + no-mistakes)...")
+        typer.echo("Syncing all tools (opencode + pi + goose + agy + codex + no-mistakes)...")
         raise typer.Exit(_run_all(ctx))
 
 
@@ -332,9 +358,9 @@ def all(
     check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
 ) -> None:
-    """Sync opencode, pi, goose, agy, and no-mistakes."""
+    """Sync opencode, pi, goose, agy, codex, and no-mistakes."""
     _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    typer.echo("Syncing all tools (opencode + pi + goose + agy + no-mistakes)...")
+    typer.echo("Syncing all tools (opencode + pi + goose + agy + codex + no-mistakes)...")
     raise typer.Exit(_run_all(ctx))
 
 
@@ -453,11 +479,33 @@ nomistakes_app.command("config")(_make_step_cmd("nomistakes", ("config",)))
 nomistakes_app.command("skills")(_make_skills_cmd())
 
 
+# ---- codex group ----
+
+@codex_app.callback(invoke_without_command=True)
+def codex_callback(
+    ctx: typer.Context,
+    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
+    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
+) -> None:
+    """Sync codex config (all steps)."""
+    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
+    if ctx.invoked_subcommand is None:
+        typer.echo("Syncing codex...")
+        raise typer.Exit(_run_steps(ctx, "codex", CODEX_STEPS))
+
+
+codex_app.command("config")(_make_step_cmd("codex", ("config",)))
+codex_app.command("agents-md")(_make_step_cmd("codex", ("agents-md",)))
+
+
 app.add_typer(opencode_app, name="opencode")
 app.add_typer(pi_app, name="pi")
 app.add_typer(goose_app, name="goose")
 app.add_typer(agy_app, name="agy")
 app.add_typer(nomistakes_app, name="no-mistakes")
+app.add_typer(codex_app, name="codex")
 
 
 def main() -> None:

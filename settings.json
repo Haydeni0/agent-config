@@ -85,7 +85,12 @@
       "mcp__claude_ai_Notion__notion-get-teams",
       "mcp__claude_ai_Notion__notion-query-data-sources",
       "mcp__claude_ai_Notion__notion-query-meeting-notes",
-      "Bash(evo *)"
+      "Bash(evo *)",
+      "Bash(codex exec:*)",
+      "Bash(~/.local/bin/codex exec:*)",
+      "Bash(codex:*)",
+      "Bash(local-codex:*)",
+      "Bash(/mnt/home/hayden.dorahy/gitrepos/slurm-llm/bin/local-codex:*)"
     ],
     "deny": [
       "Bash(aws s3 rm*)",

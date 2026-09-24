@@ -1,0 +1,26 @@
+# Shared defaults for plain `codex`.
+# settings-sync merges these keys into ~/.codex/config.toml.
+# Keys omitted here retain their installed values, including local state.
+
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+service_tier = "fast"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[features]
+hooks = true
+
+# Custom model provider (e.g. GLM coding plan). Codex only supports
+# wire_api = "responses" - the endpoint must speak the Responses API.
+# Uncomment and fill in once the endpoint is confirmed (see z.ai docs):
+#
+# Place model and model_provider above [features] as top-level keys.
+# model = "<model-id>"
+# model_provider = "glm"
+#
+# [model_providers.glm]
+# name = "GLM"
+# base_url = "<responses-api base url>"
+# env_key = "ZAI_API_KEY"
+# wire_api = "responses"

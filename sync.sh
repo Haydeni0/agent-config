@@ -44,10 +44,10 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-# --- 2. settings-sync (template -> opencode + pi + goose + agy + no-mistakes derived files) ---
+# --- 2. settings-sync (template -> opencode + pi + goose + agy + codex + no-mistakes derived files) ---
 log "settings-sync..."
 if ! uv run --directory "$CLAUDE_DIR/settings-sync" sync; then
-  echo "error: settings-sync failed (opencode + pi + goose + agy + no-mistakes)" >&2
+  echo "error: settings-sync failed (opencode + pi + goose + agy + codex + no-mistakes)" >&2
   exit 1
 fi
 

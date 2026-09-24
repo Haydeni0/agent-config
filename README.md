@@ -1,6 +1,6 @@
 # claude-config
 
-Backup of `~/.claude` config — the single source of truth for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [opencode](https://opencode.ai), [pi](https://pi.dev), [goose](https://goose.dev), and [agy (Antigravity)](https://antigravity.google).
+Backup of `~/.claude` config - the single source of truth for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [opencode](https://opencode.ai), [pi](https://pi.dev), [goose](https://goose.dev), [agy (Antigravity)](https://antigravity.google), and [Codex](codex/README.md).
 
 ## What's tracked
 
@@ -11,22 +11,24 @@ Backup of `~/.claude` config — the single source of truth for [Claude Code](ht
 - `custom/` — hooks and plugins (includes [caveman](https://github.com/JuliusBrussee/caveman) submodule)
 - `statusline-command.sh` — CLI statusline
 - `opencode/` — base opencode config (`opencode.json`, `tui.json`), synced by settings-sync
-- `settings-sync/` — syncs this config into [opencode](https://opencode.ai), [pi](https://pi.dev), [goose](https://goose.dev), [agy](https://antigravity.google), and [no-mistakes](https://github.com/kunchenguid/no-mistakes); see [settings-sync/README.md](settings-sync/README.md)
+- `settings-sync/` - syncs this config into [opencode](https://opencode.ai), [pi](https://pi.dev), [goose](https://goose.dev), [agy](https://antigravity.google), [Codex](codex/README.md), and [no-mistakes](https://github.com/kunchenguid/no-mistakes); see [settings-sync/README.md](settings-sync/README.md)
 - `pi/` — base pi config (pointer template + pinned `packages[]`), wired by `sync`; see [pi/README.md](pi/README.md)
 - `goose/` — base goose config (`config.yaml`, `custom_providers/`), synced by settings-sync; see [goose/README.md](goose/README.md)
 - `gemini/` — base gemini/agy config (`settings.json`), synced by settings-sync
+- `codex/` - shared defaults merged into `~/.codex/config.toml`; launch with plain `codex`. Local state is preserved. See [codex/README.md](codex/README.md).
 - `no-mistakes/` — no-mistakes gate config template (`config.yaml`) + machine/local overlay (`config.local.yaml`, untracked), merged by settings-sync into `~/.no-mistakes/config.yaml`; see [no-mistakes/README.md](no-mistakes/README.md)
 - `sync.sh` — one-command machine setup: runs settings-sync + installs the machine-local tools the repo declares ([evo](https://github.com/evo-hq/evo) for claude-code/opencode, pi packages incl. [pi-web-access](https://github.com/nicobailon/pi-web-access)), symlinks `~/.agents/skills`, and installs the no-mistakes binary if missing
 
 ## Ownership and routing
 
-This repo is the SOT for agent-harness config (claude code, opencode, pi, goose, agy, no-mistakes): skills, commands, rules files, and the config templates that settings-sync derives per-target. Everything else (shells, editors, OS) lives in the [dotfiles repo](https://github.com/Haydeni0/dotfiles) - `~/.claude` and `~/.dotfiles` together cover the machine.
+This repo is the SOT for agent-harness config (claude code, opencode, pi, goose, agy, codex, no-mistakes): skills, commands, rules files, and the config templates that settings-sync derives per-target. Everything else (shells, editors, OS) lives in the [dotfiles repo](https://github.com/Haydeni0/dotfiles) - `~/.claude` and `~/.dotfiles` together cover the machine.
 
 Routing rules for the cases that look like they belong here but don't:
 
 - **Env vars exported to all shells** (e.g. `NO_MISTAKES_TELEMETRY=0`) → dotfiles `configs/zprofile`, not this repo and not `~/.zshenv`. Login shells see it - including the no-mistakes daemon's login-shell env probe at startup.
 - **Machine/local keys** (agent selection, absolute paths, per-host ports, credentials) → untracked `<tool>/config.local.yaml` overlay (settings-sync deep-merges it over the template), or stay out of the repo entirely. Never in the tracked template, never hand-edited into the derived target - it regenerates every sync. Day-to-day choices like no-mistakes's `agent:` are local, not shared - the template is committed, so a flip there would mean a commit.
 - **`~/.zshenv`** is intentionally machine-local (different env vars per machine), not managed by dotfiles.
+- **Codex** keeps project trust, hook approvals, and UI state in its local `~/.codex/config.toml`. Shared model and permission preferences belong in `codex/config.toml` here; sync merges the declared keys into the local config.
 
 `.gitignore` policy: ignore-all by default, whitelist per tracked dir (`!dir/` + `!dir/**`), then re-ignore machine-local files after the whitelist (last match wins). New tracked dir = add whitelist lines.
 
@@ -80,7 +82,7 @@ git submodule update --init --recursive
 
 **Claude Code** reads `~/.claude` directly — nothing to run.
 
-**opencode**, **pi**, **goose**, and **agy** are all synced by `settings-sync`, and the machine-local tools the repo declares (evo, pi packages) are installed by `sync.sh`. All need [uv](https://docs.astral.sh/uv/).
+**opencode**, **pi**, **goose**, **agy**, and **Codex** are synced by `settings-sync`, and the machine-local tools the repo declares (evo, pi packages) are installed by `sync.sh`. All need [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # install opencode: https://opencode.ai  •  install pi: https://pi.dev  •  install goose: https://goose.dev
@@ -89,6 +91,8 @@ uv run --directory ~/.claude/settings-sync sync opencode # granular: opencode co
 uv run --directory ~/.claude/settings-sync sync pi       # granular: pi config only (no installs)
 uv run --directory ~/.claude/settings-sync sync goose    # granular: goose config only (no installs)
 uv run --directory ~/.claude/settings-sync sync agy      # granular: agy config only (no installs)
+uv run --directory ~/.claude/settings-sync sync codex    # granular: Codex defaults + instructions
+codex                                                  # loads shared defaults
 uv run --directory ~/.claude/settings-sync sync --check  # drift check (read-only)
 # tip: alias ssync='uv run --directory ~/.claude/settings-sync sync' for brevity
 ```
