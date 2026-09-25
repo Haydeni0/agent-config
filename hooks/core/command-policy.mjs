@@ -58,6 +58,8 @@ const S3_FLATTEN = /["'`$()|;&\\]/g
 // were already split on).
 const SEG_FLATTEN = /["'`$()\\]/g
 const SPLIT_SEPS = /[\n;&|]/
+// Match Bash's default IFS; Unicode whitespace stays inside argument values.
+const SHELL_WHITESPACE = /[ \t\n]+/
 const DELETE_VERBS = new Set(["rm", "rmdir", "shred", "unlink", "trash"])
 const GH_WRITE_METHODS = new Set(["DELETE", "POST", "PATCH", "PUT"])
 
@@ -79,7 +81,7 @@ export function decide(command) {
   if (!PRECHECK.test(command)) return allow
 
   // ---------- command-level guards (flattened tokens) ----------
-  const tokens = command.replace(S3_FLATTEN, " ").split(/\s+/).filter(Boolean)
+  const tokens = command.replace(S3_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean)
   const n = tokens.length
 
   // sudo: deny anywhere in the command (covers sudo rm, bash -c "sudo ...").
@@ -172,7 +174,7 @@ export function decide(command) {
   // ---------- segment-based path guards ----------
   for (const seg of command.split(SPLIT_SEPS)) {
     if (!seg.trim()) continue
-    const s = seg.replace(SEG_FLATTEN, " ").split(/\s+/).filter(Boolean)
+    const s = seg.replace(SEG_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean)
     const sn = s.length
     if (sn === 0) continue
 

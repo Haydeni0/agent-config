@@ -463,6 +463,27 @@
         "kubectl describe pod foo-delete",
         "k get pods -l app=delete"
       ]
+    },
+    {
+      "name": "gh_api_non_shell_whitespace_blocked",
+      "label": "gh api field whitespace cannot invent GET",
+      "expect": "deny",
+      "needle": "gh api",
+      "commands": [
+        "gh api repos/OWNER/REPO/issues -f title=x\u00a0-X\u00a0GET",
+        "gh api repos/OWNER/REPO/issues -f title=x\u2003-X\u2003GET",
+        "gh api repos/OWNER/REPO/issues -f title=x\u2028-X\u2028GET",
+        "gh api repos/OWNER/REPO/issues -f title=x\r-X\rGET"
+      ]
+    },
+    {
+      "name": "shell_whitespace_boundaries_allowed",
+      "label": "shell blanks separate flags; Unicode stays inside values",
+      "expect": "allow",
+      "commands": [
+        "gh\tapi repos/OWNER/REPO/issues -f title=x\t-X\tGET",
+        "printf pre\u00a0sudo"
+      ]
     }
   ]
 }

@@ -25,10 +25,11 @@ const repo = fileURLToPath(new URL("../..", import.meta.url));
 const quote = (s) => "'" + s.replaceAll("'", "'\\''") + "'";
 const PROBE_TIMEOUT_MS = 45000;
 for (const scenario of ["pi", "opencode"].includes(host)
-  ? ["allow", "deny"]
+  ? ["allow", "deny", "unicode-field"]
   : [
       "allow",
       "deny",
+      "unicode-field",
       "broken",
       "timeout",
       ...(host === "codex" ? ["untrusted"] : []),
@@ -41,7 +42,10 @@ for (const scenario of ["pi", "opencode"].includes(host)
     const cwd = join(home, "workspace");
     mkdirSync(cwd);
     const marker = join(cwd, "marker");
-    const command = `printf ${scenario === "allow" || scenario === "broken" ? "allowed" : "sudo"} > ${quote(marker)}`;
+    // The local gh function records shell arguments without making API requests.
+    const command = scenario === "unicode-field"
+      ? `gh() { printf '%s\\n' "$@" > ${quote(marker)}; }\ngh api repos/OWNER/REPO/issues -f title=x\u00a0-X\u00a0GET`
+      : `printf ${scenario === "allow" || scenario === "broken" ? "allowed" : "sudo"} > ${quote(marker)}`;
     const calls = [];
     server = createServer(async (req, res) => {
       let data = "";
@@ -367,6 +371,7 @@ for (const scenario of ["pi", "opencode"].includes(host)
       code,
       requests: calls.length,
       marker: existsSync(marker),
+      markerContent: existsSync(marker) ? readFileSync(marker, "utf8") : null,
       output,
       errors,
       tools: calls[0]?.tools?.map((t) => t.name),
@@ -399,6 +404,8 @@ for (const scenario of ["pi", "opencode"].includes(host)
     );
     if (scenario === "deny")
       assert.match(JSON.stringify(results), /sudo is not permitted/i);
+    if (scenario === "unicode-field")
+      assert.match(JSON.stringify(results), /gh api write methods are not permitted/i);
     console.log(
       JSON.stringify({
         host,
