@@ -5,151 +5,197 @@ description: Use when creating, rebasing, verifying, or repairing a stack of PRs
 
 # Stack PR
 
-Create, rebase, and verify stacks of GitHub PRs safely. The skill's core claim:
-**git's local success says nothing about GitHub's stack state.** Every operation ends
-with a GitHub-side verification, because that is where stacked-PR damage happens and
-it is often irreversible (auto-retargeting, merged-empty PRs, deleted branches).
+Build from immutable commit boundaries, validate each PR's own patch, then verify
+GitHub's actual head, base, and checks. Local Git success alone proves neither
+publication nor stack health.
 
-## Model
+## Preflight and stack map
 
-A stack is an ordered list of (PR number, head branch, expected own-diff), where each
-PR's base is the previous PR's head branch. Branches carry exactly one PR's commits
-(ideally one commit each). The map file is ground truth for what "healthy" means:
+1. Resolve the repository, push remote, stack base, and ordered PR dependencies.
+   Confirm head/base repositories for forks before choosing remotes or refspecs.
+2. Check worktrees, dirty files, and any active rebase/cherry-pick. Preserve user
+   work; finish or abort an existing operation deliberately before starting another.
+3. Fetch relevant refs, inspect divergence, and read PR state. Capture **every old
+   parent, head, and reviewed remote tip before changing any branch**. If a parent
+   already moved, recover its old boundary from saved refs/reflogs and inspect the
+   commit range. Missing or ambiguous boundaries block rewriting.
+4. Inspect CI triggers against each actual PR base: branch/path filters, events,
+   required checks, and concurrency. Record how each PR will receive valid checks.
 
-`.claude/stacks/<slug>.json`
+Keep `.agents/stacks/<slug>.json`. Read legacy `.claude/stacks/<slug>.json` when
+present; reconcile both copies before migrating either. The map records reviewed
+intent; live Git/GitHub observations must be checked against it.
+
 ```json
 {
-  "slug": "flpm-246",
-  "base": "main",
+  "repo": "owner/repository",
+  "remote": "origin",
+  "base": "trunk",
   "prs": [
-    {"branch": "hayden/flpm-246-pr1", "pr": 975, "own_files": 4, "title": "[REFACTOR] ..."},
-    {"branch": "hayden/flpm-246-pr2", "pr": 979, "own_files": 20, "title": "[CHORE] ..."},
-    {"branch": "hayden/flpm-246-pr3", "pr": 980, "own_files": 14, "title": "[REFACTOR] ..."}
+    {
+      "branch": "hayden/example-pr1",
+      "pr": 123,
+      "title": "Example change",
+      "parent_sha": "<full SHA at the start of this PR's own range>",
+      "head_sha": "<full validated head SHA>",
+      "remote_sha": "<full reviewed remote head SHA>",
+      "is_draft": true,
+      "own_files": 4
+    }
   ]
 }
 ```
 
-`own_files` = the number of files in that PR's diff against its base. Record it at
-create time; verification compares against it later.
+Each branch includes its ancestors; only `parent_sha..head_sha` belongs to that
+PR. Multiple own commits are valid. `own_files` is a warning signal, not proof of
+patch identity. For unpublished branches use `pr: null` and `remote_sha: ""` after
+confirming the remote ref is absent. Record CI findings alongside the map.
+
+Before rewriting, save the map as an operation snapshot and create named backup
+refs for every old parent/head. Keep these through remote verification. Record
+candidate SHAs and publication progress separately so an interrupted operation
+retains both its old boundaries and its intended new tips.
 
 ## Create
 
-0. **Preflight: check the repo's CI triggers.** Grep `.github/workflows/` for
-   `pull_request` triggers scoped `branches: [main]` (or any branch filter). If
-   present, stacked PRs - whose bases are other branches - will get no CI at all.
-   Either fix the triggers first (drop the `branches:` filter; see research-lpm
-   PR #981 for the pattern) or plan on `gh workflow run <wf> --ref <branch>` per
-   stacked head, and note it in the map. Do not discover this after the first
-   rebase push.
-1. Resolve the branch base (usually `main`) and the source branch holding N stacked
-   commits. For each commit i (oldest first): create branch `<prefix>-prN` at that
-   commit. One branch per commit, in stack order.
-2. Push all branches (respect the user's git gates - push authorization rules apply
-   to each push in this skill).
-3. For each PR, oldest first: `gh pr create --draft --base <previous branch or the
-   base> --head <branch> --title <title>`. **Always pass `--base` explicitly** -
-   `gh` defaults to the default branch and silently mis-bases every stacked PR.
-4. Read back each PR's `changedFiles` from GitHub, write the map file, run
-   **Verify**.
+1. Inspect the source range and group commits into the requested PR units. Create
+   `hayden/` branches at the group tips, oldest first. Review each own patch and
+   record its boundaries **before** publishing; GitHub's later file count must
+   not become the sole definition of correctness.
+2. Publish through **Publish**, using an empty expected remote SHA for new refs.
+3. Create draft PRs oldest first, passing `--repo`, `--head`, and explicit `--base`
+   (the stack base for the first PR; the previous head branch thereafter). Use
+   `gh pr create --draft --body-file <file>` with the intended title/body.
+4. Save PR numbers and run **Verify**. Preserve existing draft/ready state when
+   updating an existing PR; record changes as observations.
 
-## Rebase (after the base moved, or a lower stack commit changed)
+## Rebuild bottom-up
 
-Never guess `--onto` arguments. Read the map file and compute the replay range from
-recorded SHAs, not branch positions:
+Use the operation snapshot's old boundaries throughout. For each affected PR,
+`new_parent` is the validated replacement parent SHA (or new stack-base SHA).
+Use fresh `hayden/` scratch and backup branch names; resolve variables to verified
+full SHAs before running these commands:
 
-```
-# branch N's own commits = everything after its parent branch's recorded tip
-parent_tip=$(git rev-parse <previous branch>)        # replay range start: exclusive
-git checkout <branch N>
-git rebase --onto <new parent tip> $parent_tip~1 <branch N>   # only if branch N has >1 own commit
+```bash
+git branch "$backup" "$old_head"
+git switch --create "$scratch" "$old_head"
+git rebase --no-update-refs --onto "$new_parent" "$old_parent" "$scratch"
+new_head=$(git rev-parse HEAD)
+git range-diff "$old_parent..$old_head" "$new_parent..$new_head"
+git diff "$new_parent" "$new_head"
 ```
 
-For a one-commit branch, prefer explicit cherry-pick onto a scratch branch - it
-cannot silently replay zero commits:
+`old_parent` is the exclusive replay boundary. Using `old_parent~1` replays an
+extra parent commit. Reading the parent branch after moving it loses the old
+boundary. The same recipe handles one or several own commits.
+`--no-update-refs` keeps backup and original branches fixed even when the user's
+Git configuration enables automatic ref updates.
 
+Review every changed/dropped patch in `range-diff`, the resulting own diff, and
+relevant tests. Unexpected empty patches require investigation: distinguish
+already-integrated work from accidentally lost work before accepting a drop.
+On conflicts, resolve against intended behavior and validate again; abort the
+scratch operation if that intent cannot be established.
+
+Build and validate all affected descendants before publishing. Update original
+local branches only after confirming they still match the snapshot and accounting
+for worktrees using them. Keep scratch/backup refs if any check fails.
+
+## Publish
+
+Apply the user's commit/push authorization gate to **every** such action,
+including repair and CI retriggers. Rewriting a stack does not authorize merging.
+
+Use an explicit lease against the remote SHA captured and reviewed in preflight.
+For the environment-gate authorization path:
+
+```bash
+printenv PUSH_AUTHORISED && git push \
+  --force-with-lease="refs/heads/$branch:$expected_remote_sha" \
+  "$remote" "$new_head:refs/heads/$branch"
 ```
-git checkout -B <branch N> <new parent tip>
-git cherry-pick <recorded commit sha for branch N>
+
+An empty expected SHA requires that the ref is still absent. Publish bottom-up;
+after each push confirm the exact remote ref and, for an existing PR, its GitHub
+head. Verify new PRs after creation. Record progress.
+Treat descendant comparisons as pending until their planned tips are published.
+Run full **Verify** once the affected stack is published.
+
+**Lease rejection stops publication.** Fetch to inspect the new work, preserve
+both versions, reconcile changes, and rebuild affected descendants. Capture a
+new expected SHA only after that review. Fetching and blindly retrying renews
+permission to overwrite unreviewed work; never substitute bare force.
+
+## Verify
+
+Query each PR explicitly, for example:
+
+```bash
+gh pr view "$pr" --repo "$repo" --json \
+  state,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,headRepositoryOwner,changedFiles,isDraft,statusCheckRollup
+git ls-remote --heads "$remote" "refs/heads/$branch"
 ```
 
-Rules:
-- Rebase bottom-up (lowest branch first), each onto the new position of its parent.
-- After each branch, immediately diff-check: `git diff <parent>..<branch> --stat`
-  must match that PR's recorded `own_files`. A zero-file diff means the rebase
-  dropped the commit - STOP, do not push.
-- Push with `--force-with-lease`, bottom-up. If the lease rejects, `git fetch` that
-  one ref and retry - never drop to a bare `--force`.
-- Run **Verify** after all pushes. Fix anything it reports before declaring done.
+Check:
 
-## Verify (run after every create, rebase, push, or merge in the stack)
+- Head name/repository and GitHub head SHA match the validated candidate and exact
+  remote branch SHA. Existence alone is insufficient.
+- Base name/repository matches the dependency map. Compare its current tip with
+  the validated parent; movement requires refreshing and revalidating the diff.
+- Actual GitHub own patch matches reviewed intent and the validated local range.
+  Check ancestry and changed paths/content; matching file counts can hide losses.
+- Lifecycle state is explained. Unexpected `MERGED`, `CLOSED`, missing refs, or an
+  empty own diff trigger **Repair** investigation, not an automatic diagnosis.
+- Required checks correspond to the current candidate or GitHub's test merge for
+  its current head/base. Stale green checks cannot validate a different head.
 
-For each PR in the map, query GitHub (not local git) and assert ALL of:
+Report one row per PR: head/base identity, patch, lifecycle, CI, and draft state.
+Distinguish failed, pending, and verified. Record reviewed map updates after
+verification; preserve the operation snapshot. Pending CI means CI is pending.
+Identity/patch mismatches stop further publication or merging until reconciled.
 
-1. `state == "OPEN"` (or the user has just said it merged). A `MERGED` PR the user
-   did not merge is the empty-diff auto-merge failure mode - see **Repair**.
-2. `baseRefName == previous PR's head branch` (first PR: the stack base).
-   GitHub auto-retargets stacked PRs when a base's head moves; a retarget is often
-   correct (parent merged) but must be an explicit finding, never silent.
-3. `changedFiles` equals the recorded `own_files`. Zero changed files = broken.
-4. The head branch exists on the remote (`git ls-remote origin <branch>` non-empty).
-   GitHub deletes head branches of merged PRs; a missing branch with an OPEN PR
-   means the PR is orphaned.
+## Repair and CI
 
-Also record and report (observations, not failures): `isDraft` vs the map's record -
-draft/ready flips happen on the user's side and Verify should surface them, not
-trip on them.
+Diagnose from refs, diffs, PR timeline, merge metadata, and logs before mutating.
 
-Print a one-line-per-PR table with pass/fail per assertion. Any fail = the stack is
-broken: do not proceed with merges or further rebases until repaired.
-
-**CI race diagnosis.** All real suites green but the repo's gatekeeper check
-(e.g. `check-statuses`) red after a force-push = push race: `concurrency:
-cancel-in-progress` cancelled the superseded run generation on the pushed SHA and
-the gatekeeper judged the cancellation a failure. Check the run list for that SHA:
-cancelled sibling runs alongside green survivors confirm it. Repos whose gatekeeper
-is cancellation-tolerant (skips a cancelled run only when a successful sibling of
-the same workflow exists - see research-lpm PR #984) self-heal: the fresh
-gatekeeper run from the same push goes green; just wait for it. Repos without
-the fix: do NOT try `gh workflow run` on the gatekeeper - gatekeeper scripts
-typically resolve their target SHA/PR from the `pull_request` payload only, so a
-dispatch run no-ops. The working lever is a fresh PR event: an empty commit
-pushed to the branch (`git commit --allow-empty -m "chore: retrigger CI"`).
-
-## Repair (known GitHub-side failure modes)
-
-- **PR shows MERGED with ~0 changes, user never merged it**: an earlier bad rebase
-  made head == base; GitHub treated it as empty and auto-merged, deleting the
-  branch. Merged PRs cannot be reopened. Recovery: `git push origin <branch>`
-  (recreates the remote ref), close the dead PR, `gh pr create --draft --base
-  <parent> --head <branch>` with the original title/body (note in the body that it
-  recreates #N). Update the map file with the new PR number, run **Verify**.
-- **PR base auto-retargeted wrong** (e.g. grandparent instead of parent): `gh pr
-  edit --base` fails with "Cannot change the base branch because the pull request
-  is part of a stack" - GitHub stack bookkeeping is stuck. Recovery: close the PR,
-  recreate with the correct `--base` (the check runs at edit time, not create
-  time). Update the map.
-- **Head branch missing on remote**: re-push it, then check whether GitHub reopened
-  the PR by itself; if not, recreate per above.
-- **CI absent on stacked PRs**: workflows with `pull_request: branches: [main]`
-  never fire for PRs whose base is another branch. Check for runs at the head SHA;
-  if none and the repo still has branch-scoped triggers, `gh workflow run <wf>
-  --ref <branch>` for the missing suites and note the repo should widen its
-  triggers (research-lpm did this in #981; its gatekeeper learned cancellation
-  tolerance in #984). `check-workflow-statuses`-style gatekeepers associate
-  dispatched runs with the PR only when the dispatch shares the head SHA - verify
-  via the PR's checks, not the run list.
+- **Unexpected merge:** commits can reach the base via another PR or direct push
+  and legitimately mark a PR merged indirectly. Verify inclusion first. If work
+  remains missing, restore it from saved refs onto the correct base and validate
+  the remaining patch before creating a replacement draft PR. A merged PR cannot
+  be reopened.
+- **Wrong base:** inspect the actual target, then try `gh pr edit --base <target>`.
+  If rejected, inspect the error and current stack state. Recreating is a last
+  resort: preserve title/body/metadata, link the replacement, and retarget affected
+  descendants. Verify the replacement before retiring an open predecessor.
+- **Missing head:** determine whether deletion followed an expected merge. Restore
+  only an intended live branch from a validated SHA with an absent-ref lease;
+  inspect PR state and reopen a closed, unmerged PR when appropriate.
+- **Absent CI:** inspect branch/path filters and supported events. Manual dispatch
+  requires `workflow_dispatch`, a workflow present on the default branch, and
+  compatible event handling. Confirm resulting checks attach to the intended PR
+  revision. Propose repo-wide trigger changes separately from stack repair.
+- **Red gatekeeper:** inspect its failing log, run attempts, event, SHA, and
+  concurrency configuration. Cancelled siblings alone do not establish cause.
+  Rerun eligible checks when appropriate. An empty commit is a last resort after
+  confirming a new PR event is necessary; apply both authorization gates, rebuild
+  affected descendants, and reverify the resulting revision.
 
 ## Merge order and post-merge
 
-Merge strictly bottom-up. After PR1 merges to the base branch:
+When merging is authorized, merge bottom-up only after the intended revision's
+required checks and reviews pass. Confirm the merge result and method on GitHub.
 
-1. The next PR's base retargets to the merge target (GitHub does this for stacks;
-   verify it happened - if it still points at the merged branch, `gh pr edit
-   --base main`; if that fails due to stack bookkeeping, close + recreate).
-2. If the merge was a squash/rebase-merge, the next PR's diff may now show
-   conflicts or stale-parent artifacts - rebase it onto the new base tip per
-   **Rebase**, then Verify.
-3. Update the map file (drop the merged PR, re-point the next PR's base).
+GitHub documents automatic child retargeting after deletion of a merged head
+branch; verify the actual base instead of assuming it moved. Retarget the next PR
+to the recorded merge target where needed. After squash/rebase merge, replay only
+remaining PRs' own commits using the saved **old** parent boundaries. Revalidate
+all affected descendants against the actual new base. Update the active map while
+retaining the completed entry and operation snapshot for recovery.
 
-Never merge a PR whose own-diff is empty, and never let Verify-fails ride: every
-one of them is a stack corruption in progress.
+## References
+
+- [Git rebase ranges](https://git-scm.com/docs/git-rebase)
+- [Explicit push leases](https://git-scm.com/docs/git-push)
+- [Indirect merges](https://docs.github.com/en/pull-requests/reference/pull-request-merges)
+- [Post-merge retargeting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/merging-a-pull-request)
+- [Workflow event requirements](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
