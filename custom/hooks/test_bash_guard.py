@@ -1,22 +1,7 @@
-"""Tests for the PreToolUse hook `check-bash-guard.sh`.
+"""Exercise the Claude command hook as a subprocess against shared policy cases.
 
-Hard-denies S3 delete operations, all deletes under /mnt/data, and deletes on
-filesystem root. The hook is invoked as a real subprocess (with jq parsing
-exercised end to end):
-- a deny decision JSON on stdout when the command would delete S3 data,
-  delete anything under /mnt/data, or delete filesystem root;
-- silence (empty stdout) when the command is allowed through.
-
-Command cases are loaded from bash-guard-cases.json (shared with the
-opencode bash-guard.js plugin test). Harness-specific tests (jq payload
-parsing) stay here - they have no opencode equivalent.
-
-Scope mirrors the user's choices:
-  S3:       deletes only blocked. Uploads (cp ./x s3://..., s3api put-*) and
-            read ops (ls, cp download, sync download, list-*/get-*) allowed.
-  /mnt/data: ALL deletes blocked (rm, rmdir, shred, unlink, trash,
-            find -delete, find -exec rm). Reads/writes allowed.
-  root:     deletes on / or /* blocked (any flag arrangement).
+Denied commands return native deny JSON; passing commands leave stdout empty.
+Payload edge cases exercise the compatibility entry point's JSON handling.
 """
 
 from __future__ import annotations
@@ -29,7 +14,7 @@ from pathlib import Path
 import pytest
 
 HOOK = Path(__file__).resolve().parent / "check-bash-guard.sh"
-CASES = json.loads((Path(__file__).resolve().parent / "bash-guard-cases.json").read_text())
+CASES = json.loads((Path(__file__).resolve().parents[2] / "hooks/tests/fixtures/command-cases.json").read_text())
 GROUPS = {g["name"]: g for g in CASES["groups"]}
 
 
@@ -80,7 +65,7 @@ def _assert_denied(result: subprocess.CompletedProcess[str], needle: str) -> Non
     )
 
 
-# -- shared corpus (parametrized from bash-guard-cases.json) -------------
+# -- shared corpus (parametrized from command-cases.json) -------------
 # Add a command to the JSON and it flows into both this test and the opencode
 # plugin test. The functions below are thin parametrize-and-assert wrappers;
 # the corpus is the source of truth for what's blocked/allowed.

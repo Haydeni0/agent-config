@@ -1,3 +1,4 @@
+from conftest import install_hook_sources
 import os
 import pathlib
 from typer.testing import CliRunner
@@ -94,6 +95,7 @@ def test_cli_agy_all(tmp_path: pathlib.Path):
     (claude / "harnesses/gemini").mkdir(parents=True)
     (claude / "harnesses/gemini" / "settings.json").write_text('{"model": "gemini-3.7-flash"}\n')
 
+    install_hook_sources(claude)
     agy_dir = tmp_path / "gemini" / "config"
     agy_cli_dir = tmp_path / "gemini" / "antigravity-cli"
 

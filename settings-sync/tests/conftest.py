@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import shutil
 
 import pytest
 
@@ -31,4 +32,13 @@ def source_home(tmp_path: Path) -> Path:
     (source / "harnesses/no-mistakes" / "config.yaml").write_text("{}\n")
     (source / "harnesses/codex" / "config.toml").write_text('model = "shared"\n')
     (source / "harnesses/opencode/plugins").mkdir()
+    install_hook_sources(source)
     return source
+
+
+def install_hook_sources(source: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    shutil.copytree(repo / "hooks", source / "hooks", dirs_exist_ok=True)
+    for harness in ("codex", "goose", "gemini"):
+        (source / "harnesses" / harness).mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(repo / "harnesses" / harness / "hooks.json", source / "harnesses" / harness / "hooks.json")

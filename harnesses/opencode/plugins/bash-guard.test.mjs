@@ -1,6 +1,6 @@
 // Tests for the bash-guard opencode plugin.
 //
-// Command cases are loaded from bash-guard-cases.json (shared with the
+// Command cases are loaded from command-cases.json (shared with the
 // Claude check-bash-guard.sh hook test at ~/.claude/custom/hooks/).
 // Harness-specific tests (plugin no-op when tool !== "bash", missing args)
 // stay here - they have no Claude hook analogue.
@@ -19,10 +19,10 @@ import { fileURLToPath } from "node:url"
 import { decide, BashGuard } from "./bash-guard.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const CASES_PATH = path.resolve(__dirname, "../../../custom/hooks/bash-guard-cases.json")
+const CASES_PATH = path.resolve(__dirname, "../../../hooks/tests/fixtures/command-cases.json")
 const CASES = JSON.parse(readFileSync(CASES_PATH, "utf8"))
 
-// -- shared corpus (parametrized from bash-guard-cases.json) -------------
+// -- shared corpus (parametrized from command-cases.json) -------------
 // Add a command to the JSON and it flows into both this test and the Claude
 // hook test. The loop below is the thin harness; the corpus is the source of
 // truth for what's blocked/allowed.

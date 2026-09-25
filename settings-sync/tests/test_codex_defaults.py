@@ -1,3 +1,4 @@
+from conftest import install_hook_sources
 from pathlib import Path
 import tomllib
 
@@ -15,6 +16,7 @@ def defaults_source(tmp_path: Path) -> Path:
     (source / "harnesses/codex" / "config.toml").write_text('model = "example-model"\n[features]\nhooks = true\n')
     (source / "rules").mkdir(parents=True, exist_ok=True)
     (source / "rules/global.md").write_text("# Rules\nSee @skills/uv.\n")
+    install_hook_sources(source)
     return source
 
 

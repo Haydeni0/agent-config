@@ -138,6 +138,8 @@ Source resolution: `--source` (alias `--claude-dir`), then `AGENT_CONFIG_REPO`, 
 
 Shared templates own the keys they declare. JSON/YAML/TOML mappings merge recursively; declared arrays/scalars replace; omitted keys stay local. Invalid source or installed config fails before writing. Codex retains TOML formatting. no-mistakes retains its explicit template-plus-overlay contract.
 
+Hook event arrays reconcile adopted groups separately, preserving foreign registrations. See [shared hooks](../hooks/README.md#install-and-update) for snapshots, conflicts, native trust and rollback.
+
 Generated instructions, commands, agents, providers, and links use `$XDG_STATE_HOME/agent-config/managed.json` (default `~/.local/state/agent-config/managed.json`). Identical existing outputs can be adopted. Unchanged managed outputs update normally; local edits cause conflicts. Selected-step `--force` backs up a conflicting file before replacement under the adjacent `backups/` directory, with a JSON record of its original destination. Restore that file to its recorded destination if needed.
 
 Cleanup deletes only unchanged recorded outputs. Foreign files and real directories survive force; changed managed orphans remain conflicts. Checks and dry runs preserve config, links, ownership records, and timestamps. Installs use atomic replacement and detect edits since reading; advisory locks serialize generated-output writes, while native applications can still write their own settings.

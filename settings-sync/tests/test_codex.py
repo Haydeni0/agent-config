@@ -1,3 +1,4 @@
+from conftest import install_hook_sources
 import pathlib
 import stat
 
@@ -41,6 +42,7 @@ def codex_home(tmp_path: pathlib.Path) -> pathlib.Path:
     (home / "skills").mkdir(parents=True)
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
+    install_hook_sources(home)
     return home
 
 

@@ -272,7 +272,8 @@
         "git push -f \\\norigin main",
         "git push origin +main:main",
         "git push origin +HEAD:main",
-        "bash -c \"git push origin +main:main\""
+        "bash -c \"git push origin +main:main\"",
+        "git \\\npush --force"
       ]
     },
     {
@@ -327,7 +328,8 @@
         "gh api -if body=x /repos/x/y",
         "gh api -iF body=x /repos/x/y",
         "gh api --jq \"-X GET\" -f body=x /repos/o/r",
-        "gh api -t \"-X GET\" -f body=x /repos/o/r"
+        "gh api -t \"-X GET\" -f body=x /repos/o/r",
+        "gh \\\napi -X DELETE repos/owner/repo"
       ]
     },
     {

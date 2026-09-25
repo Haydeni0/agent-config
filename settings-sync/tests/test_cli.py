@@ -1,3 +1,4 @@
+from conftest import install_hook_sources
 import json
 import pathlib
 
@@ -36,6 +37,7 @@ def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
     (home / "harnesses/claude").mkdir(parents=True)
     (home / "harnesses/claude/settings.json").write_text("{}")
     (home / "harnesses/opencode/plugins").mkdir()
+    install_hook_sources(home)
     return home
 
 

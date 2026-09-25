@@ -18,6 +18,11 @@ def doctor(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Outcome]:
         host = shutil.which(harness.host)
         outcomes.append(Outcome(target, Status.UNCHANGED if host else Status.NO_SOURCE,
                                 f"host CLI: {host}" if host else f"optional host CLI unavailable: {harness.host}; config generation is available"))
+        if harness.name in ("claude", "codex", "goose", "agy"):
+            node = shutil.which("node")
+            outcomes.append(Outcome(target, Status.UNCHANGED if node else Status.FAILED,
+                                    f"hook runtime: {node}; native loading/trust requires a host smoke test" if node
+                                    else "Node.js is required to execute shared command hooks; install Node.js before using this harness"))
         for outcome in run_harness(harness, paths, False, True):
             if outcome.status not in (Status.UNCHANGED, Status.NO_SOURCE, Status.FAILED):
                 outcome.detail += f"; run agent-config sync {harness.name}"

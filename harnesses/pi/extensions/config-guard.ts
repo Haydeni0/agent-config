@@ -32,54 +32,7 @@ import { fileURLToPath } from "node:url";
 
 const sourceRepo = path.resolve(path.dirname(realpathSync(fileURLToPath(import.meta.url))), "../../..");
 
-const WRITE_OPS = /\b(tee|sed|dd|cp|install|rsync|mv|rm|rmdir|shred|unlink)\b/;
-const SED_INPLACE = /(^|\s)-i\w*\b|--in-place\b/;
-// write-redirect operator capturing its target file token (excludes fd-to-fd like
-// 2>&1 and input redirects <). Applied after stripContexts + ~/$HOME expand, so
-// prose ">" is already gone. ponytail: target-aware - a read of the dir with stderr
-// to /dev/null (or any redirect whose target isn't the dir) is allowed; only a
-// redirect whose resolved target is the dir blocks. Relative targets resolve
-// against process.cwd(); protected dirs are absolute, so a bareword target only
-// hits when cwd is in the dir (rare) - strictly weaker than the old any-redirect rule.
-const WRITE_REDIR = /(?:^|\s)(?:&>>?|\d*>>?\|?)(?!&\d)\s*(\S+)/g;
-
-// Strip quoted strings and [[ ]]/(( )) contexts so a ">" inside prose ("->",
-// "=>", "$a > $b") doesn't look like a redirect. ponytail: naive — escaped
-// quotes / nested [[ ]] aren't handled; add a real lexer if false-positives bite.
-function stripContexts(c: string): string {
-  return c
-    .replace(/"([^"\\]|\\.)*"/g, " ")
-    .replace(/'[^']*'/g, " ")
-    .replace(/\[\[[\s\S]*?\]\]/g, " ")
-    .replace(/\(\([\s\S]*?\)\)/g, " ");
-}
-
-function bashWritesTo(command: string, dir: string, home: string): boolean {
-  // Collapse backslash-newline continuations before segmenting, so
-  // `echo x > \<newline> dir/config.json` can't split a redirect from its
-  // target across the segment split. Collapsing to a space preserves shell
-  // semantics.
-  const c = stripContexts(command.replace(/\\\n/g, " ")).replace(/~/g, home).replace(/\$HOME\b/g, home);
-  // dir present as a path token (followed by sep or end) — avoids $dir-foo hits
-  const dirRe = new RegExp(dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:[/\\\\]|$)");
-  if (!dirRe.test(c)) return false;
-  for (const seg of c.split(/[\n\r]+|&&|\|\||;|(?<!>)\|(?![&|])/)) {
-    // a redirect only counts if its resolved target is the dir (not /dev/null etc.)
-    WRITE_REDIR.lastIndex = 0;
-    let m = WRITE_REDIR.exec(seg);
-    while (m !== null) {
-      const target = path.resolve(m[1]);
-      if (target === dir || target.startsWith(dir + path.sep)) return true;
-      m = WRITE_REDIR.exec(seg);
-    }
-    const w = seg.trim().replace(/^sudo\s+/, "").replace(/^(?:\w+=\S+\s+)+/, "").match(/^(\w[\w-]*)/);
-    if (w && WRITE_OPS.test(w[1])) {
-      if (w[1] === "sed" && !SED_INPLACE.test(seg)) continue; // sed without -i reads
-      return true;
-    }
-  }
-  return false;
-}
+import { bashWritesTo } from "../../../hooks/core/config-policy.mjs";
 
 export default function (pi: ExtensionAPI) {
   const home = os.homedir();

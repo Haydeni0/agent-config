@@ -1,3 +1,4 @@
+from conftest import install_hook_sources
 import json
 import pathlib
 
@@ -52,6 +53,7 @@ def goose_home(tmp_path: pathlib.Path) -> pathlib.Path:
     (home / "agents").mkdir()
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
+    install_hook_sources(home)
     return home
 
 

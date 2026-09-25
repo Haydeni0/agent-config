@@ -5,7 +5,7 @@ import re
 import shlex
 from pathlib import Path
 
-from settings_sync.merging import sync_json_defaults
+from settings_sync.hooks import hook_groups, sync_hook_config
 from settings_sync.ownership import prune_generated, sync_generated_symlink
 from settings_sync.paths import Paths, config_home
 from settings_sync.sync import Outcome, Status
@@ -27,7 +27,7 @@ def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
         defaults = json.loads((paths.source_dir / "harnesses/claude/settings.json").read_text())
         if not isinstance(defaults, dict):
             raise ValueError("Claude settings must be a JSON object")
-        for groups in defaults.get("hooks", {}).values():
+        for groups in hook_groups(defaults.get("hooks", {})).values():
             for group in groups:
                 for hook in group.get("hooks", []):
                     if hook.get("type") == "command":
@@ -53,7 +53,7 @@ def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
             if not isinstance(shared, list) or not all(isinstance(item, str) for item in shared):
                 raise ValueError("shared permissions.allow must be a list of strings")
             shared.extend(item for item in additions if item not in shared)
-        return sync_json_defaults(target, json.dumps(defaults), dry_run)
+        return sync_hook_config(target, defaults, dry_run)
     except (OSError, ValueError) as exc:
         return Outcome(target, Status.FAILED, f"could not render Claude settings: {exc}")
 

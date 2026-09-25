@@ -48,3 +48,12 @@ def test_doctor_reports_required_missing_and_broken_link(source_home: Path, isol
     assert "broken" in result.output
     assert "submodule update" in result.output
     assert snapshot(isolated_home) == before
+
+
+def test_doctor_reports_missing_hook_runtime(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv('PATH', '')
+    before = snapshot(isolated_home)
+    result = CliRunner().invoke(agent_config_app, ['--source', str(source_home), 'doctor', 'claude'])
+    assert result.exit_code == 1
+    assert 'Node.js' in result.output
+    assert snapshot(isolated_home) == before

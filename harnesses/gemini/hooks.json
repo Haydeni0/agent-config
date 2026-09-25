@@ -1,0 +1,8 @@
+{
+  "agent-config": {
+    "PreToolUse": [{
+      "matcher": "run_command",
+      "hooks": [{"type": "command", "command": "${AGENT_CONFIG_COMMAND} || exit 2", "timeout": 10}]
+    }]
+  }
+}
