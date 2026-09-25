@@ -26,9 +26,11 @@ For a custom Codex home, pass `--codex-dir /path/to/codex-home` before the `code
 | `harnesses/codex/config.toml` | `config.toml` | merge declared keys; retain local keys and formatting |
 | `harnesses/codex/config.toml` `sqlite_home` | configured local path | create directory with mode `0700` |
 | `rules/global.md` | `AGENTS.md` | `@skills/<n>` rewritten to `the \`<n>\` skill` (codex reads global instructions from `$CODEX_HOME/AGENTS.md`) |
-| `skills/` | (native) | codex reads `~/.agents/skills` (user-scope root); local sync links that at `~/.claude/skills` |
+| `skills/` | (native) | codex reads `~/.agents/skills` (user-scope root), linked directly to the source checkout's `skills/` |
 
 Use Codex's `/skills` to inspect discovery, including nested and symlinked skills. Opencode-specific skill lint runs through `agent-config doctor opencode`; `sync codex` manages its defaults and global instructions.
+
+The source includes `skills/synced/` and `skills/headless-chromium-rootless-libs/`. When replacing a managed link through `~/.claude/skills`, sync first requires all visible legacy entries to resolve to their source counterparts. Reconcile local skills, then run `agent-config sync claude links` before `agent-config sync codex`. Foreign roots remain preserved.
 
 `sync codex --check` checks managed defaults and global instructions for drift. Changes to `rules/global.md` apply on normal sync. A local edit to generated instructions requires selected-step `--force`, which preserves a backup.
 

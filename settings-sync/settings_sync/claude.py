@@ -78,9 +78,19 @@ def sync_claude_entries(paths: Paths, categories: tuple[str, ...], force: bool, 
 
 
 def sync_shared_skills(paths: Paths, dry_run: bool) -> list[Outcome]:
-    outcomes = sync_claude_entries(paths, ("skills",), False, dry_run)
-    outcomes.append(sync_generated_symlink(Path.home() / ".agents/skills", claude_home(paths) / "skills", dry_run=dry_run))
-    return outcomes
+    target = Path.home() / ".agents/skills"
+    source = paths.source_dir / "skills"
+    legacy = claude_home(paths) / "skills"
+    if target.is_symlink() and target.resolve() == legacy.resolve() and legacy.is_dir():
+        local = sorted(
+            entry.name for entry in legacy.iterdir()
+            if not entry.name.startswith(".") and entry.resolve() != (source / entry.name).resolve()
+        )
+        if local:
+            return [Outcome(target, Status.SKIPPED,
+                            f"legacy skills need reconciliation before changing discovery: {', '.join(local)}; "
+                            "move shared skills into the source checkout and sync claude links first")]
+    return [sync_generated_symlink(target, source, dry_run=dry_run)]
 
 
 def sync_claude_links(paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:

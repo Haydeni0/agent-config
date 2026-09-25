@@ -144,6 +144,8 @@ agent-config sync codex agents-md --force
 
 Real directories and foreign shared-skill roots require deliberate inventory/reconciliation. Force is not a directory migration mechanism. Leave ambiguous entries intact and report their paths. After an interruption, inspect current entries against the manifest and resume completed-safe steps or roll back; retain the original backups.
 
+Codex's `~/.agents/skills` links directly to the source checkout's `skills/`, including the tracked `synced/` collection and Chromium skill. Before replacing a managed legacy link through `~/.claude/skills`, reconcile each visible legacy skill with its source counterpart. Compare existing local copies with the tracked files, preserve differences, and move reconciled runtime copies into the private backup. Run `agent-config sync claude links` to install compatibility links, then `agent-config sync codex`. Sync refuses the switch while legacy entries would lose discovery.
+
 If external dependencies are needed, inspect `agent-config bootstrap --dry-run`, then bootstrap the intended harness explicitly. This can install packages. no-mistakes installation requires explicit selection and starts its daemon. `sync.sh` invokes bootstrap; use `agent-config sync` for routine local rendering.
 
 ## 6. Verify this machine

@@ -9,8 +9,6 @@ config.local.yaml
 .agents/backlog.md
 .agents/plans/local/
 .claude/
-skills/synced/
-skills/headless-chromium-rootless-libs/
 
 # Builds, dependencies, and scratch work
 .venv/

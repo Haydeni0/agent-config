@@ -13,7 +13,7 @@ def test_short_commands_and_read_only_diagnostics(source_home: Path, isolated_ho
     assert runner.invoke(agent_config_app, [*args, "check", "codex"]).exit_code == 1
     result = runner.invoke(agent_config_app, [*args, "sync", "codex"])
     assert result.exit_code == 0, result.output
-    assert (isolated_home / ".agents/skills").resolve() == isolated_home / ".claude/skills"
+    assert (isolated_home / ".agents/skills").resolve() == source_home / "skills"
     before = snapshot(isolated_home)
     for command in ("check", "doctor"):
         result = runner.invoke(agent_config_app, [*args, command, "codex"])
