@@ -142,7 +142,7 @@ Generated instructions, commands, agents, providers, and links use `$XDG_STATE_H
 
 Cleanup deletes only unchanged recorded outputs. Foreign files and real directories survive force; changed managed orphans remain conflicts. Checks and dry runs preserve config, links, ownership records, and timestamps. Installs use atomic replacement and detect edits since reading; advisory locks serialize generated-output writes, while native applications can still write their own settings.
 
-The shared `~/.agents/skills` link points directly to the source checkout's `skills/` and is installed during Codex/full local sync. A foreign directory/link is reported and preserved, including with force. A managed legacy link through `~/.claude/skills` updates only after its visible entries resolve to their source counterparts. Inventory and reconcile local skills, then sync Claude links before Codex. The source includes the nested `synced/` collection and Chromium skill.
+The shared `~/.agents/skills` link points directly to the source checkout's `skills/` and is installed during Codex/full local sync. A foreign directory/link is reported and preserved, including with force. Claude's generated `~/.claude/skills/synced/` collection stays local to Claude. A managed legacy link updates only after its remaining visible entries resolve to their source counterparts. Inventory and reconcile those entries, then sync Claude links before Codex. Sync discovers source skills from the filesystem, including gitignored entries such as the local Chromium skill.
 
 ## Adding a harness
 

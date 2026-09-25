@@ -30,7 +30,7 @@ For a custom Codex home, pass `--codex-dir /path/to/codex-home` before the `code
 
 Use Codex's `/skills` to inspect discovery, including nested and symlinked skills. Opencode-specific skill lint runs through `agent-config doctor opencode`; `sync codex` manages its defaults and global instructions.
 
-The source includes `skills/synced/` and `skills/headless-chromium-rootless-libs/`. When replacing a managed link through `~/.claude/skills`, sync first requires all visible legacy entries to resolve to their source counterparts. Reconcile local skills, then run `agent-config sync claude links` before `agent-config sync codex`. Foreign roots remain preserved.
+The checkout can also hold gitignored shared skills, including `skills/headless-chromium-rootless-libs/`; sync discovers them from the filesystem. Claude's generated `~/.claude/skills/synced/` collection stays local to Claude. When replacing a managed link through `~/.claude/skills`, sync requires the remaining visible legacy entries to resolve to their source counterparts. Reconcile those entries, then run `agent-config sync claude links` before `agent-config sync codex`. Foreign roots remain preserved.
 
 `sync codex --check` checks managed defaults and global instructions for drift. Changes to `rules/global.md` apply on normal sync. A local edit to generated instructions requires selected-step `--force`, which preserves a backup.
 

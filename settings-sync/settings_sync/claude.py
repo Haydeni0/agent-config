@@ -84,7 +84,8 @@ def sync_shared_skills(paths: Paths, dry_run: bool) -> list[Outcome]:
     if target.is_symlink() and target.resolve() == legacy.resolve() and legacy.is_dir():
         local = sorted(
             entry.name for entry in legacy.iterdir()
-            if not entry.name.startswith(".") and entry.resolve() != (source / entry.name).resolve()
+            if not entry.name.startswith(".") and entry.name != "synced"
+            and entry.resolve() != (source / entry.name).resolve()
         )
         if local:
             return [Outcome(target, Status.SKIPPED,

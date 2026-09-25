@@ -25,6 +25,9 @@ def test_codex_replaces_managed_legacy_root(source_home: Path, isolated_home: Pa
     legacy = isolated_home / ".claude/skills"
     legacy.mkdir(parents=True)
     (legacy / "example").symlink_to(shared)
+    local = legacy / "synced/bucket/personal/SKILL.md"
+    local.parent.mkdir(parents=True)
+    local.write_text("Claude-local generated skill")
     root = isolated_home / ".agents/skills"
     sync_generated_symlink(root, legacy)
     before = snapshot(legacy)
@@ -38,6 +41,7 @@ def test_codex_replaces_managed_legacy_root(source_home: Path, isolated_home: Pa
     result = runner.invoke(agent_config_app, [*args, "sync", "codex", "skills"])
     assert result.exit_code == 0, result.output
     assert root.resolve() == source_home / "skills"
+    assert not (root / "synced").exists()
     assert snapshot(legacy) == before
     result = runner.invoke(agent_config_app, [*args, "check", "codex", "skills"])
     assert result.exit_code == 0, result.output

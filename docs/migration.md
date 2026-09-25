@@ -47,7 +47,7 @@ Run rollback once. A second invocation refuses paths whose forward state is alre
 
 ## Compatibility links
 
-Native `~/.claude/skills`, `commands`, and `agents` remain real directories. Each shared entry points into the source checkout, including `skills/synced` and `skills/headless-chromium-rootless-libs`. `~/.agents/skills` points directly to the source checkout's `skills/` directory.
+Native `~/.claude/skills`, `commands`, and `agents` remain real directories. Each shared entry points into the source checkout, including the gitignored local `skills/headless-chromium-rootless-libs`. Claude's generated `~/.claude/skills/synced/` remains a local directory. Both skill locations are untracked. `~/.agents/skills` points directly to the source checkout's `skills/` directory.
 
 The shared-skill move has a separate private backup at `/mnt/home/hayden.dorahy/.local/state/agent-config/direct-skills-ob74rf13`. Its `manifest.json` maps the original skill directories, shared discovery link, Codex config and ownership ledger to their backups. The imported skill files match those originals byte-for-byte. To reverse this move, preserve current edits, restore those manifest entries, and restore the prior sync implementation before running sync again. The original migration rollback above covers the earlier source-checkout cutover.
 
