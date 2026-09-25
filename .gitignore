@@ -7,7 +7,8 @@ credentials.*
 settings.local.json
 config.local.yaml
 .agents/backlog.md
-.agents/plans/local/
+.agents/plans/
+.lavish/
 .claude/
 skills/synced/
 skills/headless-chromium-rootless-libs/
