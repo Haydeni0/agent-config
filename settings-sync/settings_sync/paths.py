@@ -26,12 +26,19 @@ class Paths:
         return path
 
 
+def user_home() -> Path:
+    home = os.environ.get("HOME")
+    if home:
+        return Path(home).expanduser()
+    return Path.home()
+
+
 def config_home() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config").expanduser()
+    return Path(os.environ.get("XDG_CONFIG_HOME") or user_home() / ".config").expanduser()
 
 
 def state_home() -> Path:
-    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state").expanduser() / "agent-config"
+    return Path(os.environ.get("XDG_STATE_HOME") or user_home() / ".local" / "state").expanduser() / "agent-config"
 
 
 def resolve_source(explicit: Path | None) -> Path:
@@ -62,7 +69,7 @@ def resolve_paths(
     codex_dir: Path | None = None,
     claude_home: Path | None = None,
 ) -> Paths:
-    home = Path.home()
+    home = user_home()
     config = config_home()
     return Paths(
         source_dir=resolve_source(claude_dir),

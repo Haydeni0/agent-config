@@ -15,11 +15,11 @@ def _rewrite_skills_refs(markdown: str) -> str:
 
 
 def build_agents_md(claude_md: Path, rules_path: Path | None = None, *, source_root: Path | None = None, harness: str = "") -> str:
-    markdown = claude_md.read_text()
+    markdown = claude_md.read_text(encoding="utf-8")
     if harness != "claude":
         markdown = _rewrite_skills_refs(markdown)
     if rules_path is not None and rules_path.is_file():
-        markdown = markdown.rstrip() + "\n\n" + rules_path.read_text()
+        markdown = markdown.rstrip() + "\n\n" + rules_path.read_text(encoding="utf-8")
     if source_root is not None:
         preamble = (
             f"# Shared agent configuration\n\nSource checkout: `{source_root.resolve()}`.\n"

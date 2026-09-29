@@ -48,7 +48,7 @@ def test_sync_agy_skills_symlinks(tmp_path: pathlib.Path):
     assert all(o.status == Status.CREATED for o in outcomes)
     assert (target_dir / "uv").is_symlink()
     assert (target_dir / "pytest").is_symlink()
-    assert os.readlink(target_dir / "uv") == "../../claude/skills/uv"
+    assert pathlib.Path(os.readlink(target_dir / "uv")) == pathlib.Path("../../claude/skills/uv")
 
 
 def test_sync_agy_skills_orphan_handling(tmp_path: pathlib.Path):

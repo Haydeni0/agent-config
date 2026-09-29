@@ -29,8 +29,8 @@ def test_destination_uses_invocation_environment(tmp_path: Path, override: str):
         print(result.output)
         raise SystemExit(result.exit_code)
     """)
-    result = subprocess.run([sys.executable, "-c", script], env={**os.environ, "HOME": str(imported_home), "TEST_OVERRIDE": override, "TEST_DESTINATION": str(destination), "TEST_SOURCE": str(source)}, capture_output=True, text=True)
-    assert result.returncode == 0, result.stdout + result.stderr
+    result = subprocess.run([sys.executable, "-c", script], env={**os.environ, "HOME": str(imported_home), "TEST_OVERRIDE": override, "TEST_DESTINATION": str(destination), "TEST_SOURCE": str(source), "PYTHONUTF8": "1"}, capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
     output = destination / ".codex" / "AGENTS.md" if override == "HOME" else destination / "AGENTS.md"
     assert output.read_text().endswith("# Shared rules\n")
     assert not (imported_home / ".codex").exists()
@@ -43,8 +43,9 @@ def test_source_selection(tmp_path: Path, isolated_home: Path, source_option: st
     (source / "rules").mkdir(parents=True, exist_ok=True)
     (source / "rules/global.md").write_text("# Selected source\n")
     pointer = isolated_home / ".config" / "agent-config" / "config.toml"
-    pointer.parent.mkdir(parents=True)
-    pointer.write_text(f'source = "{source if source_option == "pointer" else tmp_path / "unused-source"}"\n')
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    target_source = (source if source_option == "pointer" else tmp_path / "unused-source").as_posix()
+    pointer.write_text(f'source = "{target_source}"\n')
     script = dedent("""\
         import os
         from typer.testing import CliRunner
@@ -60,8 +61,8 @@ def test_source_selection(tmp_path: Path, isolated_home: Path, source_option: st
         print(result.output)
         raise SystemExit(result.exit_code)
     """)
-    result = subprocess.run([sys.executable, "-c", script], env={**os.environ, "TEST_MODE": source_option, "TEST_SOURCE": str(source)}, capture_output=True, text=True)
-    assert result.returncode == 0, result.stdout + result.stderr
+    result = subprocess.run([sys.executable, "-c", script], env={**os.environ, "TEST_MODE": source_option, "TEST_SOURCE": str(source), "PYTHONUTF8": "1"}, capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode == 0, (result.stdout or "") + (result.stderr or "")
     assert (isolated_home / ".codex" / "AGENTS.md").read_text().endswith("# Selected source\n")
 
 

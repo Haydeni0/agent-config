@@ -3,14 +3,34 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import sys
 from typing import Literal
 from uuid import uuid4
+
+if sys.platform == "win32":
+    import msvcrt
+
+    @contextmanager
+    def _file_lock(f) -> Iterator[None]:
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            yield
+        finally:
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    @contextmanager
+    def _file_lock(f) -> Iterator[None]:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
 
 from settings_sync.paths import state_home
 from settings_sync.sync import Outcome, Status, install_text, sync_symlink, write_text_atomic
@@ -40,7 +60,7 @@ class OwnershipStore:
         self.entries = {}
         if not self.path.exists():
             return
-        data = json.loads(self.path.read_text())
+        data = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("entries"), list):
             raise ValueError("invalid ownership data; restore managed.json from backup before syncing")
         for item in data["entries"]:
@@ -62,9 +82,9 @@ class OwnershipStore:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with (self.path.parent / "sync.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            self.load()
-            yield
+            with _file_lock(lock):
+                self.load()
+                yield
 
     def get(self, destination: Path) -> ManagedEntry | None:
         return self.entries.get(Path(os.path.abspath(destination)))
@@ -99,7 +119,7 @@ def sync_generated_text(target: Path, source_id: str, content: str, store: Owner
         with store.lock(dry_run):
             if target.is_symlink() or target.is_dir():
                 return Outcome(target, Status.FAILED, "expected a generated regular file; preserve this entry and resolve its ownership")
-            existing = target.read_text() if target.exists() else None
+            existing = target.read_text(encoding="utf-8") if target.exists() else None
             entry = store.get(target)
             managed = entry is not None and entry.source_id == source_id and entry.kind == "file" and existing is not None and fingerprint(target) == entry.fingerprint
             conflict = existing is not None and existing != content and not managed

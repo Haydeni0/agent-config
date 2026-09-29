@@ -23,7 +23,7 @@ def validate_skills(skills_dir: Path) -> list[Outcome]:
         if not skill_md.is_file():
             outcomes.append(Outcome(skill_dir, Status.WARNED, f"{name}: missing SKILL.md, opencode will skip"))
             continue
-        frontmatter, _ = parse(skill_md.read_text())
+        frontmatter, _ = parse(skill_md.read_text(encoding="utf-8"))
         fm_name = frontmatter.get("name")
         if not fm_name:
             outcomes.append(Outcome(skill_md, Status.WARNED, f"{name}: frontmatter missing 'name'"))

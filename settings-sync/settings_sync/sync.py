@@ -3,6 +3,7 @@
 import json
 import os
 import stat
+import sys
 import tempfile
 from collections.abc import Callable
 from enum import StrEnum
@@ -79,6 +80,8 @@ def sync_symlink(target: Path, source: Path, force: bool = False, dry_run: bool 
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary.symlink_to(desired_rel)
+        if sys.platform == "win32" and (target.is_symlink() or target.is_dir() or target.exists()):
+            target.unlink(missing_ok=True)
         temporary.replace(target)
         return Outcome(target, Status.REPLACED if exists else Status.CREATED, f"symlink -> {desired_rel}")
     except OSError as exc:
@@ -101,7 +104,8 @@ def write_text_atomic(target: Path, content: str) -> None:
             file.write(content)
             file.flush()
             os.fsync(file.fileno())
-            os.fchmod(file.fileno(), mode)
+            if hasattr(os, "fchmod"):
+                os.fchmod(file.fileno(), mode)
         if target.is_symlink():
             raise OSError(f"destination became a symlink: {target}")
         temporary.replace(target)
@@ -113,7 +117,7 @@ def write_text_atomic(target: Path, content: str) -> None:
 def install_text(target: Path, content: str, existing: str | None) -> Outcome:
     """Replace an unchanged destination, returning a failed outcome on I/O errors."""
     try:
-        actual = target.read_text() if target.exists() else None
+        actual = target.read_text(encoding="utf-8") if target.exists() else None
         if actual != existing:
             return Outcome(target, Status.FAILED, "destination changed during sync; retry")
         write_text_atomic(target, content)
@@ -130,7 +134,7 @@ def sync_text(target: Path, content: str, force: bool = False, dry_run: bool = F
     if dry_run:
         if not target.exists():
             return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
-        existing = target.read_text()
+        existing = target.read_text(encoding="utf-8")
         if existing == content:
             return Outcome(target, Status.UNCHANGED, "identical")
         return Outcome(target, Status.WOULD_REPLACE, "differs from source", old_content=existing, new_content=content)
@@ -138,7 +142,7 @@ def sync_text(target: Path, content: str, force: bool = False, dry_run: bool = F
     if not target.exists():
         return install_text(target, content, None)
 
-    existing = target.read_text()
+    existing = target.read_text(encoding="utf-8")
     if existing == content:
         return Outcome(target, Status.UNCHANGED, "identical")
 
@@ -168,7 +172,7 @@ def sync_json(target: Path, content: str, force: bool = False, dry_run: bool = F
             return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
         return install_text(target, content, None)
 
-    existing_text = target.read_text()
+    existing_text = target.read_text(encoding="utf-8")
     try:
         existing_obj = json.loads(existing_text)
         if existing_obj == new_obj:
@@ -211,7 +215,7 @@ def sync_yaml(target: Path, content: str, force: bool = False, dry_run: bool = F
             return Outcome(target, Status.WOULD_CREATE, "new file", new_content=content)
         return install_text(target, content, None)
 
-    existing_text = target.read_text()
+    existing_text = target.read_text(encoding="utf-8")
     try:
         existing_obj = yaml.safe_load(existing_text)
         if existing_obj == new_obj:
@@ -295,7 +299,7 @@ def sync_dir_files(
             for w in warnings:
                 outcomes.append(Outcome(source_file, Status.WARNED, w))
         else:
-            content = source_file.read_text()
+            content = source_file.read_text(encoding="utf-8")
 
         outcomes.append(sync_fn(target_file, content, force=force, dry_run=dry_run))
 
