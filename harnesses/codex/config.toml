@@ -3,7 +3,7 @@
 # Keys omitted here retain their installed values, including local state.
 
 model = "gpt-6-astra"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 service_tier = "fast"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
