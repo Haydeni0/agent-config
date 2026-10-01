@@ -11,6 +11,14 @@ sqlite_home = "/var/tmp/hayden.dorahy/codex-sqlite"
 
 [features]
 hooks = true
+# Forces the V2 collaboration toolset (spawn_agent, followup_task, ...)
+# for custom providers, whose fallback model metadata has no
+# multi_agent_version. Native-metadata models (gpt-6*) are unaffected -
+# they already resolve to v2. On non-OpenAI backends the tools arrive as a
+# namespace tool spec the backend may drop (slurm-llm gateway drops it
+# until its codex translator flattens them - see slurm-llm
+# gateway/codex_compat_handler.py).
+multi_agent_v2 = true
 
 [tui]
 status_line = ["model-with-reasoning", "current-dir", "git-branch", "approval-mode", "context-used", "context-window-size", "estimated-thread-cost"]
