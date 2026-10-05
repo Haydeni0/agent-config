@@ -8,6 +8,21 @@ service_tier = "fast"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 sqlite_home = "/var/tmp/hayden.dorahy/codex-sqlite"
+mcp_oauth_callback_port = 3333
+
+[mcp_servers.slack]
+url = "https://mcp.slack.com/mcp"
+
+[mcp_servers.slack.oauth]
+client_id = "11843774967.11905492103734"
+
+[mcp_servers.notion]
+url = "https://mcp.notion.com/mcp"
+oauth_resource = "https://mcp.notion.com"
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+oauth_resource = "https://mcp.linear.app/mcp"
 
 [features]
 hooks = true
