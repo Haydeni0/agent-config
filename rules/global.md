@@ -210,7 +210,7 @@ Apply when writing, reviewing or editing code.
 
 - **Don't extract a shared abstraction until the third occurrence.** Two instances rarely reveal the right generalisation; premature extraction locks in the wrong shape.
 
-- **Prefer composition over inheritance, and depend on behavior not concrete type.** Inheritance couples a subclass to its parent's internals and forces a single hierarchy; composition keeps pieces swappable. Where a seam is needed, type against an interface (e.g. a `Protocol`) so callers depend on what a thing does, not what it is. Don't add the interface until a second implementation makes the seam real.
+- **Prefer composition over inheritance, and depend on behavior not concrete type.** Inheritance couples a subclass to its parent's internals and forces a single hierarchy; composition keeps pieces swappable. Where a seam is needed, type against an interface (e.g. a Python `ABC` or `Protocol`) so callers depend on what a thing does, not what it is. Don't add the interface until a second implementation makes the seam real.
 
   ```python
   # bad - subclass to reuse, locks the hierarchy
