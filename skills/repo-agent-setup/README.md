@@ -12,27 +12,19 @@ and published vendor + community guidance (sources at the bottom).
 |------|--------------------------|------|
 | `SKILL.md` | (the skill itself) | The playbook: scan, grill, fold, verify, report. Invoke via /repo-agent-setup. Re-run = audit |
 | `AGENTS.md` | Always | The single source of truth for agent instructions. Opener, commands, doc map, autonomy tiers, working rules, maintenance rules |
-| `CLAUDE.md` | Always | One line: `@AGENTS.md`. Claude Code reads CLAUDE.md, not AGENTS.md - the import loads the same content with no drift |
+| `CLAUDE.md` | Always | One line: `@AGENTS.md`. Claude Code can read AGENTS.md directly; the import keeps the content portable across versions and setups |
 | `MEMORY.md` | Always | Append-only lessons-learned: verified facts, evidence, commit refs. Seeded with the template's example entry |
 | `.agents/backlog.md` | Always | Deferred work items, surfaced at session start |
+| `docs/requirements.md` | Optional | Binding product-behavior contract, created only after explicit opt-in and one concrete durable requirement |
 | `CONTRIBUTING.md` | Never | Manual reference for contribution-as-prompt - create by hand if a repo's contribution model needs it |
 | `Safety section` | Never | Hand-add from the AGENTS.md template when a repo's danger warrants detection-command machinery; simple danger rules go in Working rules |
 
 Tool support (why AGENTS.md is the base): Codex, Cursor, Copilot,
 Devin/Windsurf, Jules, Amp, opencode, Zed, goose, Aider, and more read
-`AGENTS.md` natively. Claude Code reads `CLAUDE.md` - hence the one-line
-import. Gemini CLI defaults to `GEMINI.md` - point it at AGENTS.md via
+`AGENTS.md` natively. Claude Code can also read `AGENTS.md` directly.
+Gemini CLI defaults to `GEMINI.md` - point it at AGENTS.md via
 settings (`context.fileName`) if you use it. opencode needs nothing
-(it prefers AGENTS.md when both exist). All variants above are
-alternative loaders, never second copies - one source of truth, no
-duplicate files to drift.
-
-Tool support (why AGENTS.md is the base): Codex, Cursor, Copilot,
-Devin/Windsurf, Jules, Amp, opencode, Zed, goose, Aider, and more read
-`AGENTS.md` natively. Claude Code reads `CLAUDE.md` - hence the one-line
-import. Gemini CLI defaults to `GEMINI.md` - point it at AGENTS.md via
-settings (`context.fileName`) if you use it. opencode needs nothing
-(it prefers AGENTS.md when both exist). All variants above are
+(it prefers AGENTS.md when both exist). Loader-specific files are
 alternative loaders, never second copies - one source of truth, no
 duplicate files to drift.
 
@@ -55,10 +47,14 @@ duplicate files to drift.
 - **Monorepos**: nested `AGENTS.md` per package as *deltas* - add or
   override only what differs; loaders merge root-to-leaf (nearest
   does not replace).
-- **Workflow docs (requirements / decisions / questions / progress)
-  are not provisioned** - they emerge from the workflows a repo
-  actually runs. The Documents map records what exists; the queue
-  target is always `.agents/backlog.md`.
+- **Requirements contract**: ask once for repos with user-visible
+  behavior; create one only after explicit opt-in and a concrete durable
+  requirement. Existing requirements/spec files stay authoritative;
+  new files default to `docs/requirements.md`.
+- **Other workflow docs (decisions / questions / progress) are not
+  provisioned** - they emerge from the workflows a repo actually runs.
+  The Documents map records what exists; the queue target is always
+  `.agents/backlog.md`.
 
 ## Things this template deliberately does not do
 
@@ -89,9 +85,11 @@ It scans the repo (and the current conversation) for context, grills
 you on the genuinely open decisions (grill-me mechanics: one question
 at a time, options, explicit recommendation), folds in only what the
 repo earns, verifies no placeholders or empty sections survived, and
-reports with the staged diff. Re-running it later switches to audit
-mode: admission-test pass over existing content, staleness checks,
-MEMORY.md prune proposals.
+reports with the staged diff. A repo with no discernible purpose first
+runs a small bootstrap interview; if purpose and a first concrete behavior
+are not established, it stops without creating files. Re-running later
+switches to audit mode: admission-test pass over existing content,
+staleness checks, MEMORY.md prune proposals.
 
 ## Sources
 

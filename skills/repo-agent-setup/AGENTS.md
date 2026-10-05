@@ -45,6 +45,16 @@ X", "don't touch Y while Z is live") also live here. Cut this section
 entirely if the repo has no such rules yet - rules are added when a
 mistake repeats, not up front.]
 
+[Optional - iff a binding requirements contract was chosen in
+repo-agent-setup. If not chosen, cut this block:]
+
+- Update the canonical requirements document before or with every
+  user-visible behavior change.
+- Cite a requirement as `[REQ-ID] - one-line meaning`; quote the
+  statement verbatim when interpretation is disputed.
+- Every requirement has a `Verification` pointer. Prefer an automated
+  test; when impossible, record the exact manual or visual procedure.
+
 ## Documents
 
 [Map of canonical docs - one line each. A pointer must say what the file
@@ -52,7 +62,7 @@ answers, not just name it; an unexplained path gets ignored.]
 
 | File | Answers |
 |------|---------|
-| `docs/requirements.md` | [What must be true - the spec] |
+| `docs/requirements.md` | [What user-visible behavior must be true - one stable ID, statement, and verification per entry] |
 | `docs/decisions.md` | [Why, and what was rejected] |
 | `MEMORY.md` | [Verified lessons learned - read at session start] |
 | `PROGRESS.md` | [What's in flight now] |

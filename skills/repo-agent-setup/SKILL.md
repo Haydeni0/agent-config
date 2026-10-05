@@ -37,6 +37,23 @@ MEMORY.md carrying the `MEMORY.md` template's frontmatter.
 - **Absent → install mode** (the flow below).
 - **Present → audit mode** (last section).
 
+## Empty-repo bootstrap
+
+After the initial read-only scan, if the repo and conversation provide no
+project substance (no useful source, command surface, docs, requirements
+signal, or opener material), switch to bootstrap mode before creating any
+file. Ask plain-text grill questions one at a time:
+
+1. **Purpose** - what problem does this project solve for whom?
+2. **First behavior** - what concrete user-visible outcome should exist?
+3. **Verification** - how will that outcome be checked, including the likely
+   command or toolchain if known?
+
+Create no kit files until you can draft a confident opener and the repo has
+at least one concrete behavior. If the user cannot answer yet, stop with no
+files. Once bootstrap produces enough substance, resume the normal install
+flow and let its requirements-contract question use the first behavior.
+
 ## Install mode
 
 ### 1. Deep scan
@@ -56,6 +73,9 @@ Gather, in roughly this order:
   scripts / pyproject / Cargo.toml / scripts dir - what exists, what
   the runner is
 - **Docs inventory**: canonical docs (maxdepth ~2), what each answers
+- **Requirements signal**: a canonical requirements/spec file, and whether
+  its entries have verification pointers; classify as absent, descriptive,
+  or test-backed
 - **Repo shape**: size, top-level dirs, monorepo or single package
 - **Infra greps**: `prod|deploy|sbatch|kubectl|terraform|systemd|cron`
   and similar - anything suggesting live systems or blast radius
@@ -77,9 +97,9 @@ backlog items, not instruction-file content.
 ### 2. Findings mini-report
 
 One message, no questions yet: existing files found (and their
-apparent state), command surface detected, docs found, infra signals
-on/off, proposed section set. This is the evidence the grill's
-questions hang from - keep it tight.
+apparent state), command surface detected, docs found, requirements
+signal, infra signals on/off, proposed section set. This is the
+evidence the grill's questions hang from - keep it tight.
 
 ### 3. Sequential grill
 
@@ -90,23 +110,33 @@ overrides. Plain chat text, never modal tools. Fixed order:
 1. **Opener** - show the draft; "correct?" (if you couldn't draft
    one: "what's the one fact an agent would get wrong about this
    repo?")
-2. **Working rules** - iff the fold found existing rules: show them,
+2. **Requirements contract** - iff the repo has user-visible behavior:
+   "adopt a binding requirements contract?" Recommend **yes** for a
+   test-backed requirements/spec file or a request emphasizing durable
+   product behavior; recommend **no** otherwise. Existing canonical
+   requirements/spec files always stay authoritative.
+3. **Working rules** - iff the fold found existing rules: show them,
    propose which to keep. Always end with: "and what would an agent
    get wrong here that hasn't been said?" - the user's knowledge is
    the other rule source
-3. **Danger** - always asked: "any live infra / anything dangerous
+4. **Danger** - always asked: "any live infra / anything dangerous
    here?" A yes earns a **Working rule** (e.g. "never restart X"), a
    named Safety section is NOT created - the user adds one by hand
    from the AGENTS.md template when a repo warrants the full
    detection-command shape
-4. **Autonomy** - always asked: "will unattended/long runs happen
+5. **Autonomy** - always asked: "will unattended/long runs happen
    here?" No → section cut. Yes → write fork definition + 3-tier
    table (decide-and-note / queue-to-backlog / stop) from the
    Autonomy section of this skill's `AGENTS.md` template
-5. **CLAUDE.md fold** - iff a fat CLAUDE.md was found: "fold into
+6. **CLAUDE.md fold** - iff a fat CLAUDE.md was found: "fold into
    AGENTS.md and leave the one-line import?" (default on yes: fold -
    repo wording wins on substance, template shape holds, anything
    stale gets flagged not silently fixed)
+
+When accepted, a binding contract uses the existing requirements/spec
+path. If none exists, create `docs/requirements.md` only after at
+least one concrete durable requirement is known. Do not scaffold an
+empty file.
 
 Announce these as decisions in the mini-report (scan is unambiguous;
 correct in passing if wrong, don't ask):
@@ -133,10 +163,24 @@ correct in passing if wrong, don't ask):
   skill's template if that skill is available; otherwise a `# Backlog`
   header with an `## Open` section) - repo root and `.agents/` only.
   Never touch `.claude/settings.json`, never scaffold `.agents/plans/`.
-- Workflow docs (requirements / decisions / questions / progress) are
-  NOT provisioned - they emerge from workflows (dev-cycle writes its
-  own artifacts; a QUESTIONS.md appears the first time something
-  needs queuing). The Documents map records what exists.
+- Requirements contract: only after the grill accepted it. Use the
+  canonical requirements/spec file; if absent, create
+  `docs/requirements.md` only with at least one concrete durable
+  requirement. Each entry has:
+  1. a stable ID such as `REQ-AREA-01`
+  2. one observable `Statement` of user-visible behavior
+  3. a `Verification` pointer - prefer an automated test; when that is
+     impossible, record the exact manual or visual procedure
+
+  Add the corresponding Working rules from the `AGENTS.md` template:
+  update the requirements document with or before behavior changes;
+  cite every requirement as ID plus one-line meaning, verbatim when
+  interpretation matters; and never mark a requirement complete without
+  running its verification.
+- Workflow docs other than the accepted requirements contract are NOT
+  provisioned - they emerge from workflows (dev-cycle writes its own
+  artifacts; a QUESTIONS.md appears the first time something needs
+  queuing). The Documents map records what exists.
 - Stage with `git add` for review. No commits unless the repo's
   authorization stance allows and the task prompt calls for it.
 
@@ -148,6 +192,9 @@ correct in passing if wrong, don't ask):
 - CLAUDE.md is exactly the import line
 - MEMORY.md has frontmatter + the example entry
 - README does not duplicate AGENTS.md rules
+- A binding requirements contract, if selected, has no duplicate IDs,
+  every entry has a verification pointer, and each named test or
+  procedure actually checks the linked requirement
 - Every decision from the grill is reflected in the files
 
 ### 6. Report
@@ -169,6 +216,11 @@ to the files themselves:
 - **Staleness**: do the Commands still run? Do the Documents-map
   targets still exist? Do the Working rules still match the code?
   Check by running/reading, not by assuming.
+- **Requirements traceability**, iff a canonical requirements/spec
+  file exists: check IDs are stable and unique, statements remain
+  testable, verification targets exist, and named tests or procedures
+  actually assert the linked requirement. Do not create a new
+  requirements file during audit.
 - **MEMORY.md prune**: merge or drop entries whose constraint no
   longer holds; promote stabilized learnings into AGENTS.md rules.
 - Propose all changes via a short grill (one Q at a time, same
