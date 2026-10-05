@@ -1,5 +1,6 @@
 ---
 name: systematic-debugging
+layer: worker
 description: >
   Use when the user asks to debug a stubborn or non-obvious bug - one that resisted a first fix attempt, or where the root cause is unclear. Enforces reproduce-first, root-cause-before-fix discipline. Not auto-triggered: never invoke for trivial obvious bugs unless the user asks for systematic debugging.
 forked-from: superpowers@claude-plugins-official v6.3.0 (systematic-debugging)

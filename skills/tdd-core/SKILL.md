@@ -1,5 +1,6 @@
 ---
 name: tdd-core
+layer: worker
 description: >
   Use when implementing any feature or bugfix with a test-first workflow - red-green-refactor: write the failing test, watch it fail, make it pass. Invoke when the user asks for TDD or test-first development, or when another skill (tdd, test-plan, systematic-debugging) directs it. Not auto-triggered for quick fixes unless the user asks.
 forked-from: superpowers@claude-plugins-official v6.3.0 (test-driven-development)

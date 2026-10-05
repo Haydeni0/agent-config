@@ -1,5 +1,6 @@
 ---
 name: test-review-orchestrator
+layer: worker
 description: Use when user wants a combined test review covering both coverage gaps and redundancy on the current branch/PR before deciding what to implement.
 ---
 

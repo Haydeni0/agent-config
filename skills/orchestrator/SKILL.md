@@ -1,5 +1,6 @@
 ---
 name: orchestrator
+layer: orchestrator
 description: Use when the user delegates a queue of several independent units to run over subagents - a plan or decisions file naming multiple units, a request to run them autonomously over a long unattended stretch, or a multi-unit queue already in flight after compaction or a dead session. Units may be builds, investigations, or other kinds. Not for single-unit work, where dev-cycle alone suffices.
 ---
 

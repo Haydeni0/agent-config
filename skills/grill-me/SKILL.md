@@ -1,5 +1,6 @@
 ---
 name: grill-me
+layer: worker
 description: Use when stress-testing a plan or design before implementation - challenges assumptions, sharpens terminology, resolves dependencies between decisions one at a time
 metadata:
   source: https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md

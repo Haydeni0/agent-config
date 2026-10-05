@@ -1,5 +1,6 @@
 ---
 name: code-review
+layer: worker
 description: Use when reviewing uncommitted changes, a branch diff, or any git diff for bugs, security issues, CLAUDE.md compliance, and quality problems - works on local work with no PR required
 ---
 

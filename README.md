@@ -42,7 +42,7 @@ bash scripts/verify.sh                    # same checks as CI
 | `skills/`, `commands/`, `agents/` | Shared agent resources |
 | `custom/`, `hooks/` | Hook scripts and pinned plugin submodules |
 | `settings-sync/`, `opencode-resume/` | Config CLI and session converter |
-| `.agents/plans/` | Design and implementation plans |
+| `.agents/plans/` | Machine-local design packages and plans, ignored |
 | `.agents/backlog.md` | Local deferred topics, ignored |
 
 Shared edits belong here. Runtime skill/command aliases point back here; generated instructions name this checkout. Mixed JSON/YAML/TOML files merge declared template keys and preserve other native keys. Generated outputs update normally after adoption; local edits conflict. Selected-step force backs up before replacement. Unknown entries survive cleanup. Details: [ownership and recovery](settings-sync/README.md#ownership-and-recovery).

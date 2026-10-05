@@ -27,6 +27,7 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 - When running inside `local-codex`, `CODEX_HOME` points to a temporary runtime. Pass the real native home explicitly, for example `agent-config --codex-dir "$HOME/.codex" check codex`.
 - Launcher changes owned by another source repo stay there. For example, `local-codex` changes belong in the `slurm-llm` checkout, not here.
 - Nested `AGENTS.md` files are authoritative for the directories they cover. Keep the root file source-scoped rather than duplicating subproject rules.
+- Requirements live in `docs/requirements.md` (ID / Requirement / Verification tables). Update it with or before any behavior change it covers, cite entries as ID plus one-line meaning, and never mark work complete without running the cited verification.
 - Commit and push only under the active authorization gate. Branches use `hayden/`.
 
 ## Documents
@@ -39,7 +40,8 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 | `settings-sync/README.md` | Ownership, recovery, adapters, and sync mechanics |
 | `hooks/README.md` | Shared hook coverage, tests, and recovery |
 | `MEMORY.md` | Verified lessons learned for future sessions |
-| `.agents/backlog.md` | Deferred items and open work |
+| `docs/requirements.md` | Binding requirements contract, per-area tables with verification pointers |
+| `.agents/backlog.md` | Deferred items and open work (machine-local, gitignored) |
 
 Project plans live in `.agents/plans/`. Read legacy `.claude` documents when canonical files are absent and reconcile both when both exist.
 

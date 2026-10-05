@@ -1,5 +1,6 @@
 ---
 name: executing-plans
+layer: worker
 description: >
   Use when the user asks to execute or implement a written implementation plan (checkbox-tracked plan file), in this or a fresh session. Not auto-triggered: never invoke unless a written plan document exists and the user asks to carry it out.
 forked-from: superpowers@claude-plugins-official v6.3.0 (executing-plans)

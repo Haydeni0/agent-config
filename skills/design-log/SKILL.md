@@ -1,5 +1,6 @@
 ---
 name: design-log
+layer: orchestrator
 description: Use when designing or planning a feature or new body of work across turns or sessions - a design grill, writing a spec or plan from a design, implementation that diverges from the agreed design, or "wrap up / finalise the design docs". Also use whenever `.agents/plans/<slug>/` exists for the work at hand.
 ---
 

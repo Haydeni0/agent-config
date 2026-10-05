@@ -1,5 +1,6 @@
 ---
 name: dev-cycle
+layer: orchestrator
 description: Run the full dev pipeline (grill, test plan, spec, plan, implement, review, fix) for a feature or bugfix. Invoke only via /dev-cycle or an explicit request to run the full pipeline.
 ---
 

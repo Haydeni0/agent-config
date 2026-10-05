@@ -1,5 +1,6 @@
 ---
 name: test-pr-core
+layer: worker
 description: Core shared workflow for PR-scoped test analysis skills.
 ---
 

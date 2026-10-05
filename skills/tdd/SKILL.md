@@ -1,5 +1,6 @@
 ---
 name: tdd
+layer: worker
 description: Use when implementing any feature or bugfix, before writing implementation code, or when using test-driven development.
 ---
 
