@@ -1,7 +1,7 @@
 ---
 name: writing-plans
 description: >
-  Use when the user asks for an implementation plan for a multi-step task - typically after write-spec produced an approved spec. Produces a checkbox-tracked plan file (`.agents/plans/YYYY-MM-DD-<feature>-plan.md`) with exact file changes and verification steps. Not auto-triggered: never invoke unless the user asks for a plan or an approved spec calls for one.
+  Use when the user asks for an implementation plan for a multi-step task - typically after write-spec produced an approved spec. Produces a checkbox-tracked plan file saved next to the spec, with exact file changes and verification steps. Not auto-triggered: never invoke unless the user asks for a plan or an approved spec calls for one.
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-plans)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
@@ -25,8 +25,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Context:** If working in an isolated worktree, it should have been created via a git worktree at execution time (create manually if isolation is wanted).
 
-**Save plans to:** `.agents/plans/YYYY-MM-DD-<feature-name>-plan.md` (specs go alongside as `<date>-<topic>-spec.md`)
-- (User preferences for plan location override this default)
+**Save plans to:** where the invoking instructions direct. Otherwise, next to the spec - if the spec lives in a directory, save as that directory's `plan.md`; for a flat spec `.agents/plans/YYYY-MM-DD-<feature-name>-spec.md`, the plan goes alongside as `.agents/plans/YYYY-MM-DD-<feature-name>-plan.md`.
 
 ## Scope Check
 

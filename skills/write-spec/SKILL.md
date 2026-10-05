@@ -1,7 +1,7 @@
 ---
 name: write-spec
 description: >
-  Use when the user asks to write a spec or design document - typically after a grill-me session has settled the design. Turns the agreed decisions into a spec file at .agents/plans/YYYY-MM-DD-<topic>-spec.md and walks it through self-review and user approval. Not auto-triggered: never invoke unless the user asks for a spec/design doc or the grill ended with intent to write one.
+  Use when the user asks to write a spec or design document - typically after a grill-me session has settled the design. Turns the agreed decisions into a spec saved next to the design record and walks it through self-review and user approval. Not auto-triggered: never invoke unless the user asks for a spec/design doc or the grill ended with intent to write one.
 forked-from: superpowers@claude-plugins-official v6.3.0 (brainstorming)
 forked-date: 2026-09-01
 forked-note: 2026-09-01 trimmed to pure spec-writer; all brainstorming dialogue moved to grill-me
@@ -15,7 +15,7 @@ Assumes the design is already decided (usually via grill-me). Your job: capture 
 
 ## Writing the spec
 
-Save to `.agents/plans/YYYY-MM-DD-<topic>-spec.md` (user preferences for location override this default).
+**Destination:** save where the invoking instructions direct. Otherwise, next to the design you are capturing - if the design record (decisions, requirements) lives in a directory, save as that directory's `spec.md`. Starting from no recorded design, default to `.agents/plans/YYYY-MM-DD-<topic>-spec.md`.
 
 Compose sections to fit the task - this is loose guidance, not a mandated skeleton:
 
@@ -48,7 +48,7 @@ Wait for the response. If changes are requested, make them and re-run the self-r
 
 ## After approval
 
-Suggest the `writing-plans` skill to turn the spec into a checkbox-tracked implementation plan (`.agents/plans/YYYY-MM-DD-<feature>-plan.md`). Not mandatory - some specs get implemented directly; the user decides.
+Suggest the `writing-plans` skill to turn the spec into a checkbox-tracked implementation plan (same directory as the spec - its `plan.md`, or `.agents/plans/YYYY-MM-DD-<topic>-plan.md` for a flat spec). Not mandatory - some specs get implemented directly; the user decides.
 
 ## Existing project documents
 
