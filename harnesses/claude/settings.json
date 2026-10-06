@@ -104,8 +104,7 @@
       "Bash(find /mnt/data*)"
     ],
     "ask": [],
-    "defaultMode": "auto",
-    "disableBypassPermissionsMode": "disable"
+    "defaultMode": "bypassPermissions"
   },
   "model": "opus",
   "skillOverrides": {
@@ -128,6 +127,15 @@
           {
             "type": "command",
             "command": "bash ~/.claude/custom/hooks/check-bash-guard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set 💬 || true"
           }
         ]
       }
@@ -212,6 +220,26 @@
           }
         ]
       }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'set -o pipefail; name=$(jq -er .name) || exit 1; cd \"${CLAUDE_PROJECT_DIR:-.}\" || exit 1; bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" switch --create \"$name\" --no-cd --format=json | jq -er .path'"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'p=$(jq -er .worktree_path) || exit 1; [ -e \"$p/.git\" ] || exit 0; bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$p\" remove --foreground \"$p\"'"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -240,7 +268,6 @@
   "theme": "dark",
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
   "modelSettings": {
     "claude-opus-5-5": {
       "effortLevel": "high"

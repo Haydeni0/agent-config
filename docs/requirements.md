@@ -61,6 +61,7 @@ into the machine-local, gitignored `.agents/backlog.md`.
 | REQ-HOOKS-03 | A synced hook registration's installed command actually denies end-to-end in its harness, while local state (foreign registrations, unrelated keys, local flags) survives the sync. | `test_hooks.py::test_native_hook_sync_preserves_local_state_and_runs` (CI) |
 | REQ-HOOKS-04 | Config guards block model writes to the derived config dirs (opencode, pi) while reads and adjacent directories pass. | `harnesses/opencode/plugins/config-guard.test.mjs`, `harnesses/pi/tests/config-guard.test.mjs`, `config.test.mjs` (CI) |
 | REQ-HOOKS-05 | Policy changes are fixture-first: a behavior change to a guard adds its case to the shared corpus in the same change. | manual (review guard diffs for a matching `command-cases.json` hunk) |
+| REQ-HOOKS-06 | Claude Code worktree lifecycle events route through wt: the synced `WorktreeCreate` hook makes worktree creation (`EnterWorktree({name})`, the `--worktree` flag, Agent isolation, background sessions) produce ordinary wt worktrees, and `WorktreeRemove` cleans them via `wt remove`. | manual (sync claude twice, `check` clean; scratch repo: `claude -w verify-hook -p "create note.txt containing ok; report cwd and branch"` yields a wt worktree visible in `wt list`, not `.claude/worktrees/`; an Agent `isolation: "worktree"` sub-agent likewise creates via wt and `WorktreeRemove` runs on cleanup) |
 
 ## Process
 
