@@ -20,6 +20,7 @@
 
 ### Git
 
+- After a worktree-isolated subagent or `claude -w` session finishes, remove its worktree: `wt remove --foreground <branch>`. Claude Code never fires `WorktreeRemove` for hook-created git worktrees, so they leak without this (evidence: MEMORY.md 2026-10-06).
 - Always prefix branch names with `hayden/` (e.g. `hayden/my-feature`).
 - Always create PRs as drafts (`gh pr create --draft`).
 - `git add` is allowed (used to stage changes for user review). Do not stage files likely to contain secrets (`.env`, `credentials.*`, `*.pem`, etc.).
