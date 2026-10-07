@@ -46,11 +46,13 @@ into the machine-local, gitignored `.agents/backlog.md`.
 | REQ-SKILLS-02 | Flat namespace: every skill is a top-level `skills/<name>/` directory with its SKILL.md at the root; no nested skills. | `scripts/check-skills.py` (CI) |
 | REQ-SKILLS-03 | One-way layering: a skill declaring `layer: worker` never names a skill declaring `layer: orchestrator`; undeclared skills are unconstrained, and new skills self-declare their layer in their own frontmatter. | `scripts/check-skills.py` (CI) |
 | REQ-SKILLS-04 | `design-log` and `dev-cycle` stay peers - neither names the other. | `scripts/check-skills.py` (CI) |
-| REQ-SKILLS-05 | Worker skills never reference the design-package contract (the word "package"); their destination rule is invoker directive, then document-adjacent, then the flat default. | package-word clause: `scripts/check-skills.py` (CI); destination ordering manual (review worker skill text) |
+| REQ-SKILLS-05 | Worker skills reference the design-package contract only through the plan-package skill (bare word "package" stays banned in worker bodies except in plan-package itself); their destination rule is invoker directive, then the plan-package layout. | word clause: `scripts/check-skills.py` (CI); outer clause manual (review worker skill text) |
 | REQ-SKILLS-06 | Vendored skills are symlinks into `custom/plugins/*` submodules and are never edited in place; every top-level symlink under `skills/` resolves. | symlink resolution: `scripts/check-skills.py` (CI); edit-in-place manual (review diffs touching a symlinked skill) |
 | REQ-SKILLS-07 | Cross-skill references are name-only or resolve to the referenced skill's files (`../`-prefixed or `<skill-name>/`-prefixed paths must exist). | `scripts/check-skills.py` (CI) |
-| REQ-SKILLS-08 | A skill writing cycle-state artifacts uses the `.agents/plans/<slug>/` package layout. Exception: the `orchestrator` skill still teaches the flat layout - backlog #17. | manual (grep `decisions.md\|## Outcome` in `skills/`); #17 fix planned |
+| REQ-SKILLS-08 | A skill writing cycle-state artifacts uses the `.agents/plans/<slug>/` package layout. | manual (grep `decisions.md\|## Outcome` in `skills/`) |
 | REQ-SKILLS-09 | Skills that persist artifacts or must not fire unprompted declare it in their description ("Not auto-triggered" / "Invoke only via ..."). | manual (grep `Not auto-triggered` and review new skills' descriptions) |
+| REQ-SKILLS-10 | Cross-skill dependencies are declared data: a skill's strong dependencies (directives to load/invoke/run another skill) live in its `deps:` frontmatter; entries name existing skills, never self, and a `layer: worker` skill never declares an `layer: orchestrator` skill. | `scripts/check-skills.py` (CI) |
+| REQ-SKILLS-11 | The README skill map's mermaid graph is generated from `deps:` frontmatter; verify.sh fails when the committed graph differs from the generated one, and a warn-only lint flags body directives missing from `deps:` without blocking. | `scripts/check_skill_graph.py` (CI); `settings-sync/tests/test_skill_graph.py` |
 
 ## Hooks - guards and safety
 
