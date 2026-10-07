@@ -2,6 +2,7 @@
 name: dev-cycle
 layer: orchestrator
 description: Run the full dev pipeline (grill, test plan, spec, plan, implement, review, fix) for a feature or bugfix. Invoke only via /dev-cycle or an explicit request to run the full pipeline.
+deps: [grill-me, test-plan, write-spec, writing-plans, executing-plans, tdd, code-review, plan-package]
 ---
 
 # dev-cycle
@@ -23,18 +24,15 @@ The cycle unit is a package dir `.agents/plans/<slug>/` (slug = `<date>-<topic>`
 
 Two+ candidate packages → one plain-text question listing them. Package `decisions.md` with no D entries and no open Q entries = case 1. Hand-written artifacts (no markers) = unapproved drafts of the newest matching cycle → gate, then their review stage; once a draft gains its pass marker, re-run detection from the top so missing earlier stages run first. A spec/plan pass marker with no `## Outcome` recorded in `decisions.md` = unapproved draft (gate never passed) → run the gate; on `go`, record `## Outcome` and re-run detection from the top - the draft's markers stand, and any earlier missing stage (e.g. no `scenarios.md`) runs before the one the draft reached. In both recoveries, the gate just passed satisfies the gate requirement of the case the re-run lands on.
 
-Legacy: a flat `<date>-<topic>-decisions.md` / `-spec.md` / `-plan.md` triple is a pre-package cycle. Read its shared basename as the package dir, and at the next gate convert, not just move: put the three files into `.agents/plans/<basename>/` as `decisions.md` / `spec.md` / `plan.md`, renumber the legacy `## Design decisions` lines as D entries, and extract the `## Test scenarios` section into `scenarios.md`.
+Legacy cycles (flat file triples) are converted per the plan-package skill - load it when a package's shape does not match its contract.
 
 ## Artifacts (package per cycle, in the target project's `.agents/plans/<slug>/`)
 
-- `decisions.md` - the resume anchor and reviewer input. Entries in the format sketched here: `- D<n> (<date>). **Choice.** Rejected: ...` (grill end), `## Outcome` (gate), `## Review nits` (LOW findings that survive).
-- `requirements.md` - user-stated constraints (must / never / always) as `- R<n> (<date>). ... Source: user.` entries, split out of the grill.
-- `scenarios.md` - test-plan output (test-plan end).
-- `spec.md`, `plan.md` - write-spec / writing-plans output, footer carrying `Reviewed: pass|fail <n>` markers appended after each reviewer pass.
+File roles, entry formats, ID rules, and marker formats are the plan-package skill's contract - load it before reading or writing any of these. This skill defines only which stage produces which file: grill writes D/R entries (`decisions.md`/`requirements.md`), test-plan writes `scenarios.md`, spec/plan stages write `spec.md`/`plan.md` and carry `Reviewed:` markers appended after each reviewer round, the gate writes `## Outcome`, the implement stage appends `Implemented` to the plan footer, and surviving LOW findings go to `## Review nits`.
 
 ## The stages
 
-1. **Grill** - invoke grill-me. At its end, file its decision log as D entries in the package `decisions.md` (`- D<n> (<date>). **Choice.** Rejected: <alternative>. <rationale>`); log lines auto-decided after `SKIP_GRILL` are filed as D entries ending `Agent-picked`; user-stated constraints (must / never / always) become R entries in `requirements.md` (`- R<n> (<date>). <statement as stated>. Source: user. Scope: new.`).
+1. **Grill** - invoke grill-me. At its end, file D entries and R entries per the plan-package entry formats (load that skill): the decision log as D entries in the package `decisions.md`, log lines auto-decided after `SKIP_GRILL` as D entries ending `Agent-picked`, user-stated constraints (must / never / always) as R entries in `requirements.md`.
 2. **Test-plan** - invoke test-plan. The orchestrator files its inline output as the package's `scenarios.md`; decline test-plan's own offer to persist elsewhere (`docs/tests/...`). Always write `scenarios.md`, even when the outcome is "no keeper tests" plus the rationale.
 3. **Launch gate** - print the summary and nothing else: proposed outcome (1-2 sentences drafted from the package `decisions.md`), decisions one-liners, remaining stages, git posture (branch if on main; commits land per the user's global git rules, deferred if blocked), abort conditions, expected artifacts. Then WAIT. The user's response is confined to: confirm the outcome, correct it, or replace it - and `go` (with or without an outcome correction) is the sole entry to the autonomous zone. No flag skips the gate and no stage-skip options exist or may be offered. Only after `go`: write the confirmed outcome (proposal as-is, or the user's correction) to the package `decisions.md` as `## Outcome`, then proceed. Every invocation resuming into cases 3-7 passes the gate; case 8 and interview restarts do not.
 4. **Spec** - run write-spec. Scenarios from stage 2 become the spec's acceptance-criteria section. Autonomous zone: any step where the skill would pause for user approval, the reviewer verdict stands in. Then review (below).
