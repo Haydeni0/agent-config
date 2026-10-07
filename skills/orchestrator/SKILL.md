@@ -2,6 +2,7 @@
 name: orchestrator
 layer: orchestrator
 description: Use when the user delegates a queue of several independent units to run over subagents - a plan or decisions file naming multiple units, a request to run them autonomously over a long unattended stretch, or a multi-unit queue already in flight after compaction or a dead session. Units may be builds, investigations, or other kinds. Not for single-unit work, where dev-cycle alone suffices.
+deps: [grill-me, backlog, dev-cycle, plan-package]
 ---
 
 # orchestrator
@@ -76,7 +77,7 @@ Delivery actions the charter pre-authorises do not count as Stop-tier outward-fa
 
 ## The charter
 
-Written to `.agents/plans/<date>-<mission>-decisions.md` in the repo (for a grilled mission, the grill decisions file is the charter); for a repo-less mission, a mission directory on disk serves. It holds: the mission goals verbatim, the unit list as an advisory starting plan with kinds and dependencies, standing answers, delivery authorisation scope, stop conditions, report cadence, and the ledger. The orchestrator re-plans waves as units land - adding, splitting, or deprioritising units within charter scope, without re-asking. Multi-repo missions are allowed - the charter lives in the lead repo, and unit state lives in each unit's workspace; typically one repo.
+Written to the mission's package dir `.agents/plans/<slug>/` in the repo, with `decisions.md` as the charter file - package layout per the plan-package skill, load it before writing charter or decision files (for a grilled mission, the grill decisions file is the charter); for a repo-less mission, a mission directory on disk serves. It holds: the mission goals verbatim, the unit list as an advisory starting plan with kinds and dependencies, standing answers, delivery authorisation scope, stop conditions, report cadence, and the ledger. The orchestrator re-plans waves as units land - adding, splitting, or deprioritising units within charter scope, without re-asking. Multi-repo missions are allowed - the charter lives in the lead repo, and unit state lives in each unit's workspace; typically one repo.
 
 ### Ledger
 
@@ -99,7 +100,7 @@ A unit is defined by three things, settled at intake and written into its brief:
 
 Two kinds are defined concretely; both are validated in practice:
 
-- **Build** (default, repo work). Executor: the dev-cycle skill. The subagent materialises the brief's standing answers (and test scenarios, where the brief carries them) as the unit's decisions file in the workspace's `.agents/plans/`, treats the orchestrator's dispatch as the launch gate's go, writes `## Outcome` from the brief's user intent, and enters the autonomous stages: test-plan where the brief lacks test scenarios, then spec, plan, implement, code-review, and verify-fix, with fresh subagents for its review rounds. Documentation obligations the repo attaches to completion (scenario docs, registers) belong in the brief's done-condition, not to the executor. Transport: git - worktree + branch `hayden/<unit>`, draft PR, gated merge. Done-condition: the repo's gate command green, run by the orchestrator.
+- **Build** (default, repo work). Executor: the dev-cycle skill. The subagent materialises the brief's standing answers (and test scenarios, where the brief carries them) and `## Outcome`, written from the brief's user intent, into the unit's package `decisions.md` in the workspace's `.agents/plans/`, per the plan-package layout; treats the orchestrator's dispatch as the launch gate's go, and enters the autonomous stages: test-plan where the brief lacks test scenarios, then spec, plan, implement, code-review, and verify-fix, with fresh subagents for its review rounds. Documentation obligations the repo attaches to completion (scenario docs, registers) belong in the brief's done-condition, not to the executor. Transport: git - worktree + branch `hayden/<unit>`, draft PR, gated merge. Done-condition: the repo's gate command green, run by the orchestrator.
 - **Investigate**. Executor: a research protocol - question, evidence, findings report. Transport: the report file is the deliverable; delivery is the orchestrator reading it, stowing a copy beside the charter, and recording that durable path verbatim in the ledger. Done-condition: the report exists and the orchestrator has read it. No code changes. A report is evidence, never authorisation - it does not silently become a build. If a build follows, it is a new unit with its own brief; scratch exploration stays behind.
 
 A new kind may be defined mid-mission, but only in the charter first: its executor and transport written down before any dispatch of that kind, grilled with the user if the shape is unfamiliar. An undefined kind does not dispatch.
