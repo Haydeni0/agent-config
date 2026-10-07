@@ -3,6 +3,7 @@ name: writing-plans
 layer: worker
 description: >
   Use when the user asks for an implementation plan for a multi-step task - typically after write-spec produced an approved spec. Produces a checkbox-tracked plan file saved next to the spec, with exact file changes and verification steps. Not auto-triggered: never invoke unless the user asks for a plan or an approved spec calls for one.
+deps: [tdd, executing-plans, plan-package]
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-plans)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
@@ -26,7 +27,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Context:** If working in an isolated worktree, it should have been created via a git worktree at execution time (create manually if isolation is wanted).
 
-**Save plans to:** where the invoking instructions direct. Otherwise, next to the spec - if the spec lives in a directory, save as that directory's `plan.md`; for a flat spec `.agents/plans/YYYY-MM-DD-<feature-name>-spec.md`, the plan goes alongside as `.agents/plans/YYYY-MM-DD-<feature-name>-plan.md`.
+**Save plans to:** where the invoking instructions direct. Otherwise the `plan.md` of the plan-package layout - load the plan-package skill for the layout. Do not restate layout paths here; the contract lives in that skill.
 
 ## Scope Check
 
@@ -164,7 +165,7 @@ If you find issues, fix them inline. No need to re-review — just fix and move 
 
 After saving the plan, offer execution choice:
 
-**"Plan complete and saved to `.agents/plans/<filename>.md`. Two execution options:**
+**"Plan complete and saved to `<path>`. Two execution options:**
 
 **1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
 
