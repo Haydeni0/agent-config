@@ -103,7 +103,11 @@ def check(skills_dir: Path, repo_root: Path) -> tuple[list[str], int]:
             failures.append(f"{name}: deps is not a list")
             deps = []
         for dep in deps:
-            if dep == name:
+            if not isinstance(dep, str):
+                # unhashable entries (nested list/mapping) would crash the
+                # membership tests below - report them instead
+                failures.append(f"{name}: deps entry {dep!r} is not a skill name")
+            elif dep == name:
                 failures.append(f"{name}: deps self-reference {dep!r}")
             elif dep not in parsed:
                 failures.append(f"{name}: deps entry {dep!r} names no skill")

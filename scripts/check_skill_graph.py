@@ -18,7 +18,12 @@ DIRECTIVE_VERBS = r"\b(?:invoke|invoking|run|running|load|loading|use|using)\b"
 
 def parse_skill(skill_md: Path) -> tuple[dict, str]:
     text = skill_md.read_text()
-    end = text.index("\n---", 3)
+    if not text.startswith("---"):
+        raise ValueError(f"{skill_md}: missing frontmatter")
+    try:
+        end = text.index("\n---", 3)
+    except ValueError:
+        raise ValueError(f"{skill_md}: unterminated frontmatter") from None
     return yaml.safe_load(text[4:end]), text[end + 4 :]
 
 
@@ -43,6 +48,11 @@ def generate_graph(skills: dict[str, dict]) -> str:
     return "\n".join(lines)
 
 
+def _nodes(text: str) -> set[str]:
+    labels = {m.group(2) for m in re.finditer(r"^\s*(\w+)\[(.+?)\]$", text, re.M)}
+    return {label.replace("_", "-") for label in labels}
+
+
 def _edges(text: str) -> set[tuple[str, str]]:
     nodes = {m.group(1): m.group(2) for m in re.finditer(r"^\s*(\w+)\[(.+?)\]$", text, re.M)}
     pairs = set()
@@ -60,9 +70,11 @@ def compare_block(readme_text: str, generated: str) -> list[str]:
     fence_start = readme_text.index("```mermaid", start)
     fence_end = readme_text.index("```", fence_start + len("```mermaid"))
     committed = readme_text[fence_start:fence_end]
+    diffs = [f"missing node {n}" for n in sorted(_nodes(generated) - _nodes(committed))]
+    diffs += [f"stale node {n}" for n in sorted(_nodes(committed) - _nodes(generated))]
     missing = _edges(generated) - _edges(committed)
     stale = _edges(committed) - _edges(generated)
-    diffs = [f"missing edge {src} --> {dst}" for src, dst in sorted(missing)]
+    diffs += [f"missing edge {src} --> {dst}" for src, dst in sorted(missing)]
     diffs += [f"stale edge {src} --> {dst}" for src, dst in sorted(stale)]
     return diffs
 
@@ -79,13 +91,32 @@ def warn_lint(skills_dir: Path, skills: dict[str, dict]) -> list[str]:
             if not re.search(DIRECTIVE_VERBS, line):
                 continue
             for other in names:
-                if other != name and other not in deps and re.search(rf"\b{re.escape(other)}\b", line):
+                # (?<![A-Za-z0-9-]) ... (?![A-Za-z0-9-]): "tdd" must not match
+                # inside "tdd-core" - a declared dep's hyphen-joined sibling
+                # is not a mention of the shorter name.
+                if other != name and other not in deps and re.search(
+                    rf"(?<![A-Za-z0-9-]){re.escape(other)}(?![A-Za-z0-9-])", line
+                ):
                     warnings.append(f"{name}: line directs to {other} but {other!r} not in deps")
     return warnings
 
 
 def render_block(generated: str) -> str:
     return f"{MARKER}\n```mermaid\n{generated}\n```\n"
+
+
+def splice_block(readme_text: str, block: str) -> str:
+    """Replace the marked block in place; append heading + block when absent.
+
+    Idempotent: the block ends with its own closing-fence newline, so the
+    splice resumes at the character after that newline (fence_end + 4, the
+    three backticks plus their terminator).
+    """
+    if MARKER in readme_text:
+        start = readme_text.index(MARKER)
+        fence_end = readme_text.index("```", readme_text.index("```mermaid", start) + 10)
+        return readme_text[:start] + block + readme_text[fence_end + 4 :]
+    return readme_text.rstrip("\n") + "\n\n## Skill map\n\n" + block
 
 
 def main() -> int:
@@ -95,13 +126,7 @@ def main() -> int:
     readme = repo_root / "README.md"
     readme_text = readme.read_text()
     if "--write" in sys.argv:
-        block = render_block(generated)
-        if MARKER in readme_text:
-            start = readme_text.index(MARKER)
-            fence_end = readme_text.index("```", readme_text.index("```mermaid", start) + 10)
-            readme_text = readme_text[:start] + block + readme_text[fence_end + 3 :]
-        else:
-            readme_text = readme_text.rstrip("\n") + "\n\n## Skill map\n\n" + block
+        readme_text = splice_block(readme_text, render_block(generated))
         readme.write_text(readme_text)
         print("skill graph: README block regenerated")
     else:
