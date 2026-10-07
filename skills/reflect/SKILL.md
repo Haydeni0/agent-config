@@ -1,6 +1,7 @@
 ---
 name: reflect
 description: Use when the user invokes /reflect or asks to turn a session's learnings, friction, or mistakes into durable improvements for next time - AGENTS.md, MEMORY.md, global rules, skills, hooks, permissions, or the backlog. Triggers - "reflect on this", "what should we learn from this", "retro this session", "so this doesn't happen next time". Not auto-triggered - never invoke unless the user asks. DRAFT - read README.md alongside.
+deps: [backlog, repo-agent-setup, writing-skills]
 ---
 
 # reflect

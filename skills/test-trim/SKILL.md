@@ -2,6 +2,7 @@
 name: test-trim
 layer: worker
 description: Use when user asks to clean up tests, remove redundant tests, dedupe tests, reduce test overlap, or simplify a test suite before PR.
+deps: [test-pr-core]
 ---
 
 # Test Trim

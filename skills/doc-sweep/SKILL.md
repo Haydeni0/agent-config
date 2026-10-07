@@ -1,6 +1,7 @@
 ---
 name: doc-sweep
 description: Use when a repo's accumulated agent docs need a retrospective tidy - session notes, handoffs, scratch files, stale plans/specs, historical records, and living reference docs piling up across docs/, root, or .claude/. Triggers include "sweep the docs", "tidy up the docs/notes", "audit our docs", "which of these can we archive", "the notes in this repo are a mess", "doc rot". Not for reformatting one messy doc for readability (doc-reformat), starting or resuming a living doc (living-doc), writing a spec or plan (write-spec / writing-plans), parking a work item (backlog), or trimming tests (test-trim).
+deps: [doc-reformat]
 argument-hint: "[path|dir] (optional scope)"
 ---
 

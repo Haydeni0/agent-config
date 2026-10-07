@@ -1,6 +1,7 @@
 ---
 name: pr-review
 description: Use when reviewing a GitHub pull request by number - checks out the PR, runs the code-review skill, and writes the review to a local file
+deps: [code-review]
 disable-model-invocation: true
 argument-hint: <PR-number>
 allowed-tools:

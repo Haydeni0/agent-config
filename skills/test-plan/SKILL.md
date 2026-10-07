@@ -2,6 +2,7 @@
 name: test-plan
 layer: worker
 description: Use when planning what tests a feature needs before or during implementation - enumerate scenarios, apply test-design heuristics, and stress-test the test plan against gaps and over-testing. Trigger when the user says "what tests does this need", "plan tests for X", "which scenarios should I cover", or when designing a feature and test coverage is undecided. Use even if the user doesn't say "test plan" - whenever the question is "what should I test" rather than "review existing tests" (that's test-add/test-trim territory). Use whenever you are about to start implementing a feature and have not yet decided what tests it needs, even if the user hasn't asked about tests explicitly.
+deps: [grill-me, tdd-core, pytest-guidelines, tdd]
 ---
 
 # test-plan

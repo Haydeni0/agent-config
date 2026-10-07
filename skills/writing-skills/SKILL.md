@@ -2,6 +2,7 @@
 name: writing-skills
 description: >
   Use when the user asks to create, edit, or verify a skill (SKILL.md). TDD-style methodology for authoring and testing skills. Not auto-triggered: never invoke unless the user asks for skill authoring/editing help.
+deps: [tdd-core]
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-skills)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body

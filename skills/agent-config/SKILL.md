@@ -1,6 +1,7 @@
 ---
 name: agent-config
 description: 'Use whenever the user edits or asks about AI coding agent configuration: Claude Code, Codex, opencode, pi, goose, Gemini CLI/Antigravity, or no-mistakes. Covers skills, slash commands, agents, permissions, hooks, model/provider settings, rules files, and cross-harness sync. Also covers "why did my change not take effect?" and "where does this setting live?". Shared configuration comes from the agent-config source checkout; edit its source and sync the managed artifact. Codex merges shared defaults while preserving local state. Excludes non-agent configuration: git, npm, shells, editors, and project build settings.'
+deps: [writing-skills]
 ---
 
 # Agent Harness Configuration & Authoring

@@ -1,6 +1,7 @@
 ---
 name: repo-agent-setup
 description: Fold the agent-first kit (AGENTS.md, CLAUDE.md, MEMORY.md, backlog) into a repo - set up a repo for AI coding agents, or audit an existing setup. Trigger on "make this repo agent-friendly", "set up agent files for this repo", "repo agent setup", or an explicit /repo-agent-setup.
+deps: [grill-me, backlog]
 ---
 
 # repo-agent-setup

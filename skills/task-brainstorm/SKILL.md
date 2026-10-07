@@ -1,6 +1,7 @@
 ---
 name: task-brainstorm
 description: Use when you have a group of related tasks to work through together - PR review comments, a list of issues, a pasted task dump - and want a guided, in-the-loop process per task or group instead of the agent steamrolling through them.
+deps: [grill-me]
 ---
 
 # Task Brainstorm

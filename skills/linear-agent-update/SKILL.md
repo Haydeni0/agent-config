@@ -1,6 +1,7 @@
 ---
 name: linear-agent-update
 description: Use when writing or updating any Linear comment or diff comment via the Linear MCP tools (save_comment, save_diff_comment, or editing an existing comment). Use whenever about to post to a Linear issue, project, initiative, document, milestone, or PR review.
+deps: [living-doc]
 ---
 
 # linear-agent-update

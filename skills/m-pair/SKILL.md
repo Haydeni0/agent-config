@@ -1,6 +1,7 @@
 ---
 name: m-pair
 description: Use when the user wants to start a marimo notebook or pair on an active marimo session - run Python in the same kernel, inspect live notebook state, or commit durable notebook changes.
+deps: [marimo-pair]
 ---
 
 # m-pair (wrapper)

@@ -2,6 +2,7 @@
 name: test-add
 layer: worker
 description: Use when user asks what tests are missing, what coverage is lacking, or which regressions are under-tested on the current branch/PR.
+deps: [test-pr-core]
 ---
 
 # Test Add

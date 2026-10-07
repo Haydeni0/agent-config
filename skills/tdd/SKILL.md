@@ -2,6 +2,7 @@
 name: tdd
 layer: worker
 description: Use when implementing any feature or bugfix, before writing implementation code, or when using test-driven development.
+deps: [tdd-core, pytest-guidelines]
 ---
 
 This builds upon the `tdd-core` skill (its forked local copy). Invoke the `tdd-core` skill now, if not already.

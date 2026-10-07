@@ -1,6 +1,7 @@
 ---
 name: pytest-guidelines
 description: Use when writing or reviewing Python tests, when tests import unittest.mock, when keeper tests target private methods or implementation details, or when fixture params or definitions lack type annotations.
+deps: [uv, tdd]
 ---
 
 # Pytest Guidelines
