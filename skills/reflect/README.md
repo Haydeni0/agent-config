@@ -13,7 +13,9 @@ stable when the field notes cover at least three sessions across more
 than one repo or kind of work, and every open question below is
 answered or consciously dropped. On promotion, remove the DRAFT marker
 from `SKILL.md` (heading note and description) and from this file's
-title, and fold settled answers into the skill.
+title, drop the field-note question from the skill's Report step - the
+"skill procedure gap" route already covers reflect misfiring - and fold
+settled answers into the skill.
 
 ## Intent
 
