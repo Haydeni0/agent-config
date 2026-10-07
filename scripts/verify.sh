@@ -6,6 +6,7 @@ uv run --locked --directory settings-sync pytest -q
 uv run --locked --directory opencode-resume pytest -q
 uv run --locked --directory settings-sync pytest ../custom/hooks/test_bash_guard.py -q
 uv run --locked --directory settings-sync python ../scripts/check-skills.py
+uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py
 node --test hooks/tests/*.test.mjs harnesses/opencode/plugins/bash-guard.test.mjs harnesses/opencode/plugins/config-guard.test.mjs
 bash -n sync.sh scripts/bootstrap.sh scripts/verify.sh
 
