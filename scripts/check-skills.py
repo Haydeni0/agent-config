@@ -13,8 +13,12 @@ Checks (all map to a REQ-SKILLS row in docs/requirements.md):
   submodule content is out of scope)
 - one-way layering: no `layer: worker` skill names a `layer: orchestrator` skill
 - peer rule: design-log and dev-cycle never name each other
-- workers never reference the design-package contract (the word "package",
-  excluding file names like package.json)
+- deps validation: every `deps:` entry names an existing skill, never self,
+  and a `layer: worker` skill never declares a `layer: orchestrator` skill
+- workers never reference the design-package contract except through the
+  plan-package skill: the bare word "package" (not hyphen-joined, so
+  "plan-package" passes; file names like package.json excluded) is banned in
+  worker bodies except in plan-package itself
 - every top-level symlink under skills/ resolves (vendored skills link into
   submodules; a dangling link means the submodule is missing or moved)
 - cross-skill path references (``../``-prefixed or ``<skill-name>/``-prefixed,
@@ -31,8 +35,9 @@ from pathlib import Path
 import yaml
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-PACKAGE_RE = re.compile(r"\bpackage\b(?!\.[A-Za-z])")
+PACKAGE_RE = re.compile(r"(?<!-)\bpackage\b(?!\.[A-Za-z])")
 ORCHESTRATOR_PEERS = ("design-log", "dev-cycle")
+CONTRACT_OWNER = "plan-package"
 # Skill names that are also generic English words: a bare word-boundary match
 # would fire on prose ("orchestrator mode"), so these need a skill-like
 # reference (backticked, slash-command form, or "<name> skill").
@@ -89,8 +94,21 @@ def check(skills_dir: Path, repo_root: Path) -> tuple[list[str], int]:
         for orch in sorted(orchestrators):
             if orchestrator_reference(orch, body):
                 failures.append(f"{name}: worker names orchestrator skill {orch}")
-        if PACKAGE_RE.search(body):
+        if name != CONTRACT_OWNER and PACKAGE_RE.search(body):
             failures.append(f"{name}: worker references the design-package contract")
+
+    for name, (frontmatter, _) in parsed.items():
+        deps = frontmatter.get("deps") or []
+        if not isinstance(deps, list):
+            failures.append(f"{name}: deps is not a list")
+            deps = []
+        for dep in deps:
+            if dep == name:
+                failures.append(f"{name}: deps self-reference {dep!r}")
+            elif dep not in parsed:
+                failures.append(f"{name}: deps entry {dep!r} names no skill")
+            elif frontmatter.get("layer") == "worker" and parsed[dep][0].get("layer") == "orchestrator":
+                failures.append(f"{name}: worker declares orchestrator-layer dep {dep!r}")
 
     for peer in ORCHESTRATOR_PEERS:
         if peer not in parsed:
