@@ -38,14 +38,28 @@ def test_s5_generation_covers_all_nodes_and_edges(graph_module: types.ModuleType
     skills = tmp_path / "skills"
     make_skill(skills, "alpha", deps=["beta"])
     make_skill(skills, "beta")
-    make_skill(skills, "gamma")
+    make_skill(skills, "gamma")  # zero-degree
     loaded = graph_module.load_skills(skills)
     body = graph_module.generate_graph(loaded)
     assert body.startswith("flowchart LR")
-    for node in ("alpha", "beta", "gamma"):
-        assert node.replace("-", "_") in body
+    # connected nodes render; the zero-degree node stays only as a comment
+    assert "    alpha[alpha]" in body
+    assert "    beta[beta]" in body
+    assert "%% gamma[gamma]" in body
+    assert "    gamma[gamma]" not in body
     assert "alpha --> beta" in body.replace("_", "-")
     assert body.count("-->") == 1  # edge present exactly once, no invented edges
+
+
+def test_s5_commented_node_still_gated(graph_module: types.ModuleType, tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    make_skill(skills, "alpha")
+    make_skill(skills, "beta")
+    loaded = graph_module.load_skills(skills)
+    generated = graph_module.generate_graph(loaded)
+    # committed README dropped alpha's commented node line entirely
+    diffs = graph_module.compare_block(make_readme("flowchart LR\n    beta[beta]\n"), generated)
+    assert any("missing node" in d and "alpha" in d for d in diffs)
 
 
 def test_s1_stale_graph_reports_differing_edges(graph_module: types.ModuleType, tmp_path: Path) -> None:

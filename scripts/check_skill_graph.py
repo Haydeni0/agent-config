@@ -39,22 +39,32 @@ def _node(name: str) -> str:
 
 
 def generate_graph(skills: dict[str, dict]) -> str:
+    in_degree: dict[str, int] = {}
+    for name in sorted(skills):
+        for dep in skills[name].get("deps") or []:
+            in_degree[dep] = in_degree.get(dep, 0) + 1
     lines = ["flowchart LR"]
     for name in sorted(skills):
-        lines.append(f"    {_node(name)}[{name}]")
+        # zero-degree nodes (no deps out or in) render as mermaid comments:
+        # present for the gate's node comparison, absent from the diagram
+        zero = not (skills[name].get("deps") or in_degree.get(name))
+        prefix = "%% " if zero else ""
+        lines.append(f"    {prefix}{_node(name)}[{name}]")
     for name in sorted(skills):
         for dep in skills[name].get("deps") or []:
             lines.append(f"    {_node(name)} --> {_node(dep)}")
     return "\n".join(lines)
 
 
+_NODE_LINE_RE = re.compile(r"^\s*(?:%%\s*)?(\w+)\[(.+?)\]$", re.M)
+
+
 def _nodes(text: str) -> set[str]:
-    labels = {m.group(2) for m in re.finditer(r"^\s*(\w+)\[(.+?)\]$", text, re.M)}
-    return {label.replace("_", "-") for label in labels}
+    return {m.group(2).replace("_", "-") for m in _NODE_LINE_RE.finditer(text)}
 
 
 def _edges(text: str) -> set[tuple[str, str]]:
-    nodes = {m.group(1): m.group(2) for m in re.finditer(r"^\s*(\w+)\[(.+?)\]$", text, re.M)}
+    nodes = {m.group(1): m.group(2) for m in _NODE_LINE_RE.finditer(text)}
     pairs = set()
     for m in re.finditer(r"^\s*(\w+)\s*-->\s*(\w+)\s*$", text, re.M):
         src = nodes.get(m.group(1), m.group(1)).replace("_", "-")
