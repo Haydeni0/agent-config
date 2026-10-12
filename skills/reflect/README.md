@@ -35,6 +35,9 @@ the intent.
    (session end, after a user correction)? Currently user-only.
 2. **Repetition evidence** - the agent cannot see past sessions. Ask
    the user, search transcripts, or keep a "seen once" log somewhere?
+   Partial answer: past sessions are readable from harness transcripts
+   (Claude Code: `~/.claude/projects/<project-dir>/<session-id>.jsonl`,
+   where `<project-dir>` is the cwd with `/` and `.` replaced by `-`).
 3. **Cross-repo edits** - reflect running in repo X edits the
    agent-config source checkout directly. Acceptable, or queue to the
    agent-config backlog instead?
@@ -45,6 +48,19 @@ the intent.
    that split right in practice?
 6. **Granularity** - one question per candidate may drag for many small
    items. Batch approval?
+
+## Known limitations
+
+- Audits only rules the session touches. Rules and checks that now
+  over-fire or guard a gone bug are not surfaced - prune by hand or via
+  doc-sweep / repo-agent-setup audit mode.
+
+## Prior art
+
+- mattpocock/skills `retro` (`skills/engineering/retro/`):
+  existing-check-first, mechanical/judgement split, traceability drop
+  rule, slow-lookup and expensive-tool signals, severity order.
+  Reviewer-only standards queued in agent-config backlog #22.
 
 ## Iterating on this skill
 
