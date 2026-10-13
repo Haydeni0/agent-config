@@ -60,7 +60,9 @@ the intent.
 - mattpocock/skills `retro` (`skills/engineering/retro/`):
   existing-check-first, mechanical/judgement split, traceability drop
   rule, slow-lookup and expensive-tool signals, severity order.
-  Reviewer-only standards queued in agent-config backlog #22.
+  Reviewer-only standards rejected: agents also implement, so
+  principles stay always-loaded for implementers (agent-config backlog
+  #22, closed).
 
 ## Iterating on this skill
 
