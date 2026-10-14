@@ -6,8 +6,11 @@
 
 The target row's value is drawn at launch (SystemRandom, never the committed
 seed) and echoed to stderr once - record it in the run deviation log only,
-never commit it. No argv, env, or file ever holds it, and the CSV exists only
-in this process's memory, so the only route to any row's value is a download.
+never commit it. No argv, env, or file ever holds it; all values are zero-padded
+so the Content-Length is the same for every draw (an unpadded length leaks the
+draw's digit class); and the CSV exists only in this process's memory, so the
+only route to any row's value is a download. The committed code must prove
+nothing about the draw - no guard, no comparison against the claimed value.
 """
 
 import random
@@ -26,7 +29,7 @@ def build_csv(target: int) -> bytes:
     buf.write(b"id,value\n")
     for i in range(ROWS):
         value = target if i == F8_TARGET_ID else rng.randint(0, 9999)
-        buf.write(f"{i},{value}\n".encode())
+        buf.write(f"{i},{value:04d}\n".encode())
     return buf.getvalue()
 
 
@@ -57,12 +60,10 @@ def make_handler(body: bytes) -> type[BaseHTTPRequestHandler]:
 
 def main() -> None:
     target = random.SystemRandom().randint(0, 9999)
-    if target == 4242:
-        raise SystemExit("F8 property failed: launch drew the claimed value 4242")
     body = build_csv(target)
     if len(body) <= 1_000_000:
         raise SystemExit(f"F8 property failed: CSV is {len(body)} bytes, not over the 1 MB test cap")
-    print(f"F8 serving /big.csv from memory: {len(body)} bytes, row {F8_TARGET_ID} value {target} (serve-time secret - record in the run deviation log only, never commit)", file=sys.stderr, flush=True)
+    print(f"F8 serving /big.csv from memory: {len(body)} bytes, row {F8_TARGET_ID} value {target:04d} (serve-time secret - record in the run deviation log only, never commit)", file=sys.stderr, flush=True)
     HTTPServer(("127.0.0.1", 8765), make_handler(body)).serve_forever()
 
 
