@@ -16,9 +16,9 @@ Checks (all map to a REQ-SKILLS row in docs/requirements.md):
 - deps validation: every `deps:` entry names an existing skill, never self,
   and a `layer: worker` skill never declares a `layer: orchestrator` skill
 - workers never reference the design-package contract except through the
-  plan-package skill: the bare word "package" (not hyphen-joined, so
-  "plan-package" passes; file names like package.json excluded) is banned in
-  worker bodies except in plan-package itself
+  work-package skill: the bare word "package" (not hyphen-joined, so
+  "work-package" passes; file names like package.json excluded) is banned in
+  worker bodies except in work-package itself
 - every top-level symlink under skills/ resolves (vendored skills link into
   submodules; a dangling link means the submodule is missing or moved)
 - cross-skill path references (``../``-prefixed or ``<skill-name>/``-prefixed,
@@ -37,7 +37,7 @@ import yaml
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 PACKAGE_RE = re.compile(r"(?<!-)\bpackage\b(?!\.[A-Za-z])")
 ORCHESTRATOR_PEERS = ("design-log", "dev-cycle")
-CONTRACT_OWNER = "plan-package"
+CONTRACT_OWNER = "work-package"
 # Skill names that are also generic English words: a bare word-boundary match
 # would fire on prose ("orchestrator mode"), so these need a skill-like
 # reference (backticked, slash-command form, or "<name> skill").

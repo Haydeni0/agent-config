@@ -44,7 +44,7 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 | `docs/requirements.md` | Binding requirements contract, per-area tables with verification pointers |
 | `.agents/backlog.md` | Deferred items and open work (machine-local, gitignored) |
 
-Project plans live in `.agents/plans/`. Read legacy `.claude` documents when canonical files are absent and reconcile both when both exist.
+Project plans live in `.agents/work/`. Read legacy `.claude` documents when canonical files are absent and reconcile both when both exist.
 
 ## Autonomy
 

@@ -42,7 +42,7 @@ bash scripts/verify.sh                    # same checks as CI
 | `skills/`, `commands/`, `agents/` | Shared agent resources |
 | `custom/`, `hooks/` | Hook scripts and pinned plugin submodules |
 | `settings-sync/`, `opencode-resume/` | Config CLI and session converter |
-| `.agents/plans/` | Machine-local design packages and plans, ignored |
+| `.agents/work/` | Machine-local design packages and plans, ignored |
 | `.agents/backlog.md` | Local deferred topics, ignored |
 
 Shared edits belong here. Runtime skill/command aliases point back here; generated instructions name this checkout. Mixed JSON/YAML/TOML files merge declared template keys and preserve other native keys. Generated outputs update normally after adoption; local edits conflict. Selected-step force backs up before replacement. Unknown entries survive cleanup. Details: [ownership and recovery](settings-sync/README.md#ownership-and-recovery).
@@ -112,7 +112,6 @@ flowchart LR
     marimo_pair[marimo-pair]
     %% no_mistakes[no-mistakes]
     orchestrator[orchestrator]
-    plan_package[plan-package]
     %% ponytail[ponytail]
     %% ponytail_help[ponytail-help]
     %% ponytail_review[ponytail-review]
@@ -138,6 +137,7 @@ flowchart LR
     uv[uv]
     verification_before_completion[verification-before-completion]
     %% visual_explainer[visual-explainer]
+    work_package[work-package]
     %% worktrunk[worktrunk]
     write_spec[write-spec]
     writing_plans[writing-plans]
@@ -148,7 +148,7 @@ flowchart LR
     design_log --> test_plan
     design_log --> write_spec
     design_log --> writing_plans
-    design_log --> plan_package
+    design_log --> work_package
     dev_cycle --> grill_me
     dev_cycle --> test_plan
     dev_cycle --> write_spec
@@ -156,7 +156,7 @@ flowchart LR
     dev_cycle --> executing_plans
     dev_cycle --> tdd
     dev_cycle --> code_review
-    dev_cycle --> plan_package
+    dev_cycle --> work_package
     doc_sweep --> doc_reformat
     executing_plans --> tdd
     linear_agent_update --> living_doc
@@ -164,7 +164,7 @@ flowchart LR
     orchestrator --> grill_me
     orchestrator --> backlog
     orchestrator --> dev_cycle
-    orchestrator --> plan_package
+    orchestrator --> work_package
     pr_review --> code_review
     pytest_guidelines --> uv
     pytest_guidelines --> tdd
@@ -188,10 +188,10 @@ flowchart LR
     test_trim --> test_pr_core
     write_spec --> grill_me
     write_spec --> writing_plans
-    write_spec --> plan_package
+    write_spec --> work_package
     writing_plans --> tdd
     writing_plans --> executing_plans
-    writing_plans --> plan_package
+    writing_plans --> work_package
     writing_skills --> tdd_core
 ```
 
@@ -210,7 +210,7 @@ FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS
 | caveman-review | FC | formats review output, judges nothing; vendored |
 | code-review | REV | verdict gate |
 | codebase-review | REV | structural, no diff |
-| design-log | DIS + DRV + HK | when-to-write discipline; orchestrates workers; promote. Format contract moved to plan-package |
+| design-log | DIS + DRV + HK | when-to-write discipline; orchestrates workers; promote. Format contract moved to work-package |
 | dev-cycle | DRV | stage detection from markers, launch gate, reviewer loop |
 | doc-reformat | PRO + REV | guardian pipeline + fresh-context loss auditor |
 | doc-sweep | HK + REV | repo-wide retrospective tidy, human-gated |
@@ -231,7 +231,7 @@ FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS
 | marimo-pair | EXE | drives live kernel; vendored |
 | no-mistakes | DRV + EXE | gates external pipeline |
 | orchestrator | DRV | mission waves over units |
-| plan-package | FC | the .agents/plans on-disk contract |
+| work-package | FC | the .agents/work on-disk contract |
 | ponytail | mode | build-style ladder |
 | ponytail-help | catalog | reference card |
 | ponytail-review | REV | over-engineering only |

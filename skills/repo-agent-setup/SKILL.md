@@ -163,7 +163,7 @@ correct in passing if wrong, don't ask):
   example entry), `.agents/backlog.md` (create per the backlog
   skill's template if that skill is available; otherwise a `# Backlog`
   header with an `## Open` section) - repo root and `.agents/` only.
-  Never touch `.claude/settings.json`, never scaffold `.agents/plans/`.
+  Never touch `.claude/settings.json`, never scaffold `.agents/work/`.
 - Requirements contract: only after the grill accepted it. Use the
   canonical requirements/spec file; if absent, create
   `docs/requirements.md` only with at least one concrete durable

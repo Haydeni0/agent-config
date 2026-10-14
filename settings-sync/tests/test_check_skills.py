@@ -60,9 +60,9 @@ def test_worker_dep_on_worker_passes(check_module: types.ModuleType, tmp_path: P
     assert not any("deps" in f for f in failures)
 
 
-def test_worker_body_citing_plan_package_passes(check_module: types.ModuleType, tmp_path: Path) -> None:
-    make_skill(tmp_path / "skills", "plan-package", "layout contract")
-    make_skill(tmp_path / "skills", "a-worker", "load the plan-package skill first", layer="worker")
+def test_worker_body_citing_work_package_passes(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "work-package", "layout contract")
+    make_skill(tmp_path / "skills", "a-worker", "load the work-package skill first", layer="worker")
     failures, _ = run_check(check_module, tmp_path)
     assert not any("package" in f for f in failures)
 
@@ -73,8 +73,8 @@ def test_worker_body_bare_package_word_fails(check_module: types.ModuleType, tmp
     assert any("package" in f for f in failures)
 
 
-def test_plan_package_exempt_from_package_word(check_module: types.ModuleType, tmp_path: Path) -> None:
-    make_skill(tmp_path / "skills", "plan-package", "the package layout table lives here", layer="worker")
+def test_work_package_exempt_from_package_word(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "work-package", "the package layout table lives here", layer="worker")
     failures, _ = run_check(check_module, tmp_path)
     assert not any("package" in f for f in failures)
 

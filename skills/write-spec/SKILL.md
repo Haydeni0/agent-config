@@ -3,7 +3,7 @@ name: write-spec
 layer: worker
 description: >
   Use when the user asks to write a spec or design document - typically after a grill-me session has settled the design. Turns the agreed decisions into a spec saved next to the design record and walks it through self-review and user approval. Not auto-triggered: never invoke unless the user asks for a spec/design doc or the grill ended with intent to write one.
-deps: [grill-me, writing-plans, plan-package]
+deps: [grill-me, writing-plans, work-package]
 forked-from: superpowers@claude-plugins-official v6.3.0 (brainstorming)
 forked-date: 2026-09-01
 forked-note: 2026-09-01 trimmed to pure spec-writer; all brainstorming dialogue moved to grill-me
@@ -17,7 +17,7 @@ Assumes the design is already decided (usually via grill-me). Your job: capture 
 
 ## Writing the spec
 
-**Destination:** save where the invoking instructions direct. Otherwise the `spec.md` of the plan-package layout - load the plan-package skill for the layout. Do not restate layout paths here; the contract lives in that skill.
+**Destination:** save where the invoking instructions direct. Otherwise the `spec.md` of the work-package layout - load the work-package skill for the layout. Do not restate layout paths here; the contract lives in that skill.
 
 Compose sections to fit the task - this is loose guidance, not a mandated skeleton:
 
@@ -50,7 +50,7 @@ Wait for the response. If changes are requested, make them and re-run the self-r
 
 ## After approval
 
-Suggest the `writing-plans` skill to turn the spec into a checkbox-tracked implementation plan (the spec's `plan.md`, per the plan-package layout). Not mandatory - some specs get implemented directly; the user decides.
+Suggest the `writing-plans` skill to turn the spec into a checkbox-tracked implementation plan (the spec's `plan.md`, per the work-package layout). Not mandatory - some specs get implemented directly; the user decides.
 
 ## Existing project documents
 

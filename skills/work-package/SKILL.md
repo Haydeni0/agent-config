@@ -1,16 +1,16 @@
 ---
-name: plan-package
+name: work-package
 layer: worker
-description: Use when reading, writing, or resuming work in a `.agents/plans/<slug>/` package, or when another skill cites this contract. Holds the on-disk contract - package layout, file roles, entry formats, ID rules, marker formats, and the legacy conversion recipe. Load it before reading or writing package files.
+description: Use when reading, writing, or resuming work in a `.agents/work/<slug>/` package, or when another skill cites this contract. Holds the on-disk contract - package layout, file roles, entry formats, ID rules, marker formats, and the legacy conversion recipe. Load it before reading or writing package files.
 ---
 
-# plan-package
+# work-package
 
-Reference contract for `.agents/plans/<slug>/` packages. This file is the single home for what the bytes on disk mean; interpreting them (which stage reads which marker, when to gate) belongs to the skills that drive flows, not here.
+Reference contract for `.agents/work/<slug>/` packages. This file is the single home for what the bytes on disk mean; interpreting them (which stage reads which marker, when to gate) belongs to the skills that drive flows, not here.
 
 ## Package
 
-`.agents/plans/<slug>/`, created on first use:
+`.agents/work/<slug>/`, created on first use:
 
 | File | Holds |
 |---|---|
@@ -54,4 +54,4 @@ Bytes that cycle-driving skills write on artifacts and read back; their *interpr
 
 ## Legacy conversion
 
-A flat `<date>-<topic>-decisions.md` / `-spec.md` / `-plan.md` triple is a pre-package cycle. Read its shared basename as the package dir, and at the next gate convert, not just move: put the three files into `.agents/plans/<basename>/` as `decisions.md` / `spec.md` / `plan.md`, renumber the legacy `## Design decisions` lines as D entries, and extract the `## Test scenarios` section into `scenarios.md`.
+A flat `<date>-<topic>-decisions.md` / `-spec.md` / `-plan.md` triple is a pre-package cycle. Read its shared basename as the package dir, and at the next gate convert, not just move: put the three files into `.agents/work/<basename>/` as `decisions.md` / `spec.md` / `plan.md`, renumber the legacy `## Design decisions` lines as D entries, and extract the `## Test scenarios` section into `scenarios.md`.

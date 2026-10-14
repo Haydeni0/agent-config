@@ -7,7 +7,7 @@ credentials.*
 settings.local.json
 config.local.yaml
 .agents/backlog.md
-.agents/plans/
+.agents/work/
 .lavish/
 .claude/
 skills/synced/

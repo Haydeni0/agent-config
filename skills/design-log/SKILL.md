@@ -2,7 +2,7 @@
 name: design-log
 layer: orchestrator
 description: Use when designing or planning a feature or new body of work across turns or sessions - a design grill, writing a spec or plan from a design, implementation that diverges from the agreed design, or "wrap up / finalise the design docs".
-deps: [grill-me, test-plan, write-spec, writing-plans, plan-package]
+deps: [grill-me, test-plan, write-spec, writing-plans, work-package]
 ---
 
 # Design log
@@ -16,7 +16,7 @@ updated only at an explicit promote step.
 
 ## Package
 
-The package layout, file roles, entry formats, ID rules, marker formats, and the legacy conversion recipe are the plan-package skill's contract - load it before reading or writing package files. This skill adds only the discipline of *when* entries get written, below.
+The package layout, file roles, entry formats, ID rules, marker formats, and the legacy conversion recipe are the work-package skill's contract - load it before reading or writing package files. This skill adds only the discipline of *when* entries get written, below.
 
 ## When to write
 
