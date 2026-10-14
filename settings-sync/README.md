@@ -8,7 +8,15 @@ Syncs the agent-config source checkout into opencode, pi, goose, agy, Codex, and
 
 ### Claude
 
-Shared `harnesses/claude/settings.json` merges into the native settings file. `rules/global.md` becomes global `CLAUDE.md` with source routing. Shared skills, commands and agents are installed as individual links; local skill containers remain in place. Compatibility links for hooks, custom plugins and launcher resources are listed in [migration](../docs/migration.md#compatibility-links). `--claude-home` selects a custom Claude runtime destination and renders hook commands accordingly.
+Shared `harnesses/claude/settings.json` merges into the native settings file. `rules/global.md` becomes global `CLAUDE.md` with source routing. Shared skills, commands and agents are installed as individual links; local skill containers remain in place. Compatibility links under `~/.claude` point into the source checkout:
+
+| Alias | Source target | Reason |
+|---|---|---|
+| `custom`, `hooks` | same-named source directories | Hook commands and plugin imports |
+| `statusline-command.sh` | `harnesses/claude/statusline-command.sh` | Native statusline command |
+| `pi`, `opencode`, `codex`, `goose`, `gemini`, `no-mistakes` | corresponding `harnesses/` directories | Launchers and source references |
+| `settings-sync`, `opencode-resume` | same-named source directories | Tool invocations |
+| `sync.sh`, `scripts`, `README.md` | same-named source entries | Setup entry and navigation | `--claude-home` selects a custom Claude runtime destination and renders hook commands accordingly.
 
 
 ### opencode

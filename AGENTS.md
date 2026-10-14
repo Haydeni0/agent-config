@@ -36,8 +36,6 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 | File | Answers |
 |---|---|
 | `README.md` | Setup, command surface, source layout, adoption flow, and the generated skill map |
-| `docs/migrate-existing-installation.md` | How to migrate another machine |
-| `docs/migration.md` | First machine’s migration record, backup, and rollback |
 | `settings-sync/README.md` | Ownership, recovery, adapters, and sync mechanics |
 | `hooks/README.md` | Shared hook coverage, tests, and recovery |
 | `MEMORY.md` | Verified lessons learned for future sessions |

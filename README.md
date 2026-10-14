@@ -15,7 +15,7 @@ agent-config check
 agent-config doctor
 ```
 
-For an existing installation, follow [Migrate an existing machine](docs/migrate-existing-installation.md). The [first machine's migration record](docs/migration.md) contains its recovery details. `--source /path/to/checkout` works before the local pointer exists. Source selection is explicit flag, `AGENT_CONFIG_REPO`, then `$XDG_CONFIG_HOME/agent-config/config.toml`. Unconfigured source is an error.
+An existing installation adopts cleanly on first sync: identical native files are adopted, local-only state preserved. `--source /path/to/checkout` works before the local pointer exists. Source selection is explicit flag, `AGENT_CONFIG_REPO`, then `$XDG_CONFIG_HOME/agent-config/config.toml`. Unconfigured source is an error.
 
 ## Everyday commands
 
