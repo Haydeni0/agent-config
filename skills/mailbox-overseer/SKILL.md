@@ -13,7 +13,7 @@ only channel between you.
 
 ## Why this pattern
 
-Two context budgets to protect. The overseer is the expensive, clever model
+Two context budgets to protect. The overseer is the stronger, more expensive model
 the user talks to: its context stays high-level, because execution detail
 burns it. The worker is also a good model, but it is the one doing the work:
 it keeps the task context, and as an orchestrator it pushes leaf work to
