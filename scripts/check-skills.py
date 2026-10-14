@@ -13,6 +13,7 @@ Checks (all map to a REQ-SKILLS row in docs/requirements.md):
   submodule content is out of scope)
 - one-way layering: no `layer: worker` skill names a `layer: orchestrator` skill
 - peer rule: design-log and dev-cycle never name each other
+- deps graph is a DAG: any dependency loop fails, named as a chain
 - deps validation: every `deps:` entry names an existing skill, never self,
   and a `layer: worker` skill never declares a `layer: orchestrator` skill
 - exits validation: optional `exits:` entries are "state: <enum>" or begin
@@ -142,6 +143,40 @@ def check(skills_dir: Path, repo_root: Path) -> tuple[list[str], int]:
                     failures.append(f"{name}: exits entry {entry!r} names unknown state (allowed: {sorted(ps.ALL_STATES)})")
             elif not any(entry == f or entry.startswith(f + " ") for f in ps.CONTRACT_FILES):
                 failures.append(f"{name}: exits entry {entry!r} does not begin with a contract filename {ps.CONTRACT_FILES}")
+
+    # deps graph must be a DAG (REQ-SKILLS-17): gray marks the current DFS
+    # path, so a gray hit is a loop - report the chain once per component
+    graph = {
+        name: [d for d in (frontmatter.get("deps") or []) if isinstance(d, str) and d in parsed]
+        for name, (frontmatter, _) in parsed.items()
+    }
+    color = dict.fromkeys(parsed, 0)
+    path: list[str] = []
+
+    def visit(node: str) -> bool:
+        color[node] = 1
+        path.append(node)
+        for dep in graph[node]:
+            if color[dep] == 1:
+                path.append(dep)
+                return True
+            if color[dep] == 0 and visit(dep):
+                return True
+        path.pop()
+        color[node] = 2
+        return False
+
+    for name in sorted(parsed):
+        if color[name] == 0 and visit(name):
+            # path[-1] is the gray node that closed the loop; slice from its
+            # first position on the path to render dep -> ... -> dep. Mark the
+            # whole abandoned path black: gray remnants would false-positive
+            # as phantom cycles for later DFS starts.
+            cycle = path[path.index(path[-1]):] + [path[-1]]
+            failures.append(f"deps cycle: {' -> '.join(cycle)}")
+            for n in path:
+                color[n] = 2
+            path.clear()
 
     for peer in ORCHESTRATOR_PEERS:
         if peer not in parsed:

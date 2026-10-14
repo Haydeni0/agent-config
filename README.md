@@ -167,7 +167,6 @@ flowchart LR
     orchestrator --> work_package
     pr_review --> code_review
     pytest_guidelines --> uv
-    pytest_guidelines --> tdd
     reflect --> backlog
     reflect --> repo_agent_setup
     reflect --> writing_skills

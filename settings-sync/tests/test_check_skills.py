@@ -107,3 +107,28 @@ def test_exits_bad_artifact_fails(check_module: types.ModuleType, tmp_path: Path
     make_skill(tmp_path / "skills", "alpha", "body", exits=["banana.md"])
     failures, _ = run_check(check_module, tmp_path)
     assert any("alpha" in f and "banana.md" in f for f in failures)
+
+
+def test_deps_two_cycle_fails(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "alpha", "body", deps=["beta"])
+    make_skill(tmp_path / "skills", "beta", "body", deps=["alpha"])
+    failures, _ = run_check(check_module, tmp_path)
+    assert any("cycle" in f and "alpha" in f and "beta" in f for f in failures)
+
+
+def test_deps_three_cycle_fails(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "alpha", "body", deps=["beta"])
+    make_skill(tmp_path / "skills", "beta", "body", deps=["gamma"])
+    make_skill(tmp_path / "skills", "gamma", "body", deps=["alpha"])
+    failures, _ = run_check(check_module, tmp_path)
+    assert any("cycle" in f and "gamma" in f for f in failures)
+
+
+def test_deps_diamond_passes(check_module: types.ModuleType, tmp_path: Path) -> None:
+    # fan-out and fan-in without a loop is legal
+    make_skill(tmp_path / "skills", "top", "body", deps=["left", "right"])
+    make_skill(tmp_path / "skills", "left", "body", deps=["base"])
+    make_skill(tmp_path / "skills", "right", "body", deps=["base"])
+    make_skill(tmp_path / "skills", "base", "body")
+    failures, _ = run_check(check_module, tmp_path)
+    assert not any("cycle" in f for f in failures)

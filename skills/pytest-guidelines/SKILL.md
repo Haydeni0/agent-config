@@ -1,7 +1,7 @@
 ---
 name: pytest-guidelines
 description: Use when writing or reviewing Python tests, when tests import unittest.mock, when keeper tests target private methods or implementation details, or when fixture params or definitions lack type annotations.
-deps: [uv, tdd]
+deps: [uv]
 ---
 
 # Pytest Guidelines
@@ -106,7 +106,7 @@ def test_total(mocker: MockerFixture, calculator: OrderCalculator):
 
 ## TDD Scaffolding
 
-**REQUIRED BACKGROUND:** Use `tdd` skill. Scaffolding tests may target internals; they are temporary and deleted before done. Convert behavior to keeper tests per this skill.
+**REQUIRED BACKGROUND:** scaffolding tests (TDD's temporary tests in `tests/tdd_scaffolding/`) may target internals; they are deleted before done. Convert behavior to keeper tests per this skill.
 
 ## Common Mistakes
 
