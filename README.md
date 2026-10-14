@@ -69,7 +69,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 - **Review:** `/code-review` on any uncommitted diff, branch or PR. `/codebase-review` for a structural pass with no diff.
 - **Debug:** `/systematic-debugging` for bugs that resist a first fix; opens a debug package on the first failed fix and survives compaction.
 - **Backlog:** off-scope issues get captured mid-task, never fixed unprompted; `/backlog` recalls them, and they surface at session start.
-- **Research before design:** fan out research subagents, collect findings under living-doc's evidence rules, synthesize into a package's `context.md` plus decision-ready entries in `decisions.md`. Skill not yet written; template session: `.agents/work/2026-10-14-agent-state-machine-spike/`.
+- **Research before design:** `/research-spike <question>` fans out investigation streams (capped at 6 in flight), each writing a finalised living-doc file into a work-package, synthesized into the package's `context.md` plus decision-ready Q entries in `decisions.md`.
 - **Harness config and skills:** `/agent-config`. New skills follow `writing-skills`; frontmatter (`deps`, `exits`, `layer`) is machine-checked by `scripts/check-skills.py`.
 
 ## Skills
