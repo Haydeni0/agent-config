@@ -30,7 +30,7 @@ Requires: `HERDR_ENV=1` (every session in a herdr pane) and `uv`.
 4. Give the user one connect prompt per other session (template below), to
    paste into that session's pane. Do not type it into other panes
    yourself: the user typing it is what grants the session's trust.
-5. When the user says they are pasted, check `ls <mailbox>/members/` lists
+5. When the user says they are pasted, check `<mailbox>/bin/mailbox status` lists
    everyone, then read `<mailbox>/README.md` and follow it.
 
 ## Connect prompt template
@@ -48,8 +48,8 @@ session.
   in another worktree or checkout has its own copy; it must use this
   mailbox's absolute path, and its permission rules must allow writing
   there.
-- The contract (inbox checks, ack by moving to `handled/`, sending,
-  trust, quiet peers) lives in `<mailbox>/README.md`, not here. Every wake
+- The contract (`take` and `inbox` checks, sending, trust, quiet peers
+  via `status` and `poke`) lives in `<mailbox>/README.md`, not here. Every wake
   line points at it, so a compacted session re-learns it.
 - Nothing reaps a mesh. The mesh lasts as long as its package; members
   leave by deleting their `members/<name>` file.

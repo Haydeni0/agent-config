@@ -158,6 +158,10 @@ def test_init_creates_layout_and_fills_absolute_paths_into_contract(tmp_path: Pa
     readme = (root / "README.md").read_text()
     assert "{{MAILBOX}}" not in readme
     assert f"{root}/bin/mailbox send" in readme
+    for verb in ("take", "inbox", "status", "poke"):
+        assert f"{root}/bin/mailbox {verb}" in readme
+    assert "move it to" not in readme  # the manual-ack instruction is gone
+    assert readme.count("## When a peer goes quiet") == 1  # the rewrite consumed the old section
 
 
 def test_init_refuses_a_non_empty_directory(tmp_path: Path, fake_env: FakeHerdr) -> None:
