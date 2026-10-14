@@ -390,7 +390,9 @@ def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
     check_token(slug, "slug")
     check_members(root, to)
     sender = own_name(root)
-    msg_id = f"{next_seq(root, sender):0{SEQ_WIDTH}d}-{slug}"
+    seq = f"{next_seq(root, sender):0{SEQ_WIDTH}d}"
+    # agents often prefix the slug with the seq they expect; the helper adds it
+    msg_id = f"{seq}-{slug.removeprefix(f'{seq}-')}"
     deliver(root, sender, msg_id, Kind.MSG, to, ring_now)
 
 

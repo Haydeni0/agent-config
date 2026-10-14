@@ -660,3 +660,18 @@ def test_no_ring_skips_herdr_wait_and_prompt(mesh: Mesh) -> None:
     mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
 
     assert not any(call[1] in ("wait", "prompt") for call in mesh.herdr.calls())
+
+
+@pytest.mark.parametrize(
+    ("slug", "filename"),
+    [
+        ("001-logfix", "planner.001-logfix.msg"),
+        ("2026-q4-review", "planner.001-2026-q4-review.msg"),
+        ("100-sample-run", "planner.001-100-sample-run.msg"),
+    ],
+)
+def test_send_strips_only_a_slug_prefix_equal_to_its_own_seq(mesh: Mesh, slug: str, filename: str) -> None:
+    result = mesh.run("send", slug, "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("worker") / filename).exists()
