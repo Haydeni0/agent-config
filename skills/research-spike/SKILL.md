@@ -29,6 +29,10 @@ Pick the package first, from the target project's `.agents/work/`:
   (legacy) attaches: findings append to its existing `context.md`, stream
   files land alongside.
 - A package at `state: research` is a spike in progress: resume it (below).
+- A `grill`, `complete`, or absent-state package whose latest spike
+  section (below) still lists a `pending` stream is an interrupted
+  fan-out - the session died between the two fan-out writes: write
+  `state: research` and resume it.
 - Any other state (a build in flight, a debug cycle) is never attached to:
   say so and create `<date>-<topic>` instead - attaching would strand a
   live cycle mid-stage.
@@ -36,9 +40,9 @@ Pick the package first, from the target project's `.agents/work/`:
   creates the package's `decisions.md`; until synthesis it may hold only
   the state line.
 
-Record which branch was taken and the attached package's prior state -
-the fan-out registry (below) writes it durably; the terminal transition
-reads it from there, never from memory.
+Record the attached package's prior state - the spike section (below)
+writes it durably; the terminal transition reads it from there, never
+from memory.
 
 ## Decomposition
 
@@ -48,7 +52,8 @@ Split the question into independent streams. Each stream gets:
 - a kind: `read` (search/read sources), `probe` (run something to
   observe behavior), or `sweep` (broad scan across many sources)
 - in-scope and out-of-scope, one line each
-- its own output filename (below)
+- its own output filename (below), not already present in the package -
+  an earlier spike's stream files stay untouched
 
 Streams must be independent: no stream needs another's output to finish.
 
@@ -60,24 +65,30 @@ nothing before `go` - the user sees the split before paying for it.
 Dispatched by orchestrator (or any caller's brief): the brief stands in
 for `go` - proceed with no pause.
 
-## Fan-out: registry and state line
+## Fan-out: spike section and state line
 
-At fan-out time, after the gate, before the first spawn:
+At fan-out time, after the gate, before the first spawn, two writes in
+this order - same for attached and created packages:
 
-1. Write the package `context.md` **Sources** section listing every
-   stream: name, file, `status: pending`.
-2. Write a `Prior state: <value>` line at the top of `context.md`,
-   beside Sources: the attached package's state value, `legacy` when
-   its `decisions.md` had no state line, or `created` for a package the
-   spike created. Once `state: research` overwrites the first line of
-   `decisions.md`, this line is the only durable record of what to
-   restore - the terminal transition reads it.
-3. Write `state: research` as the first line of `decisions.md` - one
-   timing for both attached and created packages.
+1. Append a spike section to `context.md`: heading
+   `## Spike <n>: <question>`, `<n>` one more than the highest spike
+   section already there (1 for the first). Its first line is
+   `Prior state: <value>` - the attached package's state value, `legacy`
+   when its `decisions.md` had no state line, or `created` for a package
+   the spike created. Then a **Sources** list naming every stream: name,
+   file, `status: pending`.
+2. Write `state: research` as the first line of `decisions.md`.
+
+Once `state: research` overwrites that first line, `Prior state:` is
+the only durable record of what to restore. A crash between the two
+writes leaves `pending` streams under the prior state - package
+selection resumes that as an interrupted fan-out.
 
 Update each stream's status in place as it finishes: `done`, or
-`failed: <reason>`. Sources is the sole durable record of the
-decomposition - it is what a compacted or dead session resumes from.
+`failed: <reason>`. The latest spike section's Sources is the sole
+durable record of the decomposition - it is what a compacted or dead
+session resumes from. Earlier spike sections are finished records; never
+edit them.
 
 ## Concurrency
 
@@ -88,8 +99,8 @@ same briefs, same files, same Sources updates.
 
 ## Resume
 
-A package at `state: research` with a Sources section: Sources is the
-authoritative decomposition - do not re-decompose. A human-present
+A package at `state: research`: the latest spike section's Sources is
+the authoritative decomposition - do not re-decompose. A human-present
 resume re-prints Sources and waits for `go` or edits (same gate); a
 dispatched resume proceeds on its brief. Then key each stream on its
 Sources status:
@@ -99,9 +110,7 @@ Sources status:
 - `pending` whose file exists is done - the file overrides a stale
   `pending`.
 
-Sources absent (a gate abort left `state: research` with no registry):
-no decomposition on disk - run a fresh decomposition through the normal
-gate.
+Every stream settled but no Synthesis yet: go straight to Synthesis.
 
 ## Stream brief
 
@@ -151,14 +160,15 @@ The orchestrating session is the sole writer of `context.md` and
 Crash or missing file: one retry with the same brief. Second failure:
 mark the stream `failed: <reason>` in Sources, name the gap in the
 Synthesis, and make any Q entry resting on it say so. A gap that blocks
-the question puts `INCOMPLETE: <what remains>` atop `context.md`.
+the question puts `INCOMPLETE: <what remains>` directly under the spike
+section's `Prior state:` line.
 Never abort the spike on one stream; never retry past one.
 
 ## Synthesis
 
 When Sources shows no `pending`:
 
-1. Add a **Synthesis** section to `context.md` answering the spike
+1. Add a **Synthesis** subsection to the spike section answering the spike
    question from the stream files, with evidence citations into them.
 2. File Q entries in `decisions.md` for open forks the research
    surfaced - decision-ready: options + recommendation, work-package
@@ -174,7 +184,8 @@ When Sources shows no `pending`:
 Write the terminal state as the first line of `decisions.md`:
 
 - `state: grill` if the spike filed open Q entries - the user decides.
-- Else `state: complete` when the `Prior state:` line reads `created`.
+- Else `state: complete` when the spike section's `Prior state:` line
+  reads `created`.
 - Else the attached package's prior state, restored from the
   `Prior state:` line - never from memory.
 - A `Prior state: legacy` package stays legacy: remove the
