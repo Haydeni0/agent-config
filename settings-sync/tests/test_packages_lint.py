@@ -68,6 +68,12 @@ def test_bad_review_findings_heading_fails(lint: types.ModuleType, tmp_work: Pat
     assert any("Review findings" in f and "H2" in f for f in fs)
 
 
+def test_bad_deviation_log_heading_fails(lint: types.ModuleType, tmp_work: Path) -> None:
+    make_package(tmp_work, "p", decisions="state: complete\n\n### Deviation log\n")
+    fs = findings(lint, tmp_work)
+    assert any("Deviation log" in f and "H2" in f for f in fs)
+
+
 def test_fix_attempts_stray_position_fails(lint: types.ModuleType, tmp_work: Path) -> None:
     make_package(tmp_work, "p", decisions="state: implement\nprose\nfix-attempts: 1\n")
     fs = findings(lint, tmp_work)

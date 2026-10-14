@@ -67,7 +67,7 @@ def lint_decisions(text: str, rel: str) -> list[str]:
             findings.append(f"{rel}: fix-attempts required in debug state {state!r}")
     elif fix is not None:
         findings.append(f"{rel}: fix-attempts forbidden without a debug state (state: {state or 'no state line'})")
-    for heading in ("## Outcome", "## Review findings", "## Review nits"):
+    for heading in ("## Outcome", "## Deviation log", "## Review findings", "## Review nits"):
         base = heading[3:]
         for line in lines:
             s = line.rstrip()

@@ -17,7 +17,7 @@ Reference contract for `.agents/work/<slug>/` packages. This file is the single 
 | `context.md` | inputs gathered (sources, facts, prior art) - not decisions |
 | `scenarios.md` | test scenarios, when a test plan is made |
 | `requirements.md` | R entries |
-| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome`, `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), and `## Review nits` |
+| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome`, `## Deviation log` (implement stage's filed copy of the implementer's returned log), `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), and `## Review nits` |
 | `<topic>.md` | optional deep-dive notes; forks found there go into `decisions.md` as Q |
 | `spec.md` | the spec produced by a cycle's spec stage; carries `Reviewed:` footer markers |
 | `plan.md` | the checkbox-tracked implementation plan; carries `Reviewed:` footer markers and the `Implemented` footer line |
@@ -94,6 +94,7 @@ Bytes that cycle-driving skills write on artifacts and read back; their *interpr
 - `Reviewed: pass|fail <n>` - appended to an artifact footer after each reviewer round; `<n>` counts rounds over the artifact's lifetime.
 - `Implemented` - appended to a plan footer when implementation completes.
 - `## Outcome` - section in `decisions.md` recording the confirmed outcome at the launch gate.
+- `## Deviation log` - section in `decisions.md` where the implement stage files the implementer's returned deviation log before writing `state: code-review`.
 - `## Review nits` - section in `decisions.md` where LOW review findings live.
 - `## Review findings` - section in `decisions.md` where the code-review stage files its scored findings before writing `state: verify-fix`; the verify-fix stage triages from this copy and appends each finding's disposition.
 
