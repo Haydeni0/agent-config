@@ -33,7 +33,7 @@ with open(os.environ["FAKE_HERDR_LOG"], "a") as f:
 
 
 def fail(code):
-    print(json.dumps({"error": {"code": code, "message": code}, "id": "fake"}))
+    print(json.dumps({"error": {"code": code, "message": code}, "id": "fake"}), file=sys.stderr)
     sys.exit(1)
 
 

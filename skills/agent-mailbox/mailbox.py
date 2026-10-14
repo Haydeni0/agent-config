@@ -45,7 +45,8 @@ def fail(message: str) -> NoReturn:
 class HerdrError(Exception):
     def __init__(self, command: tuple[str, ...], proc: subprocess.CompletedProcess[str]) -> None:
         try:
-            error = json.loads(proc.stdout)["error"]
+            # herdr reports failures as JSON on stderr; stdout stays empty on a failed call
+            error = json.loads(proc.stderr or proc.stdout)["error"]
             self.code: str = error["code"]
             detail = error["message"]
         except (json.JSONDecodeError, KeyError, TypeError):
