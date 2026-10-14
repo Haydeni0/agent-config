@@ -37,7 +37,8 @@ Pick the package first, from the target project's `.agents/work/`:
   the state line.
 
 Record which branch was taken and the attached package's prior state -
-the terminal transition needs it.
+the fan-out registry (below) writes it durably; the terminal transition
+reads it from there, never from memory.
 
 ## Decomposition
 
@@ -65,7 +66,13 @@ At fan-out time, after the gate, before the first spawn:
 
 1. Write the package `context.md` **Sources** section listing every
    stream: name, file, `status: pending`.
-2. Write `state: research` as the first line of `decisions.md` - one
+2. Write a `Prior state: <value>` line at the top of `context.md`,
+   beside Sources: the attached package's state value, `legacy` when
+   its `decisions.md` had no state line, or `created` for a package the
+   spike created. Once `state: research` overwrites the first line of
+   `decisions.md`, this line is the only durable record of what to
+   restore - the terminal transition reads it.
+3. Write `state: research` as the first line of `decisions.md` - one
    timing for both attached and created packages.
 
 Update each stream's status in place as it finishes: `done`, or
@@ -160,8 +167,9 @@ When Sources shows no `pending`:
 Write the terminal state as the first line of `decisions.md`:
 
 - `state: grill` if the spike filed open Q entries - the user decides.
-- Else `state: complete` for a package the spike created.
-- Else the attached package's prior state, restored.
-- A legacy package (no state line before attach) stays legacy: remove
-  the fan-out-written `state: research` line at synthesis - leaving it
+- Else `state: complete` when the `Prior state:` line reads `created`.
+- Else the attached package's prior state, restored from the
+  `Prior state:` line - never from memory.
+- A `Prior state: legacy` package stays legacy: remove the
+  fan-out-written `state: research` line at synthesis - leaving it
   would strand the package permanently in-progress.

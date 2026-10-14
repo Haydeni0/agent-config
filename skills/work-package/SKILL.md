@@ -52,7 +52,9 @@ else the package's prior state (`complete` for a package the spike created).
 Precedence: when present, the state line is authoritative - file presence
 and markers refine within the named stage but never override it. One
 exception: open Q entries in `decisions.md` pull the state back to `grill`
-(the driving skill rewrites the line).
+(the driving skill rewrites the line) - never while the state is `research`:
+the spike-driving skill owns the line until its terminal transition, and a
+spike attached to a grill package holds open Qs throughout.
 
 Debug packages carry a second line directly after `state:`:
 `fix-attempts: <int>` - required in the five debug states, forbidden

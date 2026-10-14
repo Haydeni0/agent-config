@@ -17,7 +17,7 @@ investigation, not a dev-cycle unit: say so and stop - resuming it is that
 skill's job. A package at `state: research` is a research spike in
 progress, not a dev-cycle unit: say so and stop - resuming it is
 research-spike's job. File presence and markers refine within the named stage but
-never override it. One exception: open Q entries pull the state back to `grill` - rewrite the state line to `grill` and resume case 1. A state value outside the enum, or a malformed state line: say so and stop -
+never override it. One exception: open Q entries pull the state back to `grill` - rewrite the state line to `grill` and resume case 1 - never while the state is `research` (research-spike owns the line until its terminal transition; a spike attached to a grill package holds open Qs throughout). A state value outside the enum, or a malformed state line: say so and stop -
 do not guess a stage and do not fall through to the cases (the lint names the
 allowed values; fix the line first). Absent `state:` line = legacy package:
 use the file-presence cases below. The mapping is not bijective by design: case 7 (fail-marker recovery) refines within `spec`/`plan`, and `verify-fix` is reachable only via the state line.
