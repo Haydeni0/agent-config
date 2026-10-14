@@ -15,6 +15,8 @@ Checks (all map to a REQ-SKILLS row in docs/requirements.md):
 - peer rule: design-log and dev-cycle never name each other
 - deps validation: every `deps:` entry names an existing skill, never self,
   and a `layer: worker` skill never declares a `layer: orchestrator` skill
+- exits validation: optional `exits:` entries are "state: <enum>" or begin
+  with a work-package contract filename
 - workers never reference the design-package contract except through the
   work-package skill: the bare word "package" (not hyphen-joined, so
   "work-package" passes; file names like package.json excluded) is banned in
@@ -28,6 +30,7 @@ A skill that fails to parse is reported once and skipped by the later checks;
 every other violation is printed. Exits nonzero if any violation was found.
 """
 
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -44,6 +47,14 @@ CONTRACT_OWNER = "work-package"
 GENERIC_WORD_NAMES = {"orchestrator"}
 PATH_TOKEN_RE = re.compile(r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
 EXT_RE = re.compile(r"\.(md|py|js|mjs|ts|json|sh|toml|yaml|yml)$")
+
+
+def _load_package_states():
+    spec = importlib.util.spec_from_file_location(
+        "package_states", Path(__file__).resolve().parent / "package_states.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def parse_skill(skill_md: Path) -> tuple[dict, str]:
@@ -113,6 +124,24 @@ def check(skills_dir: Path, repo_root: Path) -> tuple[list[str], int]:
                 failures.append(f"{name}: deps entry {dep!r} names no skill")
             elif frontmatter.get("layer") == "worker" and parsed[dep][0].get("layer") == "orchestrator":
                 failures.append(f"{name}: worker declares orchestrator-layer dep {dep!r}")
+
+    # exits: contract (REQ-SKILLS-13) - each entry is "state: <enum value>"
+    # or begins with a work-package contract filename
+    ps = _load_package_states()
+    for name, (frontmatter, _) in parsed.items():
+        exits = frontmatter.get("exits") or []
+        if not isinstance(exits, list):
+            failures.append(f"{name}: exits is not a list")
+            exits = []
+        for entry in exits:
+            if not isinstance(entry, str):
+                failures.append(f"{name}: exits entry {entry!r} is not a string")
+            elif entry.startswith("state: "):
+                value = entry[len("state: "):].strip()
+                if value not in ps.ALL_STATES:
+                    failures.append(f"{name}: exits entry {entry!r} names unknown state (allowed: {sorted(ps.ALL_STATES)})")
+            elif not any(entry == f or entry.startswith(f + " ") for f in ps.CONTRACT_FILES):
+                failures.append(f"{name}: exits entry {entry!r} does not begin with a contract filename {ps.CONTRACT_FILES}")
 
     for peer in ORCHESTRATOR_PEERS:
         if peer not in parsed:

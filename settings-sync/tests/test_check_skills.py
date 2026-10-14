@@ -18,7 +18,7 @@ def check_module() -> types.ModuleType:
     return module
 
 
-def make_skill(skills_dir: Path, name: str, body: str, *, layer: str | None = None, deps: list[str] | None = None) -> None:
+def make_skill(skills_dir: Path, name: str, body: str, *, layer: str | None = None, deps: list[str] | None = None, exits: list[str] | None = None) -> None:
     d = skills_dir / name
     d.mkdir(parents=True)
     fm = ["---", f"name: {name}", "description: test skill"]
@@ -26,6 +26,8 @@ def make_skill(skills_dir: Path, name: str, body: str, *, layer: str | None = No
         fm.append(f"layer: {layer}")
     if deps is not None:
         fm.append("deps: [" + ", ".join(deps) + "]")
+    if exits is not None:
+        fm.append("exits: [" + ", ".join(f"'{e}'" for e in exits) + "]")
     fm.append("---")
     (d / "SKILL.md").write_text("\n".join(fm) + "\n\n" + body + "\n")
 
@@ -87,3 +89,21 @@ def test_deps_unhashable_entry_fails_cleanly(check_module: types.ModuleType, tmp
     )
     failures, _ = run_check(check_module, tmp_path)
     assert any("alpha" in f and "not a skill name" in f for f in failures)
+
+
+def test_exits_valid_passes(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "alpha", "body", exits=["decisions.md D/Q entries", "state: test-plan"])
+    failures, _ = run_check(check_module, tmp_path)
+    assert not any("exits" in f for f in failures)
+
+
+def test_exits_bad_state_fails(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "alpha", "body", exits=["state: banana"])
+    failures, _ = run_check(check_module, tmp_path)
+    assert any("alpha" in f and "state: banana" in f for f in failures)
+
+
+def test_exits_bad_artifact_fails(check_module: types.ModuleType, tmp_path: Path) -> None:
+    make_skill(tmp_path / "skills", "alpha", "body", exits=["banana.md"])
+    failures, _ = run_check(check_module, tmp_path)
+    assert any("alpha" in f and "banana.md" in f for f in failures)
