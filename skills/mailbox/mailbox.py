@@ -6,10 +6,11 @@
 """File mailbox linking running agent sessions in herdr panes.
 
 Layout under the mailbox root: README.md (the contract), bin/mailbox (this
-script, copied by `init`), members/<name> (`role=...`), inboxes/<name>/
-(unread files) and inboxes/<name>/handled/ (acted-on files). A member's name
-is its herdr agent name. Requests are `<from>.<seq>-<slug>.msg`; a reply
-reuses the request id as `<from>.<id>.reply`.
+script, copied by `init`), members/<name> (`role=`, plus the `pane=` and
+`session=` seat the member joined from), inboxes/<name>/ (unread files) and
+inboxes/<name>/handled/ (acted-on files). A member's name is its herdr agent
+name. Requests are `<from>.<seq>-<slug>.msg`; a reply reuses the request id
+as `<from>.<id>.reply`.
 """
 
 import json
@@ -18,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, NoReturn
@@ -81,6 +83,49 @@ def own_pane() -> str:
     return pane
 
 
+def own_session() -> str:
+    session = os.environ.get("HERDR_SESSION")
+    if not session:
+        fail("HERDR_SESSION is unset; run this from an agent session inside a herdr pane")
+    return session
+
+
+@dataclass(frozen=True, slots=True)
+class Seat:
+    """Where a member's session runs. Pane ids are unique only within one herdr session."""
+
+    pane: str
+    session: str
+
+
+def own_seat() -> Seat:
+    return Seat(pane=own_pane(), session=own_session())
+
+
+@dataclass(frozen=True, slots=True)
+class Member:
+    name: str
+    role: str
+    seat: Seat | None  # None once a later join from the same seat took it over
+
+
+def read_member(path: Path) -> Member:
+    fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
+    seat = Seat(pane=fields["pane"], session=fields["session"]) if "pane" in fields else None
+    return Member(name=path.name, role=fields["role"], seat=seat)
+
+
+def write_member(root: Path, member: Member) -> None:
+    lines = [f"role={member.role}"]
+    if member.seat is not None:
+        lines += [f"pane={member.seat.pane}", f"session={member.seat.session}"]
+    (root / "members" / member.name).write_text("\n".join(lines) + "\n")
+
+
+def members(root: Path) -> list[Member]:
+    return [read_member(path) for path in sorted((root / "members").iterdir())]
+
+
 def mailbox_root() -> Path:
     root = Path(__file__).resolve().parent.parent
     if not (root / "README.md").is_file() or not (root / "members").is_dir():
@@ -116,13 +161,17 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
     """Join the mesh as NAME: rename this pane's herdr agent, write the member file, create the inbox."""
     root = mailbox_root()
     check_token(name, "name")
-    pane = own_pane()
+    seat = own_seat()
     holder = live_pane(name)
-    if holder is not None and holder != pane:
+    if holder is not None and holder != seat.pane:
         fail(f"name {name!r} is held by the herdr agent in pane {holder}; pick another name")
-    herdr("agent", "rename", pane, name)
+    herdr("agent", "rename", seat.pane, name)
     (root / "inboxes" / name / "handled").mkdir(parents=True, exist_ok=True)
-    (root / "members" / name).write_text(f"role={role}\n")
+    for other in members(root):
+        # a re-join under a new name must not leave the old name claiming this seat
+        if other.name != name and other.seat == seat:
+            write_member(root, replace(other, seat=None))
+    write_member(root, Member(name=name, role=role, seat=seat))
     typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}; follow {root / 'README.md'}")
 
 
@@ -150,11 +199,14 @@ RingFlag = Annotated[bool, typer.Option("--ring/--no-ring", help="Wake the recip
 
 
 def own_name(root: Path) -> str:
-    pane = own_pane()
-    for member in sorted(p.name for p in (root / "members").iterdir()):
-        if live_pane(member) == pane:
-            return member
-    fail(f"pane {pane} is not a joined member; run {root / 'bin' / 'mailbox'} join <name> --role <role> first")
+    seat = own_seat()
+    rejoin = f"{root / 'bin' / 'mailbox'} join <name> --role <role>"
+    claimants = [member.name for member in members(root) if member.seat == seat]
+    if len(claimants) > 1:
+        fail(f"pane {seat.pane} (herdr session {seat.session}) is claimed by several member files {claimants}; settle it with {rejoin}")
+    if not claimants:
+        fail(f"pane {seat.pane} is not a joined member; run {rejoin} first")
+    return claimants[0]
 
 
 def check_members(root: Path, names: list[str]) -> None:

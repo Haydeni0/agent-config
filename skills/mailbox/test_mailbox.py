@@ -21,6 +21,7 @@ HELPER = Path(__file__).resolve().parent / "mailbox.py"
 PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
+SESSION = "s1"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -82,8 +83,12 @@ class Mesh:
     root: Path
     herdr: FakeHerdr
 
-    def run(self, *args: str, pane: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+    def run(self, *args: str, pane: str, session: str | None = SESSION, stdin: str = "") -> subprocess.CompletedProcess[str]:
         env = {**self.herdr.env, "HERDR_PANE_ID": pane}
+        # the developer's own herdr session leaks in through os.environ
+        env.pop("HERDR_SESSION", None)
+        if session is not None:
+            env["HERDR_SESSION"] = session
         return subprocess.run(
             [sys.executable, str(self.root / "bin" / "mailbox"), *args],
             input=stdin, capture_output=True, text=True, env=env,
@@ -177,7 +182,7 @@ def test_join_renames_herdr_agent_and_creates_member_and_inbox(empty_mesh: Mesh)
     result = empty_mesh.run("join", "planner", "--role", "plans the work", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert (empty_mesh.root / "members" / "planner").read_text() == "role=plans the work\n"
+    assert (empty_mesh.root / "members" / "planner").read_text() == f"role=plans the work\npane={PLANNER_PANE}\nsession={SESSION}\n"
     assert (empty_mesh.inbox("planner") / "handled").is_dir()
     assert ["agent", "rename", PLANNER_PANE, "planner"] in empty_mesh.herdr.calls()
 
@@ -206,7 +211,7 @@ def test_join_takes_over_a_dead_members_name(empty_mesh: Mesh) -> None:
     result = empty_mesh.run("join", "planner", "--role", "new", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert (empty_mesh.root / "members" / "planner").read_text() == "role=new\n"
+    assert (empty_mesh.root / "members" / "planner").read_text() == f"role=new\npane={PLANNER_PANE}\nsession={SESSION}\n"
 
 
 def test_join_without_a_herdr_pane_is_refused(empty_mesh: Mesh) -> None:
@@ -214,6 +219,48 @@ def test_join_without_a_herdr_pane_is_refused(empty_mesh: Mesh) -> None:
 
     assert result.returncode != 0
     assert "HERDR_PANE_ID" in result.stderr
+
+
+def test_join_clears_its_seat_from_the_member_file_it_rejoined_away_from(mesh: Mesh) -> None:
+    result = mesh.run("join", "lead", "--role", "leads", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.root / "members" / "planner").read_text() == "role=planner\n"
+    sent = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    assert sent.returncode == 0, sent.stderr
+    assert (mesh.inbox("worker") / "lead.001-x.msg").exists()
+
+
+def test_join_keeps_a_same_pane_claim_from_another_herdr_session(mesh: Mesh) -> None:
+    result = mesh.run("join", "remote", "--role", "x", pane=PLANNER_PANE, session="s2")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.root / "members" / "planner").read_text() == f"role=planner\npane={PLANNER_PANE}\nsession={SESSION}\n"
+
+
+def test_two_member_files_claiming_one_seat_fail_loudly(mesh: Mesh) -> None:
+    (mesh.root / "members" / "ghost").write_text(f"role=x\npane={PLANNER_PANE}\nsession={SESSION}\n")
+
+    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode != 0
+    assert "ghost" in result.stderr
+    assert "planner" in result.stderr
+    assert not list(mesh.inbox("worker").glob("*.msg"))
+
+
+def test_send_resolves_the_sender_without_calling_herdr(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert mesh.herdr.calls() == []
+
+
+def test_commands_without_a_herdr_session_are_refused(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, session=None, stdin="b")
+
+    assert result.returncode != 0
+    assert "HERDR_SESSION" in result.stderr
 
 
 def wake_line(mesh: Mesh, name: str) -> str:
