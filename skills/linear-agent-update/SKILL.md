@@ -1,6 +1,6 @@
 ---
 name: linear-agent-update
-description: Use when writing or updating any Linear comment or diff comment via the Linear MCP tools (save_comment, save_diff_comment, or editing an existing comment). Use whenever about to post to a Linear issue, project, initiative, document, milestone, or PR review.
+description: Use when writing or updating any Linear comment or diff comment via the Linear MCP tools (save_comment, save_diff_comment, or editing an existing comment), or when creating or rewriting a Linear issue (save_issue). Use whenever about to post to a Linear issue, project, initiative, document, milestone, or PR review.
 deps: [living-doc]
 ---
 
@@ -18,12 +18,14 @@ Use when calling any of:
 - `mcp__linear__save_comment` (new comment on an issue, project, initiative, document, milestone, or status update)
 - `mcp__linear__save_diff_comment` (PR review comment anchored to a code hunk)
 - Editing an existing comment (`save_comment` with `id`, or `save_diff_comment` with `commentId`)
+- Creating an issue (`mcp__linear__save_issue`) or rewriting its description - the toggle forms never apply, but see the Issue writing section
 
 **Not for** (do not apply this skill to):
 - Status updates (`save_status_update`) - agents should not write these
-- Issue descriptions / the `description` field of `save_issue` - that is the issue's body, not discussion; collapsing it hides the issue itself
 - Linear documents (`save_document`)
 - Issue titles, labels, status, or other structured fields
+
+Issue descriptions are not comments: never wrap them in a toggle - the body is the issue itself. The Issue writing section governs them instead.
 
 ## The two forms
 
@@ -140,6 +142,18 @@ Updating an existing comment (`save_comment` with `id`, `save_diff_comment` with
 
 If a human explicitly tells you to post text verbatim ("post this exactly", "post this as-is", quotes something for you to relay) - transcribe it raw. Do not wrap, prefix, or tag. The skill governs agent-generated content; transcribed human content is not agent-generated.
 
+## Issue writing
+
+Applies when creating a Linear issue (`save_issue`) or rewriting its description. The toggle forms never apply - an issue body is the content itself. The same two signals still govern: a title carrying the verified bottom line, and a body sorted by trust.
+
+Rules:
+
+- **Attribution first line**: start the description with `*Written by Hayden's agent*` (italic). The reader sees agent authorship before any content.
+- **Title is the bottom line**: concrete, names the artifact, e.g. `MixtureProvider: combine data providers by sampling a categorical distribution`.
+- **Team template**: check `list_templates` / `get_template` for the target team and follow its sections when one exists (e.g. FLPM minimal: Context / Acceptance criteria / Notes). With no template, Context / Acceptance criteria / Notes is the default shape.
+- **Concision**: context is 2-4 sentences; acceptance criteria are a checklist; notes carry links and triggers, not narration. There is no toggle to hide verbosity, so the trim rules matter more, not less.
+- **Trust**: verified facts stated plainly; anything unconfirmed is tagged `[unverified]` in the body; nothing unverified in the title.
+
 ## Common mistakes
 
 | Mistake | Fix |
@@ -151,5 +165,7 @@ If a human explicitly tells you to post text verbatim ("post this exactly", "pos
 | `AGENT:` prefix not bolded in short form - blends into thread | Use `**AGENT:**` |
 | Text outside the toggle (e.g. a stray "AGENT UPDATE" header) | Remove it - the toggle is the whole comment |
 | Wrapping a human's verbatim text | Transcribe raw when told to post exactly |
-| Applying the toggle to an issue description or document | Only comments and diff comments - see non-goals |
+| Applying the toggle to an issue description or document | Only comments and diff comments - issue descriptions follow the Issue writing section |
+| Issue body with no attribution line | First line must be `*Written by Hayden's agent*` |
+| Issue written against no template shape | Use the team template via `list_templates`, or Context / Acceptance criteria / Notes by default |
 | Wall-of-text body - the toggle hides verbosity, not a license to write it | Trim: cut dead-end exploration, restated context, reasoning that doesn't help understand or reproduce the conclusion |
