@@ -19,8 +19,41 @@ Reference contract for `.agents/work/<slug>/` packages. This file is the single 
 | `requirements.md` | R entries |
 | `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome` and `## Review nits` |
 | `<topic>.md` | optional deep-dive notes; forks found there go into `decisions.md` as Q |
+| `spec.md` | the spec produced by a cycle's spec stage; carries `Reviewed:` footer markers |
+| `plan.md` | the checkbox-tracked implementation plan; carries `Reviewed:` footer markers and the `Implemented` footer line |
 
 One ID scheme per package; IDs are never reused.
+
+## State line
+
+First line of package `decisions.md`: `state: <value>` (lowercase, kebab).
+Absent = legacy package; consumers fall back to file-presence detection.
+Canonical enum (single source; `scripts/check-packages.py` validates against
+the same list and a CI test asserts equality):
+
+state: grill | test-plan | spec | plan | implement | code-review | verify-fix | complete | root-cause | pattern-analysis | hypothesis | implementation | resolved
+
+Dev-cycle stages: grill, test-plan, spec, plan, implement, code-review,
+verify-fix, complete. Debug-cycle phases (systematic-debugging):
+root-cause, pattern-analysis, hypothesis, implementation, plus terminal
+`resolved`. The launch gate is a checkpoint, not a state: resumes into
+autonomous stages (cases 3-7, and `state: verify-fix`) pass it; `complete`
+and interview restarts do not.
+
+Precedence: when present, the state line is authoritative - file presence
+and markers refine within the named stage but never override it. One
+exception: open Q entries in `decisions.md` pull the state back to `grill`
+(the driving skill rewrites the line).
+
+Debug packages carry a second line directly after `state:`:
+`fix-attempts: <int>` - required in the five debug states, forbidden
+otherwise; incremented on each failed fix; re-read from disk after
+compaction, never trusted from memory.
+
+The cycle-driving skill writes the state line on stage completion
+(systematic-debugging in debug cycles; the dev pipeline's orchestrator in
+dev cycles). `scripts/check-packages.py` (CI) validates syntax;
+transitions are the driving skills' prose.
 
 ## Entry formats
 
