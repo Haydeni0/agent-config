@@ -97,6 +97,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 
 **Debug and research**
 - `systematic-debugging` - reproduce-first, root-cause phases
+- `attack-claims` - adversarial claim verification: attacker subagents in waves, verifier-judged survivor report
 - `librarian` - library answers with permalink evidence
 - `fetch-paper` - paper to markdown
 - `prototype` - throwaway artifact to elicit judgement before spec
@@ -145,6 +146,7 @@ Generated from each skill's `deps:` frontmatter; regenerate with `uv run --locke
 ```mermaid
 flowchart LR
     agent_config[agent-config]
+    attack_claims[attack-claims]
     backlog[backlog]
     %% caveman[caveman]
     %% caveman_commit[caveman-commit]
@@ -210,6 +212,7 @@ flowchart LR
     writing_skills[writing-skills]
     %% wt_switch_create[wt-switch-create]
     agent_config --> writing_skills
+    attack_claims --> work_package
     design_log --> grill_me
     design_log --> test_plan
     design_log --> write_spec
