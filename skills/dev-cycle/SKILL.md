@@ -20,7 +20,7 @@ do not guess a stage and do not fall through to the cases (the lint names the
 allowed values; fix the line first). Absent `state:` line = legacy package:
 use the file-presence cases below. The mapping is not bijective by design: case 7 (fail-marker recovery) refines within `spec`/`plan`, and `verify-fix` is reachable only via the state line.
 
-The cycle unit is a package dir `.agents/work/<slug>/` (slug = `<date>-<topic>`). Read the target project's `.agents/work/`, first match wins:
+The cycle unit is a package dir `.agents/work/<slug>/` (slug convention: the work-package skill). Read the target project's `.agents/work/`, first match wins:
 
 1. No package dir for the topic → grill (creates the package). A package whose `decisions.md` has open Q entries also lands here: grill resumes until every Q is resolved or struck.
 2. Package exists, no `scenarios.md`, no open Q entries → test-plan.
@@ -57,7 +57,7 @@ Reviewer = fresh general-purpose subagent (never a fork - shared context = share
 
 **Loop:** findings → revise artifact → re-review (changed sections focus; reviewer gets its own prior findings). Cap: initial + 2 re-reviews per artifact per resolution attempt. After round 2, only a HIGH finding buys another round; MEDIUM findings are fixed and recorded without re-review, LOW findings are appended to `## Review nits`. Marker numbering continues over the artifact's lifetime - the cap resets at gate resolution (case 7), the count does not. Still failing (HIGH) after the second re-review → abort: full report (stage, findings, history, paths, what resolving looks like). Artifacts stay on disk; recovery = user resolves, re-invokes, detection resumes.
 
-**Reviewer checklists (embed in the spawn prompts):** Spec reviewer - internal consistency, no placeholders, faithful to the recorded decisions, single-plan scope, reads the codebase to verify factual claims. Plan reviewer - two axes: (a) plan-vs-codebase (file paths exist, structure claims match reality, task order respects dependencies), (b) plan-vs-design (every spec acceptance criterion covered, no invented scope, faithful to decisions).
+**Reviewer checklists (embed in the spawn prompts):** Spec reviewer - internal consistency, no placeholders, faithful to the recorded decisions, single-plan scope, reads the codebase to verify factual claims. Plan reviewer - three axes: (a) plan-vs-codebase (file paths exist, structure claims match reality, task order respects dependencies), (b) plan-vs-design (every spec acceptance criterion covered, no invented scope, faithful to decisions), (c) plan-vs-reality (when the plan embeds test or implementation code that is self-contained and side-effect-free, execute it in a throwaway sandbox against its own fixtures - fail-open seams survive reading but not running; when the code is stateful, network-bound, or environment-dependent, hand-trace inputs through it instead and say in the findings which was done and why).
 
 ## Orchestrator-side escalation handling
 

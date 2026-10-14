@@ -91,6 +91,9 @@ Bytes that cycle-driving skills write on artifacts and read back; their *interpr
 
 ## Legacy conversion
 
+Package slug: `<date>-<topic>` (e.g. `2026-10-14-agent-state-machine-spike`);
+debug investigations append `-debug`.
+
 A `.agents/plans/` directory is the pre-rename location of `.agents/work/`:
 when only it exists, treat it as the canonical package store and rename the
 directory on next touch (contents unchanged); when
