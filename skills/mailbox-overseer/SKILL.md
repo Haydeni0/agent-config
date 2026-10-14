@@ -55,8 +55,10 @@ without any of them touching the expensive context.
   instruction with no follow-up questions; a small task earns a small
   brief. What to avoid is per-unit dispatch and question ping-pong -
   every message costs the worker a model turn. The first brief
-  front-loads standing answers (scope, conventions, git gates -
-  anything the worker's grill would ask).
+  front-loads standing answers (scope, conventions, git gates,
+  isolation - which units get worktrees and which share the tree with
+  disjoint outputs, and which package paths units may write - anything
+  the worker's grill would ask).
 - **Status**: read the worker's state from its files - the orchestrator
   ledger, package artifacts - never send a message to ask how work is
   going. Messages are for decisions and briefs; files carry status.
