@@ -120,6 +120,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 **Harness and tooling**
 - `agent-config` - authoring rules and sync runbook
 - `mailbox` - file mailbox linking running sessions in herdr panes
+- `mailbox-overseer` - overseer pattern: this session plans, a worker orchestrator pane executes
 - `writing-skills` - TDD for skills
 - `repo-agent-setup` - install or audit the agent-first kit in a repo
 - `typer` / `uv` - CLI and Python command rules
@@ -170,6 +171,7 @@ flowchart LR
     living_doc[living-doc]
     m_pair[m-pair]
     mailbox[mailbox]
+    mailbox_overseer[mailbox-overseer]
     %% marimo_notebook[marimo-notebook]
     marimo_pair[marimo-pair]
     %% mcp_headless_oauth[mcp-headless-oauth]
@@ -226,6 +228,7 @@ flowchart LR
     linear_agent_update --> living_doc
     m_pair --> marimo_pair
     mailbox --> work_package
+    mailbox_overseer --> mailbox
     orchestrator --> grill_me
     orchestrator --> backlog
     orchestrator --> dev_cycle
