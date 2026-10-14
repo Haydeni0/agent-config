@@ -119,6 +119,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 
 **Harness and tooling**
 - `agent-config` - authoring rules and sync runbook
+- `agent-mailbox` - file mailbox linking running sessions in herdr panes
 - `writing-skills` - TDD for skills
 - `repo-agent-setup` - install or audit the agent-first kit in a repo
 - `typer` / `uv` - CLI and Python command rules
@@ -143,6 +144,7 @@ Generated from each skill's `deps:` frontmatter; regenerate with `uv run --locke
 ```mermaid
 flowchart LR
     agent_config[agent-config]
+    agent_mailbox[agent-mailbox]
     backlog[backlog]
     %% caveman[caveman]
     %% caveman_commit[caveman-commit]
@@ -206,6 +208,7 @@ flowchart LR
     writing_skills[writing-skills]
     %% wt_switch_create[wt-switch-create]
     agent_config --> writing_skills
+    agent_mailbox --> work_package
     design_log --> grill_me
     design_log --> test_plan
     design_log --> write_spec
