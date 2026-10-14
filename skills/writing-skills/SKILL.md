@@ -571,6 +571,14 @@ Run pressure scenario with subagent WITHOUT the skill. Document exact behavior:
 
 This is "watch the test fail" - you must see what agents naturally do before writing the skill.
 
+A baseline scenario an existing rule already covers measures that
+rule, not the gap. Isolate the new rule's observable predicate: strip
+anything that lets an old rule produce compliant-looking behavior -
+a corroboration rule tested with contradicting streams exercises the
+contradiction rule instead, and the baseline says nothing. If no
+scenario can be built where only the new rule fires, the rule may
+not earn its place.
+
 ### GREEN: Write Minimal Skill
 
 Write skill that addresses those specific rationalizations. Don't add extra content for hypothetical cases.
