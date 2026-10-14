@@ -36,6 +36,9 @@ EOF
 
 - Add `--no-ring` unless the recipient must act now; it picks the message up
   at its next inbox check.
+- A busy claude recipient is prompted mid-turn anyway - the wake line sits
+  in its input until it reads it. A busy recipient on any other harness is
+  left for its next inbox check.
 - Batch several items into one message - every ring costs the recipient a
   model turn.
 - "not rung" still means delivered: the file is in the recipient's inbox.

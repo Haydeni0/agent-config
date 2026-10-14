@@ -52,7 +52,8 @@ if override:
 if target not in agents:
     fail("agent_not_found")
 if verb == "get":
-    print(json.dumps({"result": {"agent": {"pane_id": agents[target]}}}))
+    harness = state.get("harness", {}).get(target, "claude")
+    print(json.dumps({"result": {"agent": {"pane_id": agents[target], "agent": harness}}}))
     sys.exit(0)
 print("{}")
 '''
@@ -307,7 +308,6 @@ def test_ring_waits_for_idle_then_prompts_a_pointer_to_the_contract(mesh: Mesh) 
 @pytest.mark.parametrize(
     ("verb", "code", "reported"),
     [
-        ("wait", "timeout", "not idle"),
         ("prompt", "agent_blocked", "permission prompt"),
         ("wait", "agent_not_found", "no live herdr agent"),
     ],
@@ -322,6 +322,29 @@ def test_unrung_outcomes_are_reported_and_the_message_kept(mesh: Mesh, verb: str
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
     if verb == "wait":
         assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_prompts_a_busy_claude_recipient_mid_turn(mesh: Mesh) -> None:
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in mesh.herdr.calls()
+    assert "rung while busy" in result.stdout
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+
+
+def test_ring_leaves_a_busy_non_claude_recipient_to_its_own_check(mesh: Mesh) -> None:
+    mesh.herdr.set("wait", {"worker": "timeout"})
+    mesh.herdr.set("harness", {"worker": "codex"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert "not idle" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
 def test_an_unexpected_herdr_error_fails_loudly_after_the_write(mesh: Mesh) -> None:

@@ -30,7 +30,8 @@ ID_RE = re.compile(r"^\d{3,}-[a-z0-9]+(-[a-z0-9]+)*$")
 # zero-padded so `ls` lists one sender's requests in send order
 SEQ_WIDTH = 3
 # long enough to catch a turn that is finishing, short enough not to stall the
-# sender's own turn; a receiver still busy picks the file up at its turn end
+# sender's own turn; a claude recipient still busy past this is prompted
+# mid-turn anyway (see ring)
 RING_WAIT_MS = 30_000
 TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 
@@ -132,8 +133,9 @@ class Kind(StrEnum):
 
 class RingOutcome(StrEnum):
     RUNG = "rung"
-    NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s - its turn-end inbox check will pick it up"
-    BLOCKED = "not rung: at a permission prompt - its turn-end inbox check will pick it up"
+    BUSY = "rung while busy: recipient was mid-turn; the line queues in its input until it reads it"
+    NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s and mid-turn prompting is unverified for its harness; the file waits in its inbox"
+    BLOCKED = "not rung: at a permission prompt; the file waits in its inbox"
     OFFLINE = "not rung: no live herdr agent with this name - tell the user; a session joining under it drains the inbox"
 
 
@@ -195,15 +197,36 @@ def wake_line(root: Path, name: str) -> str:
     return f": mail waiting in {root}/inboxes/{name}/ - follow {root}/README.md"
 
 
+def recipient_harness(name: str) -> str:
+    """Harness of the live herdr agent called `name`, e.g. `claude`."""
+    return json.loads(herdr("agent", "get", name))["result"]["agent"]["agent"]
+
+
 def ring(root: Path, name: str) -> RingOutcome:
+    busy = False
     try:
         herdr("agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", str(RING_WAIT_MS))
+    except HerdrError as exc:
+        if exc.code == "timeout":
+            # a busy recipient may not end its turn for hours (an orchestrator
+            # waiting on subagents), and its turn-end inbox check is not
+            # reliable (#37); a claude agent takes a mid-turn prompt fine - the
+            # line queues in its input - so prompt anyway, and herdr still
+            # refuses to prompt a blocked agent. Other harnesses are unprobed.
+            if recipient_harness(name) != "claude":
+                return RingOutcome.NOT_IDLE
+            busy = True
+        elif exc.code in UNRUNG:
+            return UNRUNG[exc.code]
+        else:
+            raise
+    try:
         herdr("agent", "prompt", name, wake_line(root, name))
     except HerdrError as exc:
         if exc.code in UNRUNG:
             return UNRUNG[exc.code]
         raise
-    return RingOutcome.RUNG
+    return RingOutcome.BUSY if busy else RingOutcome.RUNG
 
 
 def ring_all(root: Path, paths: dict[str, Path]) -> None:
