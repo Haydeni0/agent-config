@@ -213,3 +213,128 @@ def test_join_without_a_herdr_pane_is_refused(empty_mesh: Mesh) -> None:
 
     assert result.returncode != 0
     assert "HERDR_PANE_ID" in result.stderr
+
+
+def wake_line(mesh: Mesh, name: str) -> str:
+    return f": mail waiting in {mesh.root}/inboxes/{name}/ - follow {mesh.root}/README.md"
+
+
+def test_send_writes_request_named_by_sender_seq_and_slug(mesh: Mesh) -> None:
+    result = mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("worker") / "planner.001-review-api.msg").read_text() == "review it\n"
+
+
+def test_send_seq_continues_past_handled_requests(mesh: Mesh) -> None:
+    mesh.run("send", "first", "worker", "--no-ring", pane=PLANNER_PANE, stdin="a")
+    (mesh.inbox("worker") / "planner.001-first.msg").rename(mesh.inbox("worker") / "handled" / "planner.001-first.msg")
+
+    result = mesh.run("send", "second", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("worker") / "planner.002-second.msg").exists()
+
+
+def test_send_broadcast_writes_the_same_id_to_every_recipient(mesh: Mesh) -> None:
+    result = mesh.run("send", "plan-ready", "worker", "critic", "--no-ring", pane=PLANNER_PANE, stdin="look\n")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("worker") / "planner.001-plan-ready.msg").read_text() == "look\n"
+    assert (mesh.inbox("critic") / "planner.001-plan-ready.msg").read_text() == "look\n"
+
+
+def test_send_to_a_non_member_is_refused_before_any_write(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", "ghost", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode != 0
+    assert "ghost" in result.stderr
+    assert not list(mesh.inbox("worker").glob("*.msg"))
+
+
+def test_send_with_an_empty_body_is_refused(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="  \n")
+
+    assert result.returncode != 0
+    assert not list(mesh.inbox("worker").glob("*.msg"))
+
+
+def test_send_from_a_pane_that_has_not_joined_is_refused(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", "--no-ring", pane="w5:p5", stdin="b")
+
+    assert result.returncode != 0
+    assert "join" in result.stderr
+
+
+def test_reply_reuses_the_request_id_with_the_replier_as_sender(mesh: Mesh) -> None:
+    result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="looks good\n")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("planner") / "worker.001-review-api.reply").read_text() == "looks good\n"
+
+
+def test_reply_never_overwrites_an_existing_reply(mesh: Mesh) -> None:
+    (mesh.inbox("planner") / "handled" / "worker.001-review-api.reply").write_text("first\n")
+
+    result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="second\n")
+
+    assert result.returncode != 0
+    assert not (mesh.inbox("planner") / "worker.001-review-api.reply").exists()
+
+
+def test_reply_rejects_an_id_without_a_sequence_number(mesh: Mesh) -> None:
+    result = mesh.run("reply", "review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="x")
+
+    assert result.returncode != 0
+
+
+def test_writes_leave_no_temporary_files(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert [p.name for p in mesh.inbox("worker").iterdir() if p.name.startswith(".")] == []
+
+
+def test_ring_waits_for_idle_then_prompts_a_pointer_to_the_contract(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    calls = mesh.herdr.calls()
+    assert ["agent", "wait", "worker", "--until", "idle", "--until", "done", "--timeout", "30000"] in calls
+    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in calls
+    assert result.stdout.strip().endswith("rung")
+
+
+@pytest.mark.parametrize(
+    ("verb", "code", "reported"),
+    [
+        ("wait", "timeout", "not idle"),
+        ("prompt", "agent_blocked", "permission prompt"),
+        ("wait", "agent_not_found", "no live herdr agent"),
+    ],
+)
+def test_unrung_outcomes_are_reported_and_the_message_kept(mesh: Mesh, verb: str, code: str, reported: str) -> None:
+    mesh.herdr.set(verb, {"worker": code})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert reported in result.stdout
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+    if verb == "wait":
+        assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_an_unexpected_herdr_error_fails_loudly_after_the_write(mesh: Mesh) -> None:
+    mesh.herdr.set("prompt", {"worker": "socket_gone"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 1
+    assert "socket_gone" in result.stdout
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+
+
+def test_no_ring_skips_herdr_wait_and_prompt(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert not any(call[1] in ("wait", "prompt") for call in mesh.herdr.calls())

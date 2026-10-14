@@ -17,6 +17,8 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, NoReturn
 
@@ -120,6 +122,136 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
     (root / "inboxes" / name / "handled").mkdir(parents=True, exist_ok=True)
     (root / "members" / name).write_text(f"role={role}\n")
     typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}; follow {root / 'README.md'}")
+
+
+class Kind(StrEnum):
+    MSG = "msg"
+    REPLY = "reply"
+
+
+class RingOutcome(StrEnum):
+    RUNG = "rung"
+    NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s - its turn-end inbox check will pick it up"
+    BLOCKED = "not rung: at a permission prompt - its turn-end inbox check will pick it up"
+    OFFLINE = "not rung: no live herdr agent with this name - tell the user; a session joining under it drains the inbox"
+
+
+# herdr error codes that mean "leave the file for the receiver's own inbox check"
+UNRUNG = {
+    "timeout": RingOutcome.NOT_IDLE,
+    "agent_blocked": RingOutcome.BLOCKED,
+    "agent_not_found": RingOutcome.OFFLINE,
+}
+
+RingFlag = Annotated[bool, typer.Option("--ring/--no-ring", help="Wake the recipient now; --no-ring for non-urgent mail")]
+
+
+def own_name(root: Path) -> str:
+    pane = own_pane()
+    for member in sorted(p.name for p in (root / "members").iterdir()):
+        if live_pane(member) == pane:
+            return member
+    fail(f"pane {pane} is not a joined member; run {root / 'bin' / 'mailbox'} join <name> --role <role> first")
+
+
+def check_members(root: Path, names: list[str]) -> None:
+    members = sorted(p.name for p in (root / "members").iterdir())
+    unknown = [name for name in names if name not in members]
+    if unknown:
+        fail(f"not mesh members: {unknown}; members are {members}")
+
+
+def read_body() -> str:
+    body = sys.stdin.read()
+    if not body.strip():
+        fail("message body is empty; pass it on stdin")
+    return body
+
+
+def next_seq(root: Path, sender: str) -> int:
+    pattern = re.compile(rf"^{re.escape(sender)}\.(\d+)-")
+    seqs = (int(m.group(1)) for p in root.glob("inboxes/*/**/*.msg") if (m := pattern.match(p.name)))
+    return max(seqs, default=0) + 1
+
+
+def write_atomic(path: Path, body: str) -> None:
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(body)
+    os.replace(tmp, path)
+
+
+def write_messages(root: Path, sender: str, msg_id: str, kind: Kind, body: str, recipients: list[str]) -> dict[str, Path]:
+    paths = {name: root / "inboxes" / name / f"{sender}.{msg_id}.{kind}" for name in recipients}
+    taken = [str(p) for p in paths.values() if p.exists() or (p.parent / "handled" / p.name).exists()]
+    if taken:
+        fail(f"refusing to overwrite existing message files: {taken}")
+    for path in paths.values():
+        write_atomic(path, body)
+    return paths
+
+
+def wake_line(root: Path, name: str) -> str:
+    return f": mail waiting in {root}/inboxes/{name}/ - follow {root}/README.md"
+
+
+def ring(root: Path, name: str) -> RingOutcome:
+    try:
+        herdr("agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", str(RING_WAIT_MS))
+        herdr("agent", "prompt", name, wake_line(root, name))
+    except HerdrError as exc:
+        if exc.code in UNRUNG:
+            return UNRUNG[exc.code]
+        raise
+    return RingOutcome.RUNG
+
+
+def ring_all(root: Path, paths: dict[str, Path]) -> None:
+    failed = False
+    for name, path in paths.items():
+        try:
+            outcome = ring(root, name)
+        except HerdrError as exc:
+            typer.echo(f"{path} written, ring failed: {exc}")
+            failed = True
+            continue
+        typer.echo(f"{path} {outcome}")
+    if failed:
+        raise typer.Exit(1)
+
+
+def report_unrung(paths: dict[str, Path]) -> None:
+    for path in paths.values():
+        typer.echo(f"{path} written, not rung (--no-ring)")
+
+
+def deliver(root: Path, sender: str, msg_id: str, kind: Kind, recipients: list[str], ring_now: bool) -> None:
+    paths = write_messages(root, sender, msg_id, kind, read_body(), recipients)
+    if ring_now:
+        ring_all(root, paths)
+    else:
+        report_unrung(paths)
+
+
+@app.command()
+def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
+    """Send a new request (body on stdin) to one or more members."""
+    root = mailbox_root()
+    check_token(slug, "slug")
+    check_members(root, to)
+    sender = own_name(root)
+    msg_id = f"{next_seq(root, sender):0{SEQ_WIDTH}d}-{slug}"
+    deliver(root, sender, msg_id, Kind.MSG, to, ring_now)
+
+
+@app.command()
+def reply(msg_id: Annotated[str, typer.Argument(metavar="ID")], to: str, ring_now: RingFlag = True) -> None:
+    """Reply (body on stdin) to request ID from member TO."""
+    root = mailbox_root()
+    if not ID_RE.fullmatch(msg_id):
+        fail(f"id {msg_id!r} must look like 007-review-api (<seq>-<slug> from the request filename)")
+    check_members(root, [to])
+    sender = own_name(root)
+    deliver(root, sender, msg_id, Kind.REPLY, [to], ring_now)
 
 
 if __name__ == "__main__":
