@@ -221,6 +221,27 @@ You MUST complete each phase before proceeding to the next.
 
    This is NOT a failed hypothesis - this is a wrong architecture.
 
+## Work-package mode
+
+On the FIRST failed fix attempt (not on skill entry), create a lightweight
+work-package at `.agents/work/<date>-<topic>-debug/` containing only
+`decisions.md`, opened with:
+
+    state: root-cause
+    fix-attempts: 1
+
+Map phases to the state line as you progress: Phase 1 `root-cause`, Phase 2
+`pattern-analysis`, Phase 3 `hypothesis`, Phase 4 `implementation`; a
+confirmed investigation end sets `state: resolved`. Increment
+`fix-attempts` on every failed fix. Record confirmed root-cause hypotheses
+as D entries; every failed fix as an X entry pointing at the hypothesis it
+disproved. Re-read `decisions.md` after any compaction - the counter and
+phase are on disk, never in memory. At >= 3 fix attempts, the existing halt
+rule applies; the counter on disk is the authority. The lint
+(`scripts/check-packages.py`) validates the lines; this skill owns the
+transitions. This skill is `layer: worker`: reference the contract only in
+hyphenated form ("work-package") - never the bare word.
+
 ## Red Flags - STOP and Follow Process
 
 If you catch yourself thinking:
