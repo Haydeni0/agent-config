@@ -231,7 +231,7 @@ FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS
 | marimo-pair | EXE | drives live kernel; vendored |
 | no-mistakes | DRV + EXE | gates external pipeline |
 | orchestrator | DRV | mission waves over units |
-| work-package | FC | the .agents/work on-disk contract |
+| work-package | FC | the .agents/work on-disk contract: layout, entry formats, markers, state line, slug convention |
 | ponytail | mode | build-style ladder |
 | ponytail-help | catalog | reference card |
 | ponytail-review | REV | over-engineering only |
@@ -243,7 +243,7 @@ FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS
 | reflect | HK + EL + EXE | session retro -> durable config |
 | repo-agent-setup | DRV + EL + PRO + HK | mode detection, sequential grill, apply, audit |
 | stack-pr | DRV + EXE | stack map `.agents/stacks/<slug>.json` |
-| systematic-debugging | DIS (proc) | reproduce-first, root-cause discipline |
+| systematic-debugging | DIS (proc) | reproduce-first, root-cause discipline; persists phase + fix counter in a work-package on first failed fix |
 | task-brainstorm | DRV | TASKS_*.md state file, per-group grill |
 | tempfile | CAP | one-shot dump |
 | tdd | wrapper + DIS | delegates loop to tdd-core |

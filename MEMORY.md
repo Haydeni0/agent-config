@@ -32,3 +32,21 @@ Claude Code 2.1.291 (latest at the time) does not fire `WorktreeRemove` for git 
 Verified by instrumenting a fresh headless session with project-level hooks (created before launch - hooks load at session start only): `WorktreeCreate` fires and is logged, `WorktreeRemove` never fires; the deployed hook itself removes cleanly when run manually (`exit 0`, worktree + branch gone). Upstream worktrunk main also ships a `WorktreeRemove` hook, but no hook can help - the event never reaches it. Their docs still claim the lifecycle "routes cleanup", which is false on current Claude Code.
 
 Workaround is the rule in `rules/global.md`: the parent agent removes the worktree once the subagent finishes - `wt remove --foreground <branch>`, branch = last path segment of the worktree path. Never remove a running agent's worktree. If Claude Code ever fixes #74708, drop the rule and this entry.
+
+### 2026-10-14 - A mechanical rule landing mid-flight is not followed by the in-flight flow: the tranche cycle never wrote its own state lines
+
+The agent-state-machine tranche added stage-end `state:` writes to dev-cycle
+mid-session, and the very cycle that shipped the rule (2026-10-14-agent-
+state-machine-spike) ran to completion without writing a single state line -
+detection silently took the absent-line legacy fallback the whole way. The
+non-obvious cause: "absent = legal legacy" makes omission a silent no-op, so
+nothing fails when the new discipline is skipped; the orchestrator was also
+mid-habit from the pre-tranche skill text.
+
+Lesson: when a skill gains a new must-do mechanical step, verify adoption on
+the first subsequent run - do not assume text edits change in-flight behavior.
+The research-spike handoff (/tmp/handoff-research-spike-skill.md, 2026-10-14)
+instructs the next cycle to do the state writes and file the miss as an X
+entry. If a future cycle again completes with an absent state line on its own
+package, consider making the first stage's state write mechanically prompted
+(a hook) rather than prose.
