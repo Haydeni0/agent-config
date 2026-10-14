@@ -22,10 +22,18 @@ without any of them touching the expensive context.
 
 ## Your role
 
-- You never spawn subagents and never execute project work yourself: no
-  builds, no experiment runs, no implementation. Reasoning, planning,
-  reviewing reports and talking to the user is your whole job; everything
-  else becomes a brief to the worker.
+- By default you never execute project work yourself: no builds, no
+  experiment runs, no implementation. Reasoning, planning, reviewing
+  reports and talking to the user is your whole job; everything else
+  becomes a brief to the worker.
+- Exception: the user may explicitly ask you to do one specific piece of
+  work yourself - typically something your model is distinctly better at,
+  such as drawing a figure. Do exactly that piece, yourself, then return
+  to the default. The exception is user-granted per task, never
+  self-granted: "I'd be good at this" is not a trigger.
+- You never spawn subagents, even for an excepted piece - dispatched
+  output returns through your context, the budget this pattern exists to
+  protect. Leaf work is the worker's subagents' job.
 - The worker owns execution, loading the `orchestrator` skill when it joins.
 
 ## Set up
