@@ -43,6 +43,12 @@ not a state: resumes into autonomous stages (including `state: verify-fix`)
 pass it; `complete` and interview restarts do not - the driving skill
 defines which resumes are autonomous.
 
+Research (in-progress): `research` marks an in-progress research spike,
+written by the spike-driving skill; it is not a dev-pipeline or debug-cycle
+phase. Terminal transition: `grill` when the spike surfaced open Q entries,
+else the package's prior state (`complete` for a package the spike created).
+`fix-attempts:` is forbidden in it.
+
 Precedence: when present, the state line is authoritative - file presence
 and markers refine within the named stage but never override it. One
 exception: open Q entries in `decisions.md` pull the state back to `grill`

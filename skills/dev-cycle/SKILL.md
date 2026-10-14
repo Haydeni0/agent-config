@@ -14,7 +14,9 @@ Run the complete development cycle for one topic: grill → test-plan → launch
 Read the package `decisions.md` first line. When a `state:` line is present it is authoritative: route to the named stage directly (state `grill` -> case 1, `test-plan` -> case 2, `spec` -> case 3, `plan` -> case 4, `implement` -> case 5, `code-review` -> case 6, `verify-fix` -> stage 8 directly - no legacy case represents it, do not route it to case 6 whose precondition is the opposite, `complete` -> case 8). `verify-fix` is an autonomous-stage resume: pass the gate first, exactly like cases 3-7. A package whose state is a debug value (`root-cause`, `pattern-analysis`,
 `hypothesis`, `implementation`, `resolved`) is a systematic-debugging
 investigation, not a dev-cycle unit: say so and stop - resuming it is that
-skill's job. File presence and markers refine within the named stage but
+skill's job. A package at `state: research` is a research spike in
+progress, not a dev-cycle unit: say so and stop - resuming it is
+research-spike's job. File presence and markers refine within the named stage but
 never override it. One exception: open Q entries pull the state back to `grill` - rewrite the state line to `grill` and resume case 1. A state value outside the enum, or a malformed state line: say so and stop -
 do not guess a stage and do not fall through to the cases (the lint names the
 allowed values; fix the line first). Absent `state:` line = legacy package:
