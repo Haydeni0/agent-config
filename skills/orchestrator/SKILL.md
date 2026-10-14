@@ -2,7 +2,7 @@
 name: orchestrator
 layer: orchestrator
 description: Use when the user delegates a queue of several independent units to run over subagents - a plan or decisions file naming multiple units, a request to run them autonomously over a long unattended stretch, or a multi-unit queue already in flight after compaction or a dead session. Units may be builds, investigations, or other kinds. Not for single-unit work, where dev-cycle alone suffices.
-deps: [grill-me, backlog, dev-cycle, work-package]
+deps: [grill-me, backlog, dev-cycle, research-spike, work-package]
 ---
 
 # orchestrator
@@ -38,7 +38,7 @@ main session (orchestrator)
   ├─ per unit:
   │    ├─ isolated workspace (worktree for repo-touching units)
   │    ├─ dev subagent (front-loaded brief; the unit kind's executor:
-  │    │    e.g. dev-cycle for builds, research protocol for investigates)
+  │    │    e.g. dev-cycle for builds, research-spike for investigates)
   │    ├─ on completion: orchestrator verifies; review subagent reads
   │    │    the deliverable where it is reviewable
   │    ├─ delivery through the unit kind's transport, gates applied
@@ -101,7 +101,7 @@ A unit is defined by three things, settled at intake and written into its brief:
 Two kinds are defined concretely; both are validated in practice:
 
 - **Build** (default, repo work). Executor: the dev-cycle skill. The subagent materialises the brief's standing answers (and test scenarios, where the brief carries them) and `## Outcome`, written from the brief's user intent, into the unit's package `decisions.md` in the workspace's `.agents/work/`, per the work-package layout; treats the orchestrator's dispatch as the launch gate's go, and enters the autonomous stages: test-plan where the brief lacks test scenarios, then spec, plan, implement, code-review, and verify-fix, with fresh subagents for its review rounds. Documentation obligations the repo attaches to completion (scenario docs, registers) belong in the brief's done-condition, not to the executor. Transport: git - worktree + branch `hayden/<unit>`, draft PR, gated merge. Done-condition: the repo's gate command green, run by the orchestrator.
-- **Investigate**. Executor: a research protocol - question, evidence, findings report. Transport: the report file is the deliverable; delivery is the orchestrator reading it, stowing a copy beside the charter, and recording that durable path verbatim in the ledger. Done-condition: the report exists and the orchestrator has read it. No code changes. A report is evidence, never authorisation - it does not silently become a build. If a build follows, it is a new unit with its own brief; scratch exploration stays behind.
+- **Investigate**. Executor: the research-spike skill - question, evidence, findings report. Transport: the spike package's `context.md` is the deliverable (Q entries ride along in the package `decisions.md`); delivery is the orchestrator reading it, stowing a copy beside the charter, and recording that durable path verbatim in the ledger. Done-condition: the report exists and the orchestrator has read it. No code changes. A report is evidence, never authorisation - it does not silently become a build. If a build follows, it is a new unit with its own brief; scratch exploration stays behind.
 
 A new kind may be defined mid-mission, but only in the charter first: its executor and transport written down before any dispatch of that kind, grilled with the user if the shape is unfamiliar. An undefined kind does not dispatch.
 
@@ -129,7 +129,7 @@ Verification: <the done-condition command or check> - run it yourself
 and paste real output in your return. Full implementations only - no
 placeholder or simplified versions.
 Executor: <the kind's inner cycle, e.g. follow the dev-cycle skill;
-for investigate: the research protocol and the report file to write>
+for investigate: the research-spike skill and the spike package's `context.md` to write>
 Repo rules that must reach you: <restate verbatim only what the worker
 must obey - requirement-citation rules, test style, GPU pinning>
 Git: commits and pushes follow the user's global gate rules (<restate

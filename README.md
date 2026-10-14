@@ -225,6 +225,7 @@ flowchart LR
     orchestrator --> grill_me
     orchestrator --> backlog
     orchestrator --> dev_cycle
+    orchestrator --> research_spike
     orchestrator --> work_package
     pr_review --> code_review
     pytest_guidelines --> uv
