@@ -1,6 +1,12 @@
 # Agent config
 
-Shared configuration for Claude Code, Codex, Opencode, Pi, Goose, Antigravity, and no-mistakes. Source lives in `~/gitrepos/agent-config`; native homes retain sessions, credentials, caches, and local settings.
+One source checkout for my AI coding agent setup - rules, skills, commands, hooks and harness settings - synced into Claude Code, Codex, Opencode, Pi, Goose, Antigravity and no-mistakes.
+
+```
+this repo (source)  --agent-config sync-->  native homes (~/.claude, ~/.codex, ~/.config/opencode, ...)
+```
+
+Edit here, never in the native homes. Native homes keep their own sessions, credentials, trust, caches and local settings; sync merges only the keys and files this repo declares.
 
 ## Setup
 
@@ -10,85 +16,128 @@ cd ~/gitrepos/agent-config
 uv tool install --editable ./settings-sync
 mkdir -p ~/.config/agent-config
 printf 'source = "%s/gitrepos/agent-config"\n' "$HOME" > ~/.config/agent-config/config.toml
-agent-config sync
-agent-config check
-agent-config doctor
+agent-config sync && agent-config check && agent-config doctor
 ```
 
-An existing installation adopts cleanly on first sync: identical native files are adopted, local-only state preserved. `--source /path/to/checkout` works before the local pointer exists. Source selection is explicit flag, `AGENT_CONFIG_REPO`, then `$XDG_CONFIG_HOME/agent-config/config.toml`. Unconfigured source is an error.
+An existing installation adopts cleanly on first sync: identical native files are adopted, local-only state is preserved. Source lookup order: `--source`, `AGENT_CONFIG_REPO`, then the `config.toml` above; none set is an error.
 
-## Everyday commands
+## Daily use
 
 ```bash
-agent-config sync                         # local configuration and links
-agent-config sync codex                   # one harness
-agent-config sync codex agents-md         # one output
-agent-config check                       # read-only drift check
-agent-config doctor                      # paths, source/link health, host availability
-agent-config bootstrap pi                # explicit external installation
-agent-config bootstrap --dry-run         # show selected installed hosts
-bash scripts/verify.sh                    # same checks as CI
+agent-config sync                    # apply source to every native home
+agent-config sync codex              # one harness
+agent-config sync codex agents-md    # one step
+agent-config check                   # read-only drift check
+agent-config doctor                  # paths, links, host CLIs
+agent-config bootstrap [harness]     # install external packages (--dry-run to preview)
+bash scripts/verify.sh               # full test suite, same as CI
 ```
 
-`sync [harness] [step]` remains a compatibility command; `sync.sh` invokes bootstrap. Default bootstrap selects installed hosts. no-mistakes installation requires explicit selection because it starts its daemon. Pi/npm/Git and Evo pins are checked against installed versions; web-access uses its lockfile. Dependency changes require refreshing the editable uv tool environment. Lockfile alternative: `uv run --locked --directory settings-sync agent-config`.
+- **Changing config:** edit source here -> `agent-config sync` -> `agent-config check` -> `bash scripts/verify.sh`.
+- **Updating a machine:** `git pull && git submodule update --init`, then `agent-config sync` and `check`. Bump package pins deliberately, then `agent-config bootstrap <harness>`.
+- **Python dependency changes** need the editable tool refreshed, or run via lockfile: `uv run --locked --directory settings-sync agent-config`.
 
-## Source layout
+Bootstrap defaults to installed hosts; no-mistakes needs explicit selection because installing it starts its daemon. `sync.sh` and the bare `sync` command are compatibility entry points. Full flags and per-harness mechanics: [settings-sync/README.md](settings-sync/README.md).
+
+## Layout
 
 | Path | Contents |
 |---|---|
-| `rules/global.md` | Complete shared instructions |
-| `AGENTS.md`, `CLAUDE.md` | Repo editing instructions and Claude loader |
-| `harnesses/<harness>/` | Shared native settings and resources |
+| `rules/global.md` | Shared instructions, rendered into each harness's global rules file |
 | `skills/`, `commands/`, `agents/` | Shared agent resources |
-| `custom/`, `hooks/` | Hook scripts and pinned plugin submodules |
-| `settings-sync/`, `opencode-resume/` | Config CLI and session converter |
-| `.agents/work/` | Machine-local design packages and plans, ignored |
-| `.agents/backlog.md` | Local deferred topics, ignored |
+| `harnesses/<harness>/` | Per-harness settings templates and resources |
+| `hooks/` | Shared command-safety policy and native adapters |
+| `custom/` | Claude hook scripts; pinned plugin submodules under `custom/plugins/` |
+| `settings-sync/` | The `agent-config` CLI |
+| `opencode-resume/` | Opencode-session-to-Claude transcript converter |
+| `scripts/` | `verify.sh`, `bootstrap.sh`, skill and package lints |
+| `docs/requirements.md` | Binding requirements, with verification pointers |
+| `AGENTS.md`, `CLAUDE.md`, `MEMORY.md` | Instructions and lessons for agents editing this repo |
+| `.agents/` | Machine-local work packages and backlog (gitignored) |
 
-Shared edits belong here. Runtime skill/command aliases point back here; generated instructions name this checkout. Mixed JSON/YAML/TOML files merge declared template keys and preserve other native keys. Generated outputs update normally after adoption; local edits conflict. Selected-step force backs up before replacement. Unknown entries survive cleanup. Details: [ownership and recovery](settings-sync/README.md#ownership-and-recovery).
+## What stays local
 
-Command hooks share one policy across native adapters. Hook-group sync preserves foreign registrations and local trust. See [hook coverage, tests and recovery](hooks/README.md) for verified hosts and enforcement limits.
-
-Machine-only no-mistakes settings live in `$XDG_CONFIG_HOME/agent-config/overlays/no-mistakes.yaml`. Additional local Claude executable permissions live in `overlays/claude.json` as `permissions.allow`; they append uniquely to shared permissions. Codex trust, hook approvals and UI state remain in its native config. Gemini workspace trust remains native. Secrets stay outside this source checkout.
-
-Shell/editor/OS configuration belongs in the [dotfiles repo](https://github.com/Haydeni0/dotfiles). Shared shell exports belong there; `~/.zshenv` remains machine-local. Add a sync target through one declaration in `settings-sync/settings_sync/registry.py` and its native adapter.
-
-## Updating
-
-Pull this checkout, initialize submodules, then run local sync and check. Update package pins deliberately, then run bootstrap for that harness. Git commit/push follow the user's current authorization gate.
+- **Native state:** Codex trust, hook approvals and UI state; Gemini workspace trust; all credentials and sessions.
+- **Overlays** in `$XDG_CONFIG_HOME/agent-config/overlays/`: `no-mistakes.yaml` for machine-only no-mistakes settings; `claude.json` `permissions.allow` entries, appended to the shared Claude permissions.
+- **Shell, editor and OS config** belong in the [dotfiles repo](https://github.com/Haydeni0/dotfiles); `~/.zshenv` stays machine-local.
 
 ## Typical workflows
 
-> Personal notes. One conversation unless context stale or switching repos.
+> Personal notes. One conversation per task unless context goes stale or the repo changes.
 
-### Feature pipeline
+- **Feature:** `/dev-cycle <topic>` runs the full pipeline in a work package (`.agents/work/<date>-<topic>/`): grill -> test-plan -> launch gate -> spec -> plan -> implement (tdd) -> code-review -> verify-fix -> report. Human-in-loop until the gate's `go`, autonomous after. Small changes: `/grill-me` -> `/write-spec` -> `/writing-plans` -> `/tdd`, same package.
+- **Review:** `/code-review` on any uncommitted diff, branch or PR. `/codebase-review` for a structural pass with no diff.
+- **Debug:** `/systematic-debugging` for bugs that resist a first fix; opens a debug package on the first failed fix and survives compaction.
+- **Backlog:** off-scope issues get captured mid-task, never fixed unprompted; `/backlog` recalls them, and they surface at session start.
+- **Research before design:** fan out research subagents, collect findings under living-doc's evidence rules, synthesize into a package's `context.md` plus decision-ready entries in `decisions.md`. Skill not yet written; template session: `.agents/work/2026-10-14-agent-state-machine-spike/`.
+- **Harness config and skills:** `/agent-config`. New skills follow `writing-skills`; frontmatter (`deps`, `exits`, `layer`) is machine-checked by `scripts/check-skills.py`.
 
-- `/dev-cycle <topic>` runs the full pipeline as a work-package (`.agents/work/<date>-<topic>/`): grill -> test-plan -> launch gate -> spec -> plan -> implement (tdd) -> code-review -> verify-fix -> final report. Interview stages are human-in-loop; after the gate's `go` the zone is autonomous and reviewer verdicts are the only gates. Packages carry a machine-checked `state:` line - see the work-package skill for the byte contract.
-- Manual variant (small changes): `/grill-me` for forks -> `/write-spec` -> `/writing-plans` -> `/tdd`, artifacts landing in the same package.
+## Skills
 
-### Review
+**Design and build**
+- `dev-cycle` - whole pipeline as one state-machine run
+- `grill-me` - one fork at a time, decision log
+- `design-log` - when to write design entries; promotes settled rules
+- `test-plan` - scenario plan before implementation
+- `write-spec` - spec from settled design
+- `writing-plans` / `executing-plans` - checkbox plan; execute it
+- `tdd` / `tdd-core` - red-green loop and good-test canon
+- `pytest-guidelines` - test-writing standards and red flags
+- `verification-before-completion` - evidence before "done"
+- `orchestrator` - waves of independent units on subagents, for long unattended runs
+- `stack-pr` - stacked PRs, map at `.agents/stacks/<slug>.json`
+- `pr-description` - PR body from branch diff
 
-- `/code-review` on any uncommitted diff, branch diff, or PR - works locally with no PR required. `/codebase-review` for structural passes over a module or directory when there is no diff.
+**Review**
+- `code-review` - any diff or PR; verdict gate
+- `pr-review` - resolves scope, dispatches code-review, writes the file
+- `codebase-review` - structural pass over a module
+- `ponytail-review` - over-engineering only; lists cuts
+- `test-add` / `test-trim` / `test-review-orchestrator` - coverage gaps, redundancy, both merged
 
-### Backlog
+**Debug and research**
+- `systematic-debugging` - reproduce-first, root-cause phases
+- `librarian` - library answers with permalink evidence
+- `fetch-paper` - paper to markdown
+- `prototype` - throwaway artifact to elicit judgement before spec
+- `living-doc` - evidence-grounded working doc
 
-- Off-scope issues get captured mid-task, never fixed unprompted; `/backlog` recalls open items, surfaced at session start.
+**State and capture**
+- `work-package` - `.agents/work/` on-disk contract: layout, entries, markers, state line
+- `backlog` - deferred-item capture and recall
+- `task-brainstorm` - guided grill over a batch of tasks
+- `handoff` - compact a session for the next agent
+- `reflect` - session retro -> durable config change
+- `doc-sweep` - repo-wide doc tidy, human-gated
+- `tempfile` - one-shot dump to a scratch file
 
-### Debug
+**Output and notebooks**
+- `explain-diff` / `visual-explainer` - HTML explanations of diffs, systems, plans
+- `doc-reformat` - reformat a wall-of-text doc with a zero-loss audit
+- `python-notebook` - `# %%` cell format
+- `m-pair` - local wrapper over `marimo-pair` for live marimo kernels
 
-- `/systematic-debugging` for bugs that resist a first fix: reproduce-first, root-cause phases; opens a lightweight debug package on the first failed fix and persists phase + fix counter across compaction.
+**Harness and tooling**
+- `agent-config` - authoring rules and sync runbook
+- `writing-skills` - TDD for skills
+- `repo-agent-setup` - install or audit the agent-first kit in a repo
+- `typer` / `uv` - CLI and Python command rules
+- `linear-agent-update` - Linear comment templates and format check
+- `no-mistakes` - validate-and-push pipeline gate
+- `test-pr-core` - shared reference for the test-review family
 
-### Research before design
+**Modes and runbooks**
+- `caveman` / `ponytail` - terse-output and lazy-solution modes; `*-help` cards
+- `kubectl` / `herdr` / `lavish` - read-only kubectl, terminal multiplexer, lavish-axi CLI
 
-- Fan out research subagents, collect findings under living-doc's evidence discipline, synthesize into a package's `context.md` plus decision-ready Q entries in `decisions.md`. Skill authoring queued; session template: `.agents/work/2026-10-14-agent-state-machine-spike/`.
+**Vendored** (symlinks into `custom/plugins/*` submodules, never edited here): `caveman`, `caveman-commit`, `caveman-compress`, `caveman-help`, `caveman-review`, `jupyter-to-marimo`, `marimo-notebook`, `marimo-pair`, `worktrunk`, `wt-switch-create`.
 
-### Harness config & skill authoring
+### Dependency graph
 
-- `/agent-config` - single source of truth is the source checkout: edit source in repo -> `agent-config sync <tool>` -> `bash scripts/verify.sh`. New skills follow writing-skills; the frontmatter contract (deps, exits, layer) is machine-checked by check-skills.
+Generated from each skill's `deps:` frontmatter; regenerate with `uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py --write`. `verify.sh` fails on a stale graph. Edges are directives to load or invoke another skill; skills with no edges appear only as `%%` comments.
 
-## Skill map
-
-The dependency graph below is generated from each skill's `deps:` frontmatter - regenerate with `uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py --write` after changing deps; verify.sh fails on a stale graph. Strong edges only (directives to load/invoke/run another skill); routing disambiguation pointers are prose, not deps. Zero-degree skills (no deps in or out) sit in the block as `%%` mermaid comments - kept for the gate's node comparison, not rendered.
+<details>
+<summary>Show graph</summary>
 
 <!-- skill-graph: generated by scripts/check_skill_graph.py - do not edit by hand -->
 ```mermaid
@@ -206,74 +255,15 @@ flowchart LR
     writing_skills --> tdd_core
 ```
 
-### Skills by workflow
+</details>
 
-Grouped the way they are invoked; role codes are gone - anything they encoded is either prose below or machine-checked in frontmatter (`deps:`, `layer:`, `exits:`).
+## More docs
 
-**Design and pipeline**
-- `dev-cycle` - the whole pipeline as one state-machine run: grill -> test-plan -> gate -> spec -> plan -> implement -> code-review -> verify-fix
-- `grill-me` - one fork at a time, decision log
-- `design-log` - when to write design entries; promotes settled rules; orchestrates workers
-- `test-plan` - scenario plan before implementation; heuristics canon; grilling delegated
-- `write-spec` - spec from settled design
-- `writing-plans` - checkbox plan; header/task structure canon
-- `executing-plans` - loads a plan, executes tasks
-- `tdd` - wraps `tdd-core`'s red-green loop; scaffolding-dir lifecycle
-- `tdd-core` - the loop itself; good-test canon
-- `pytest-guidelines` - test-writing standards + red flags
-- `verification-before-completion` - claim gate: evidence before "done"
-- `stack-pr` - stack map at `.agents/stacks/<slug>.json`
-- `orchestrator` - mission waves over independent units on subagents, for long unattended stretches
-- `pr-description` - PR body from branch diff
-
-**Review**
-- `code-review` - any diff or PR, local with no PR required; verdict gate
-- `codebase-review` - structural pass over a module, no diff needed
-- `ponytail-review` - over-engineering only; lists cuts, does not apply
-- `test-add` / `test-trim` - coverage-gap / redundancy proposals
-- `test-review-orchestrator` - dispatches both, merges
-- `pr-review` - resolves scope, dispatches code-review, writes the file
-
-**Debug**
-- `systematic-debugging` - reproduce-first, root-cause phases; opens a debug work-package on the first failed fix, persists phase + fix counter
-
-**Research and investigation**
-- `librarian` - library answers with permalink evidence
-- `fetch-paper` - fetch + convert a paper to markdown
-- `prototype` - throwaway artifact to elicit judgement before spec
-- `living-doc` - evidence-grounded working doc; START interview, FINALISE retire
-
-**State and capture**
-- `work-package` - the `.agents/work` on-disk contract: layout, entry formats, markers, state line, slug convention
-- `backlog` - deferred-item capture and recall; recommends next
-- `task-brainstorm` - guided per-task grill over a batch; `TASKS_*.md` state file
-- `handoff` - compaction for the next session
-- `reflect` - session retro -> durable config change
-- `doc-sweep` - repo-wide retrospective doc tidy, human-gated
-- `tempfile` - one-shot dump to a scratch file
-
-**Producing artifacts**
-- `explain-diff` - HTML/Notion from a diff
-- `visual-explainer` - HTML page from a system or plan; layout invariants
-- `doc-reformat` - reformat a wall-of-text doc; zero-loss audit
-- `python-notebook` - `# %%` cell format
-
-**Notebook pairing**
-- `m-pair` / `marimo-pair` - drive a live marimo kernel; wrapper holds a local auth gotcha
-
-**Harness and authoring**
-- `agent-config` - authoring/portability rules + sync runbook
-- `writing-skills` - TDD-for-skills methodology (meta)
-- `test-pr-core` - shared reference for the test-review family
-- `repo-agent-setup` - fold the agent-first kit into a repo; install or audit
-- `typer` / `uv` - CLI-authoring and command rules
-- `linear-agent-update` - comment/diff-comment templates + format check
-- `no-mistakes` - gates the external validate-and-push pipeline
-
-**Modes and cards**
-- `caveman` - persistent terse-output mode
-- `ponytail` - lazy-solution mode ladder
-- `caveman-help` / `ponytail-help` - one-shot reference cards
-- `kubectl` / `herdr` / `lavish` - runbooks: read-only kubectl, terminal multiplexer, lavish-ax CLI
-
-**Vendored** (symlinked from `custom/plugins/*`, never edited here): `caveman-commit`, `caveman-compress`, `caveman-review`, `jupyter-to-marimo`, `marimo-notebook`, `worktrunk`, `wt-switch-create`, plus the vendored entries named above.
+| File | Covers |
+|---|---|
+| [settings-sync/README.md](settings-sync/README.md) | What syncs where, CLI flags, ownership and recovery, adding a harness |
+| [hooks/README.md](hooks/README.md) | Hook coverage per harness, enforcement limits, tests, rollback |
+| `harnesses/{codex,goose,no-mistakes,pi}/README.md` | Harness-specific notes |
+| [opencode-resume/README.md](opencode-resume/README.md) | Resuming opencode sessions in Claude Code |
+| [docs/requirements.md](docs/requirements.md) | Requirements contract |
+| [AGENTS.md](AGENTS.md), [MEMORY.md](MEMORY.md) | Rules and lessons for agents working on this repo |
