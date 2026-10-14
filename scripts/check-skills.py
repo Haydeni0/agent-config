@@ -18,7 +18,7 @@ Checks (all map to a REQ-SKILLS row in docs/requirements.md):
   and a `layer: worker` skill never declares a `layer: orchestrator` skill
 - exits validation: optional `exits:` entries are "state: <enum>" or begin
   with a work-package contract filename
-- workers never reference the design-package contract except through the
+- workers never reference the work-package contract except through the
   work-package skill: the bare word "package" (not hyphen-joined, so
   "work-package" passes; file names like package.json excluded) is banned in
   worker bodies except in work-package itself
@@ -108,7 +108,7 @@ def check(skills_dir: Path, repo_root: Path) -> tuple[list[str], int]:
             if orchestrator_reference(orch, body):
                 failures.append(f"{name}: worker names orchestrator skill {orch}")
         if name != CONTRACT_OWNER and PACKAGE_RE.search(body):
-            failures.append(f"{name}: worker references the design-package contract")
+            failures.append(f"{name}: worker references the work-package contract outside work-package itself (bare word 'package' banned in worker bodies)")
 
     for name, (frontmatter, _) in parsed.items():
         deps = frontmatter.get("deps") or []

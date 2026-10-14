@@ -1,7 +1,7 @@
 ---
 name: work-package
 layer: worker
-description: Use when reading, writing, or resuming work in a `.agents/work/<slug>/` package, or when another skill cites this contract. Holds the on-disk contract - package layout, file roles, entry formats, ID rules, marker formats, and the legacy conversion recipe. Load it before reading or writing package files.
+description: Use when reading, writing, or resuming work in a `.agents/work/<slug>/` package, or when another skill cites this contract. Holds the on-disk contract - package layout, slug convention, file roles, entry formats, ID rules, marker formats, the state line, and the legacy conversion recipe. Load it before reading or writing package files.
 ---
 
 # work-package
