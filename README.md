@@ -206,70 +206,74 @@ flowchart LR
     writing_skills --> tdd_core
 ```
 
-### Roles
+### Skills by workflow
 
-FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS = discipline (rec = when-to-record, proc = process) | PRO = producer | DRV = driver/state machine | EXE = executor | REV = reviewer | CAP = capture | HK = housekeeping | mode = persistent style modifier | catalog = one-shot reference card | ref = tool guide/runbook | wrapper = delegates to another skill
+Grouped the way they are invoked; role codes are gone - anything they encoded is either prose below or machine-checked in frontmatter (`deps:`, `layer:`, `exits:`).
 
-| Skill | Role(s) | Note |
-|---|---|---|
-| agent-config | FC + ref | authoring/portability rules + sync runbook |
-| backlog | CAP | recall recommends next item |
-| caveman | mode | vendored |
-| caveman-commit | PRO | commit message |
-| caveman-compress | EXE | vendored |
-| caveman-help | catalog | vendored |
-| caveman-review | FC | formats review output, judges nothing; vendored |
-| code-review | REV | verdict gate |
-| codebase-review | REV | structural, no diff |
-| design-log | DIS + DRV + HK | when-to-write discipline; orchestrates workers; promote. Format contract moved to work-package |
-| dev-cycle | DRV | state-line-first stage detection, launch gate, reviewer loop, findings filed to decisions.md |
-| doc-reformat | PRO + REV | guardian pipeline + fresh-context loss auditor |
-| doc-sweep | HK + REV | repo-wide retrospective tidy, human-gated |
-| executing-plans | EXE | loads plan, executes tasks |
-| explain-diff | PRO | HTML/Notion from diff |
-| fetch-paper | EXE | fetch + convert + verify |
-| grill-me | EL | one fork at a time, decision log |
-| handoff | CAP | compaction for next session |
-| herdr | ref | terminal multiplexer control |
-| jupyter-to-marimo | EXE | vendored |
-| kubectl | ref + DIS | read-only contract, mutation verbs blocked |
-| lavish | ref | delegates to lavish-axi CLI |
-| librarian | EXE | research protocol |
-| linear-agent-update | FC + DIS | comment templates + format check |
-| living-doc | PRO + DIS + EL + HK | evidence-grounded doc; working rules; START interview; FINALISE retire |
-| m-pair | wrapper | delegates to marimo-pair |
-| marimo-notebook | FC | vendored |
-| marimo-pair | EXE | drives live kernel; vendored |
-| no-mistakes | DRV + EXE | gates external pipeline |
-| orchestrator | DRV | mission waves over units |
-| work-package | FC | the .agents/work on-disk contract: layout, entry formats, markers, state line, slug convention |
-| ponytail | mode | build-style ladder |
-| ponytail-help | catalog | reference card |
-| ponytail-review | REV | over-engineering only |
-| pr-description | PRO | PR body from branch diff |
-| pr-review | wrapper + DRV-lite | resolves scope, dispatches code-review, writes file |
-| prototype | EL + EXE | elicits judgement via throwaway artifact |
-| pytest-guidelines | FC + DIS | test-writing standards + red flags |
-| python-notebook | FC | `# %%` cell format |
-| reflect | HK + EL + EXE | session retro -> durable config |
-| repo-agent-setup | DRV + EL + PRO + HK | mode detection, sequential grill, apply, audit |
-| stack-pr | DRV + EXE | stack map `.agents/stacks/<slug>.json` |
-| systematic-debugging | DIS (proc) | reproduce-first, root-cause discipline; persists phase + fix counter in a work-package on first failed fix |
-| task-brainstorm | DRV | TASKS_*.md state file, per-group grill |
-| tempfile | CAP | one-shot dump |
-| tdd | wrapper + DIS | delegates loop to tdd-core |
-| tdd-core | DIS (proc) + FC | red-green loop; good-test canon |
-| test-add | REV | coverage-gap proposals |
-| test-plan | PRO + FC | drafts scenario plan; heuristics canon; grilling delegated |
-| test-pr-core | FC | shared reference |
-| test-review-orchestrator | DRV-lite | dispatches trim/add reviewers, merges |
-| test-trim | REV | redundancy proposals |
-| typer | ref | CLI-authoring rules |
-| uv | ref | command rules |
-| verification-before-completion | DIS | claim gate |
-| visual-explainer | PRO + FC | HTML page + layout invariants |
-| worktrunk | ref | vendored |
-| write-spec | PRO | spec from settled design |
-| writing-plans | PRO + FC | checkbox plan + header/task structure |
-| writing-skills | DIS + PRO + FC + REV | TDD-for-skills methodology (meta) |
-| wt-switch-create | EXE | vendored |
+**Design and pipeline**
+- `dev-cycle` - the whole pipeline as one state-machine run: grill -> test-plan -> gate -> spec -> plan -> implement -> code-review -> verify-fix
+- `grill-me` - one fork at a time, decision log
+- `design-log` - when to write design entries; promotes settled rules; orchestrates workers
+- `test-plan` - scenario plan before implementation; heuristics canon; grilling delegated
+- `write-spec` - spec from settled design
+- `writing-plans` - checkbox plan; header/task structure canon
+- `executing-plans` - loads a plan, executes tasks
+- `tdd` - wraps `tdd-core`'s red-green loop; scaffolding-dir lifecycle
+- `tdd-core` - the loop itself; good-test canon
+- `pytest-guidelines` - test-writing standards + red flags
+- `verification-before-completion` - claim gate: evidence before "done"
+- `stack-pr` - stack map at `.agents/stacks/<slug>.json`
+- `orchestrator` - mission waves over independent units on subagents, for long unattended stretches
+- `pr-description` - PR body from branch diff
+
+**Review**
+- `code-review` - any diff or PR, local with no PR required; verdict gate
+- `codebase-review` - structural pass over a module, no diff needed
+- `ponytail-review` - over-engineering only; lists cuts, does not apply
+- `test-add` / `test-trim` - coverage-gap / redundancy proposals
+- `test-review-orchestrator` - dispatches both, merges
+- `pr-review` - resolves scope, dispatches code-review, writes the file
+
+**Debug**
+- `systematic-debugging` - reproduce-first, root-cause phases; opens a debug work-package on the first failed fix, persists phase + fix counter
+
+**Research and investigation**
+- `librarian` - library answers with permalink evidence
+- `fetch-paper` - fetch + convert a paper to markdown
+- `prototype` - throwaway artifact to elicit judgement before spec
+- `living-doc` - evidence-grounded working doc; START interview, FINALISE retire
+
+**State and capture**
+- `work-package` - the `.agents/work` on-disk contract: layout, entry formats, markers, state line, slug convention
+- `backlog` - deferred-item capture and recall; recommends next
+- `task-brainstorm` - guided per-task grill over a batch; `TASKS_*.md` state file
+- `handoff` - compaction for the next session
+- `reflect` - session retro -> durable config change
+- `doc-sweep` - repo-wide retrospective doc tidy, human-gated
+- `tempfile` - one-shot dump to a scratch file
+
+**Producing artifacts**
+- `explain-diff` - HTML/Notion from a diff
+- `visual-explainer` - HTML page from a system or plan; layout invariants
+- `doc-reformat` - reformat a wall-of-text doc; zero-loss audit
+- `python-notebook` - `# %%` cell format
+
+**Notebook pairing**
+- `m-pair` / `marimo-pair` - drive a live marimo kernel; wrapper holds a local auth gotcha
+
+**Harness and authoring**
+- `agent-config` - authoring/portability rules + sync runbook
+- `writing-skills` - TDD-for-skills methodology (meta)
+- `test-pr-core` - shared reference for the test-review family
+- `repo-agent-setup` - fold the agent-first kit into a repo; install or audit
+- `typer` / `uv` - CLI-authoring and command rules
+- `linear-agent-update` - comment/diff-comment templates + format check
+- `no-mistakes` - gates the external validate-and-push pipeline
+
+**Modes and cards**
+- `caveman` - persistent terse-output mode
+- `ponytail` - lazy-solution mode ladder
+- `caveman-help` / `ponytail-help` - one-shot reference cards
+- `kubectl` / `herdr` / `lavish` - runbooks: read-only kubectl, terminal multiplexer, lavish-ax CLI
+
+**Vendored** (symlinked from `custom/plugins/*`, never edited here): `caveman-commit`, `caveman-compress`, `caveman-review`, `jupyter-to-marimo`, `marimo-notebook`, `worktrunk`, `wt-switch-create`, plus the vendored entries named above.
