@@ -75,6 +75,14 @@ into the machine-local, gitignored `.agents/backlog.md`.
 | REQ-MAILBOX-07 | `bin/mailbox status` (no join needed) lists every member with role, unread and handled counts (files that are not messages are skipped), or with a member argument that member's unread ids; `bin/mailbox poke <member>` (joined callers only) rings a member that has unread mail through the standard wake path and prints `<member>: <outcome>`, else prints `<member>: nothing to poke` and exits 0. | `skills/mailbox/test_mailbox.py` (CI) |
 | REQ-MAILBOX-08 | A member file records the joining pane's seat as `pane=` and `session=` (`HERDR_PANE_ID`, `HERDR_SESSION`); every verb resolves its caller from those lines without calling herdr; two member files claiming one seat fail loudly; `join` clears its seat from any other member file holding the same pane *and* session; `take` refuses, moving nothing, unless the live herdr agent of the resolved name sits in the caller's pane | `skills/mailbox/test_mailbox.py` (CI) |
 
+## Evals - measurement suites
+
+| ID | Requirement | Verification |
+|---|---|---|
+| REQ-EVALS-01 | The claim-verification replay suite's pure parts (scenario generation, transcript parsing, trap scoring, aggregation, sampler pool/condense/judge parsing) are unit-tested; scoring evaluates repeated before caught before other, and attribution alone never flags a false claim. | `evals/claim-verification/test_*.py` via `verify.sh` (CI) |
+| REQ-EVALS-02 | Live suite runs never touch the native Claude home: each arm renders into a throwaway `CLAUDE_CONFIG_DIR`, and the fidelity probe aborts when sync-owned native paths or `~/.claude.json` change. | `cv.py probe` hard check `native.unchanged` (manual) |
+| REQ-EVALS-03 | Trap values are drawn per run and never appear in the prompt; ground truth is kept outside the workspace except in the scenario's legitimate truth source. | `test_scenarios.py` (CI) |
+
 ## Hooks - guards and safety
 
 | ID | Requirement | Verification |
