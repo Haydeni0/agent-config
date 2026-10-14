@@ -212,7 +212,7 @@ FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS
 | code-review | REV | verdict gate |
 | codebase-review | REV | structural, no diff |
 | design-log | DIS + DRV + HK | when-to-write discipline; orchestrates workers; promote. Format contract moved to work-package |
-| dev-cycle | DRV | stage detection from markers, launch gate, reviewer loop |
+| dev-cycle | DRV | state-line-first stage detection, launch gate, reviewer loop, findings filed to decisions.md |
 | doc-reformat | PRO + REV | guardian pipeline + fresh-context loss auditor |
 | doc-sweep | HK + REV | repo-wide retrospective tidy, human-gated |
 | executing-plans | EXE | loads plan, executes tasks |

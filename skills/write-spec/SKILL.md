@@ -4,6 +4,7 @@ layer: worker
 description: >
   Use when the user asks to write a spec or design document - typically after a grill-me session has settled the design. Turns the agreed decisions into a spec saved next to the design record and walks it through self-review and user approval. Not auto-triggered: never invoke unless the user asks for a spec/design doc or the grill ended with intent to write one.
 deps: [grill-me, writing-plans, work-package]
+exits: [spec.md]
 forked-from: superpowers@claude-plugins-official v6.3.0 (brainstorming)
 forked-date: 2026-09-01
 forked-note: 2026-09-01 trimmed to pure spec-writer; all brainstorming dialogue moved to grill-me

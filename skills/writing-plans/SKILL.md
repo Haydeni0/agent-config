@@ -4,6 +4,7 @@ layer: worker
 description: >
   Use when the user asks for an implementation plan for a multi-step task - typically after write-spec produced an approved spec. Produces a checkbox-tracked plan file saved next to the spec, with exact file changes and verification steps. Not auto-triggered: never invoke unless the user asks for a plan or an approved spec calls for one.
 deps: [tdd, executing-plans, work-package]
+exits: [plan.md]
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-plans)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body

@@ -132,3 +132,20 @@ def test_enum_single_source() -> None:
     assert m, "work-package SKILL.md missing canonical enum line"
     declared = {v.strip() for v in m.group(1).split("|")}
     assert declared == states.ALL_STATES
+
+
+def test_fenced_marker_example_ignored(tmp_work: Path) -> None:
+    spec = "# S\n\nExample format:\n\n```\nReviewed: pass 1\n```\n\nFinal prose\n"
+    make_package(tmp_work, "p", decisions="state: spec\n\n# D\n", spec=spec)
+    assert findings(tmp_work) == []
+
+
+def test_implemented_prose_prefix_ignored(tmp_work: Path) -> None:
+    make_package(tmp_work, "p", decisions="state: complete\n\n# D\n", plan="# P\n\nImplemented via a script\n\nprose\n")
+    assert not any("Implemented" in f for f in findings(tmp_work))
+
+
+def test_duplicate_footer_markers_pass(tmp_work: Path) -> None:
+    spec = "# S\n\nReviewed: fail 1\n\nReviewed: pass 2\n"
+    make_package(tmp_work, "p", decisions="state: plan\n\n# D\n", spec=spec)
+    assert findings(tmp_work) == []

@@ -235,8 +235,7 @@ Increment `fix-attempts` on every failed fix; record each failed fix as an X
 entry pointing at the hypothesis it disproved. Re-read `decisions.md` after
 any compaction - the counter and phase are on disk, never in memory. At
 >= 3 fix attempts, the existing halt rule applies; the counter on disk is
-the authority. This skill is `layer: worker`: reference the contract only in
-hyphenated form ("work-package") - never the bare word.
+the authority.
 
 ## Red Flags - STOP and Follow Process
 

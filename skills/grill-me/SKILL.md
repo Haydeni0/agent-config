@@ -4,6 +4,7 @@ layer: worker
 description: Use when stress-testing a plan or design before implementation - challenges assumptions, sharpens terminology, resolves dependencies between decisions one at a time
 metadata:
   source: https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md
+exits: [decisions.md D/Q entries (when a package exists)]
 ---
 
 Interview me relentlessly about every aspect of this plan until we reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one.

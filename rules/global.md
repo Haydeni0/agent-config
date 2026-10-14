@@ -14,7 +14,7 @@
 ### Backlog
 
 - **Projects have a `.agents/backlog.md` at the git root** for deferred side topics, maintained via the `backlog` skill.
-- **Legacy project documents:** use `.agents/work/` and `.agents/backlog.md` when present. If only legacy `.claude` documents exist, read them and identify the legacy location. If both exist, reconcile contents before resuming, editing, moving or deleting either; preserve backlog IDs and plan progress.
+- **Legacy project documents:** use `.agents/work/` and `.agents/backlog.md` when present. `.agents/plans/` is the pre-rename location of `.agents/work/` - treat it as canonical content and rename on next touch. If only legacy `.claude` documents exist, read them and identify the legacy location. If both exist, reconcile contents before resuming, editing, moving or deleting either; preserve backlog IDs and plan progress.
 - **When starting work in a project, read its backlog if present and surface open items** (ID + one line each) before diving in - recommend what to pick up first and why. Don't act on them unprompted.
 - **When you spot an off-scope issue mid-task** (bug, design smell, idea), record it to the backlog yourself with the skill and mention it in one clause - keep working. Don't fix it, and don't rely on chat alone to preserve it.
 
