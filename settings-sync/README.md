@@ -1,8 +1,8 @@
 # settings-sync
 
-Syncs the agent-config source checkout into opencode, pi, goose, agy, Codex, and no-mistakes. The source checkout owns the managed artifacts listed below; each harness keeps its own local state.
+The `agent-config` CLI. Syncs the source checkout into Claude, opencode, pi, goose, agy, Codex, and no-mistakes. The source checkout owns the managed artifacts listed below; each harness keeps its own local state. Setup and the everyday loop live in the [root README](../README.md).
 
-`~/gitrepos/agent-config` is your git repo - `git pull` on any machine, then `sync`. Shared skills and commands use each harness's native discovery where available; the tables below identify the artifacts that need conversion.
+Shared skills and commands use each harness's native discovery where available; the tables below identify the artifacts that need conversion.
 
 ## What it syncs
 
@@ -16,8 +16,9 @@ Shared `harnesses/claude/settings.json` merges into the native settings file. `r
 | `statusline-command.sh` | `harnesses/claude/statusline-command.sh` | Native statusline command |
 | `pi`, `opencode`, `codex`, `goose`, `gemini`, `no-mistakes` | corresponding `harnesses/` directories | Launchers and source references |
 | `settings-sync`, `opencode-resume` | same-named source directories | Tool invocations |
-| `sync.sh`, `scripts`, `README.md` | same-named source entries | Setup entry and navigation | `--claude-home` selects a custom Claude runtime destination and renders hook commands accordingly.
+| `sync.sh`, `scripts`, `README.md` | same-named source entries | Setup entry and navigation |
 
+`--claude-home` selects a custom Claude runtime destination and renders hook commands accordingly.
 
 ### opencode
 
@@ -92,55 +93,35 @@ Codex config tables merge recursively. The template owns the keys it declares; l
 ## Usage
 
 ```bash
-# In the examples below, `sync` is the invocation from Run above, i.e.
-# `uv run --directory ~/gitrepos/agent-config/settings-sync sync` (or your `ssync` alias).
-
-# sync everything (opencode + pi + goose + agy + codex + no-mistakes); refuse on conflict, exit 1 if any conflict
-sync
-sync all                       # explicit
-
-# per tool
-sync opencode                  # all opencode steps
-sync pi                        # pointers + inlined context
-sync goose                     # hints + config + providers
-sync agy                       # rules + skills
-sync codex                     # shared defaults + global AGENTS.md -> ~/.codex
-sync no-mistakes               # config template + machine overlay -> ~/.no-mistakes
-sync opencode config           # one step (config|tui|agents-md|agents|commands|plugins|skills)
-sync pi config                 # one step (config|context|keybindings)
-sync goose config              # one step (hints|config|providers)
-sync agy agents-md             # one step (agents-md|skills)
-sync codex config              # one step (config|agents-md)
-sync no-mistakes config        # one step (config)
-
-# flags (accepted before or after group/subcommand)
-sync --dry-run                 # preview, write nothing
-sync agy --check               # exit nonzero on drift, write nothing
-sync goose --force             # clobber diverging derived files
-sync --verbose                 # show diffs for changed text artifacts
-sync --pi-dir /tmp/glm-pi pi   # target a different pi agent dir
+agent-config sync                      # every harness; refuses on conflict, exit 1 if any
+agent-config sync codex                # one harness
+agent-config sync codex agents-md      # one step (table below)
+agent-config check [harness] [step]    # exit nonzero on drift, write nothing
+agent-config doctor [harness]          # paths, sources, links, host availability
+agent-config sync --dry-run            # preview, write nothing
+agent-config sync goose --force        # back up and replace conflicting generated files
+agent-config sync --verbose            # diffs for changed text artifacts
+agent-config --pi-dir /tmp/glm-pi sync pi   # path overrides go before the subcommand
+agent-config bootstrap [harness]       # install external packages; --dry-run to preview
 ```
 
-Common flags (`--force`, `--dry-run`, `--check`, `--verbose`) work anywhere in the command line (e.g. `sync --check agy`, `sync agy --check`, or `sync agy settings --force`). Path override options (`--claude-dir`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`) go before the tool subcommand.
+| Harness | Steps |
+|---|---|
+| claude | `config`, `context`, `links` |
+| opencode | `resources`, `config`, `tui`, `agents-md`, `agents`, `commands`, `plugins` |
+| pi | `resources`, `config`, `context`, `keybindings` |
+| goose | `hooks`, `resources`, `hints`, `config`, `providers` |
+| agy | `hooks`, `settings`, `agents-md`, `skills` |
+| codex | `hooks`, `skills`, `config`, `agents-md` |
+| no-mistakes | `config` |
 
-## Install and commands
+Path overrides: `--source` (alias `--claude-dir`), `--claude-home`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`. The legacy `sync` entry point (`sync [harness] [step]`, flags accepted anywhere, `--check` as a flag) stays available; it alone carries the opencode skill lint, `sync opencode skills`.
 
-```bash
-uv tool install --editable ./settings-sync
-agent-config sync                 # local settings and links
-agent-config sync codex            # one harness
-agent-config sync codex agents-md  # one output
-agent-config check codex           # read-only drift check
-agent-config doctor codex          # paths, sources, links, host availability
-agent-config bootstrap pi          # explicit package installation
-agent-config bootstrap --dry-run   # show selected installed hosts
-```
+Install with `uv tool install --editable ./settings-sync` from the repo root. Python dependency changes require refreshing the editable tool environment; lockfile alternative: `uv run --locked --directory settings-sync agent-config`.
 
-Run the install command from the repo root. Python dependency changes require refreshing the editable tool environment. Lockfile-based alternative: `uv run --locked --directory settings-sync agent-config`.
+Source resolution: `--source`, then `AGENT_CONFIG_REPO`, then `source = "/absolute/repo"` in `$XDG_CONFIG_HOME/agent-config/config.toml`; an unconfigured source is an error. Native destinations are resolved per invocation; explicit destination flags beat `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, and XDG defaults.
 
-Legacy `sync [harness] [step]` stays available. `sync.sh` is a compatibility entry for bootstrap. Bootstrap defaults to installed hosts; no-mistakes requires explicit selection because installation starts its daemon. Pi packages have exact versions/revisions in `harnesses/pi/settings.json`; web-access uses `npm ci`. Evo CLI/plugin and initial no-mistakes release pins live in `scripts/bootstrap.sh`. Native no-mistakes updates remain user-controlled.
-
-Source resolution: `--source` (alias `--claude-dir`), then `AGENT_CONFIG_REPO`, then `source = "/absolute/repo"` in `$XDG_CONFIG_HOME/agent-config/config.toml`; an unconfigured source is an error. Native destinations are resolved per invocation; explicit destination flags beat `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, and XDG defaults. Path flags go before the subcommand.
+Bootstrap: `sync.sh` is a compatibility entry for it. It defaults to installed hosts; no-mistakes requires explicit selection because installation starts its daemon. Pi packages have exact versions/revisions in `harnesses/pi/settings.json`; web-access uses `npm ci`. Evo CLI/plugin and initial no-mistakes release pins live in `scripts/bootstrap.sh`. Native no-mistakes updates remain user-controlled.
 
 ## Ownership and recovery
 
