@@ -60,20 +60,31 @@ Pull this checkout, initialize submodules, then run local sync and check. Update
 ## Typical workflows
 
 > Personal notes. One conversation unless context stale or switching repos.
->
-> Single living spec; after Interfaces and Tests grills: `Fold our decisions into the spec. Also, review the spec for consistency after.`
 
 ### Feature pipeline
 
-- **Understand** — `Help me plan <feature>. <why> <starter idea> <existing integration surface in repo> /grill-me` — exit: scope, non-goals, key decisions agreed
-- **Spec** — `Write a spec from our agreed design. /superpowers:brainstorming` — exit: spec file exists and reviewed
-- **Interfaces** — `Help me brainstorm interfaces/classes for this spec. /grill-me` — exit: protocols, classes, module layout agreed — then: spec merge
-- **Tests** — `Help me plan tests for this spec before we implement. /grill-me /pytest-guidelines` — exit: public API test strategy agreed — then: spec merge
-- **Implement** — `Implement per spec. /tdd` — exit: `tdd_scaffolding/` deleted; behavioral tests pass per `pytest-guidelines`
+- `/dev-cycle <topic>` runs the full pipeline as a work-package (`.agents/work/<date>-<topic>/`): grill -> test-plan -> launch gate -> spec -> plan -> implement (tdd) -> code-review -> verify-fix -> final report. Interview stages are human-in-loop; after the gate's `go` the zone is autonomous and reviewer verdicts are the only gates. Packages carry a machine-checked `state:` line - see the work-package skill for the byte contract.
+- Manual variant (small changes): `/grill-me` for forks -> `/write-spec` -> `/writing-plans` -> `/tdd`, artifacts landing in the same package.
+
+### Review
+
+- `/code-review` on any uncommitted diff, branch diff, or PR - works locally with no PR required. `/codebase-review` for structural passes over a module or directory when there is no diff.
+
+### Backlog
+
+- Off-scope issues get captured mid-task, never fixed unprompted; `/backlog` recalls open items, surfaced at session start.
+
+### Debug
+
+- `/systematic-debugging` for bugs that resist a first fix: reproduce-first, root-cause phases; opens a lightweight debug package on the first failed fix and persists phase + fix counter across compaction.
+
+### Research before design
+
+- Fan out research subagents, collect findings under living-doc's evidence discipline, synthesize into a package's `context.md` plus decision-ready Q entries in `decisions.md`. Skill authoring queued; session template: `.agents/work/2026-10-14-agent-state-machine-spike/`.
 
 ### Harness config & skill authoring
 
-- **Configure harness / Add skill** - `/agent-config` - single source of truth is the source checkout: edit source in repo -> `agent-config sync <tool>` -> `bash scripts/verify.sh`.
+- `/agent-config` - single source of truth is the source checkout: edit source in repo -> `agent-config sync <tool>` -> `bash scripts/verify.sh`. New skills follow writing-skills; the frontmatter contract (deps, exits, layer) is machine-checked by check-skills.
 
 ## Skill map
 
