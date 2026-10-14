@@ -178,6 +178,17 @@ When Sources shows no `pending`:
    same brief and file rules, under the 6-cap, added to Sources with the
    same in-place status updates. Otherwise it becomes a Q whose options
    are the competing readings. Never silently adjudicate.
+4. A load-bearing claim no second stream corroborates is weak evidence,
+   not settled fact. A cheap targeted check exists (independent source,
+   or the cited document/repo source itself for read/sweep citations):
+   one corroboration follow-up stream, same brief and file rules as a
+   contradiction follow-up, checking the independent source - or, for
+   a claim resting on cited documents or repo source, confirming each
+   load-bearing citation says what the stream file claims. No cheap
+   check, or the stream settles and the claim still stands alone: the
+   Synthesis states the claim as single-sourced in the same breath as
+   any answer resting on it - never propping a headline the caveat
+   contradicts.
 
 ## Terminal state
 
