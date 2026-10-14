@@ -30,8 +30,8 @@ First line of package `decisions.md`: `state: <value>` (lowercase, kebab).
 Absent = legacy package; consumers fall back to file-presence detection.
 A present-but-unknown or malformed state line is a defect, not a legacy
 package: consumers report it and stop; the lint names the allowed values.
-Canonical enum (single source; `scripts/check-packages.py` validates against
-the same list and a CI test asserts equality):
+Canonical enum (defined in `scripts/package_states.py`, mirrored here;
+the lint validates against the same list and a CI test asserts equality):
 
 state: grill | test-plan | spec | plan | implement | code-review | verify-fix | complete | root-cause | pattern-analysis | hypothesis | implementation | resolved
 
