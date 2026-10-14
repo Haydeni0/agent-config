@@ -15,7 +15,10 @@ Read the package `decisions.md` first line. When a `state:` line is present it i
 `hypothesis`, `implementation`, `resolved`) is a systematic-debugging
 investigation, not a dev-cycle unit: say so and stop - resuming it is that
 skill's job. File presence and markers refine within the named stage but
-never override it. One exception: open Q entries pull the state back to `grill` - rewrite the state line to `grill` and resume case 1. Absent `state:` line = legacy package: use the file-presence cases below. The mapping is not bijective by design: case 7 (fail-marker recovery) refines within `spec`/`plan`, and `verify-fix` is reachable only via the state line.
+never override it. One exception: open Q entries pull the state back to `grill` - rewrite the state line to `grill` and resume case 1. A state value outside the enum, or a malformed state line: say so and stop -
+do not guess a stage and do not fall through to the cases (the lint names the
+allowed values; fix the line first). Absent `state:` line = legacy package:
+use the file-presence cases below. The mapping is not bijective by design: case 7 (fail-marker recovery) refines within `spec`/`plan`, and `verify-fix` is reachable only via the state line.
 
 The cycle unit is a package dir `.agents/work/<slug>/` (slug = `<date>-<topic>`). Read the target project's `.agents/work/`, first match wins:
 

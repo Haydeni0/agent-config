@@ -28,6 +28,8 @@ One ID scheme per package; IDs are never reused.
 
 First line of package `decisions.md`: `state: <value>` (lowercase, kebab).
 Absent = legacy package; consumers fall back to file-presence detection.
+A present-but-unknown or malformed state line is a defect, not a legacy
+package: consumers report it and stop; the lint names the allowed values.
 Canonical enum (single source; `scripts/check-packages.py` validates against
 the same list and a CI test asserts equality):
 
@@ -89,8 +91,8 @@ Bytes that cycle-driving skills write on artifacts and read back; their *interpr
 
 ## Legacy conversion
 
-A `.agents/plans/` directory is the pre-rename location of `.agents/work/`
-: when only it exists, treat it as the canonical package
-store and rename the directory on next touch (contents unchanged); when
+A `.agents/plans/` directory is the pre-rename location of `.agents/work/`:
+when only it exists, treat it as the canonical package store and rename the
+directory on next touch (contents unchanged); when
 both exist, reconcile before editing. A flat `<date>-<topic>-decisions.md` /
 `-spec.md` / `-plan.md` triple is a pre-package cycle. Read its shared basename as the package dir, and at the next gate convert, not just move: put the three files into `.agents/work/<basename>/` as `decisions.md` / `spec.md` / `plan.md`, renumber the legacy `## Design decisions` lines as D entries, and extract the `## Test scenarios` section into `scenarios.md`.
