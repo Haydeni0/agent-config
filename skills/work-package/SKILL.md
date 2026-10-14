@@ -21,7 +21,7 @@ Reference contract for `.agents/work/<slug>/` packages. This file is the single 
 | `<topic>.md` | optional deep-dive notes; forks found there go into `decisions.md` as Q |
 | `spec.md` | the spec produced by a cycle's spec stage; carries `Reviewed:` footer markers |
 | `plan.md` | the checkbox-tracked implementation plan; carries `Reviewed:` footer markers and the `Implemented` footer line |
-| `mailbox/` | inter-session mailbox when running sessions are linked; layout and contract owned by the agent-mailbox skill |
+| `mailbox/` | inter-session mailbox when running sessions are linked; layout and contract owned by the mailbox skill |
 
 One ID scheme per package; IDs are never reused.
 

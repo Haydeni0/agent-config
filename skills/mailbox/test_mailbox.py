@@ -1,4 +1,4 @@
-"""Subprocess tests for the agent-mailbox helper against a fake herdr on PATH.
+"""Subprocess tests for the mailbox helper against a fake herdr on PATH.
 
 The fake keeps an agent-name -> pane map in a JSON state file, applies
 renames, can be told to fail `wait` / `prompt` for a named agent with a herdr

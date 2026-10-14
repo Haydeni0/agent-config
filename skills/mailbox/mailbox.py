@@ -85,7 +85,7 @@ def mailbox_root() -> Path:
     if not (root / "README.md").is_file() or not (root / "members").is_dir():
         fail(
             f"{root} is not an initialised mailbox; call this script as <mailbox>/bin/mailbox "
-            "(create a mailbox with `mailbox.py init <dir>` from the agent-mailbox skill)"
+            "(create a mailbox with `mailbox.py init <dir>` from the mailbox skill)"
         )
     return root
 

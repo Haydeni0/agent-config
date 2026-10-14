@@ -1,10 +1,10 @@
 ---
-name: agent-mailbox
+name: mailbox
 description: Use when the user wants two or more running agent sessions (herdr panes, any harness) to talk to each other - "connect these sessions", "link these agents", "have them talk to each other", "let the planner delegate to the worker pane", "set up a mailbox". Creates a file mailbox in the work package and hands the user one connect prompt per session. Not auto-triggered - only when the user asks to link sessions.
 deps: [work-package]
 ---
 
-# agent-mailbox
+# mailbox
 
 A file mailbox linking already-running agent sessions in herdr panes. The
 payload is files, the wake is one pointer line typed by herdr, and there is
