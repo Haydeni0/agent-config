@@ -111,6 +111,12 @@ Skip any step = lying, not verifying
 ❌ Trust agent report
 ```
 
+**Draft prose claims (verifier MCP):**
+```
+✅ Tool list shows verify_claims → run draft through it → fix flagged sentences
+❌ Assume it's available, or skip it when present
+```
+
 ## When To Apply
 
 **ALWAYS before:**
