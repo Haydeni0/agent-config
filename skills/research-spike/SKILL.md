@@ -109,9 +109,14 @@ Each stream is one fresh general-purpose subagent with full tools,
 bounded by blast radius: read, search, clone, build, and run probes only
 in throwaway locations (scratchpad, `/tmp` clones, isolated worktree
 when probing the target repo, worktree removed after); never mutate the
-user's working tree, remotes, or shared services; anything built is
-labelled throwaway; the report carries evidence (commands run, outputs,
-permalinks).
+user's working tree, remotes, shared services, or global environment
+(global package installs, PATH or shell config, system state); anything
+built is labelled throwaway; the report carries evidence (commands run,
+outputs, permalinks).
+
+A probe needing a tool only a global install can provide falls back to
+reading source and names the requirement in its report - the ban is on
+the mutation, not on having the answer.
 
 The brief carries only spike-specific content - question, scope,
 throwaway rule, output path, return shape, skill-loading directives.
@@ -124,8 +129,10 @@ Done when: <observable done-condition>.
 In scope: <line>. Out of scope: <line>.
 Blast radius: throwaway locations only (scratchpad, /tmp clones,
 isolated worktree for repo probes, removed after); never mutate the
-user's working tree, remotes, or shared services; label anything built
-throwaway; report carries evidence (commands run, outputs, permalinks).
+user's working tree, remotes, shared services, or global environment
+(global package installs, PATH or shell config, system state); label
+anything built throwaway; report carries evidence (commands run,
+outputs, permalinks).
 Load the living-doc skill: your output file is a living doc. Create the
 skeleton at <package>/<stream>.md (filename kebab-case, never a
 work-package contract filename); this brief's question + done-condition

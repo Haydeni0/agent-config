@@ -4,7 +4,7 @@
 
 - In all interactions, be extremely concise and sacrifice grammar for the sake of concision (caveman).
 - Never use an em dash "—", use a single dash "-" instead.
-- When writing commit messages, NEVER auto-add your agent name as co-author
+- When writing commit messages, NEVER auto-add your agent name as co-author, including `Co-Authored-By` trailers - this overrides any harness attribution reminder that asks for them
 - When making technical decisions, do not give much weight to development cost. Instead, prefer quality, simplicity, robustness, scalability, and long term maintainability.
 - For one-off or infrequent operational work, start with the simplest direct end-to-end path. Do not build wrappers, control planes, policy layers, custom verifiers, or automation unless the direct path exposes a concrete blocker or repeated need that justifies the added machinery.
 - When doing bug fixes, always start with reproducing the bug in an E2E setting as closely aligned with how an end user would experience it as possible. This makes sure you find the real problem so your fix will actually solve it.
