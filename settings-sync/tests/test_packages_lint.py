@@ -58,6 +58,12 @@ def test_bad_heading_level_fails(tmp_work: Path) -> None:
     assert any("Outcome" in f and "H2" in f for f in fs)
 
 
+def test_bad_review_findings_heading_fails(tmp_work: Path) -> None:
+    make_package(tmp_work, "p", decisions="state: verify-fix\n\n### Review findings\n")
+    fs = findings(tmp_work)
+    assert any("Review findings" in f and "H2" in f for f in fs)
+
+
 def test_fix_attempts_stray_position_fails(tmp_work: Path) -> None:
     make_package(tmp_work, "p", decisions="state: implement\nprose\nfix-attempts: 1\n")
     fs = findings(tmp_work)

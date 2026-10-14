@@ -17,7 +17,7 @@ Reference contract for `.agents/work/<slug>/` packages. This file is the single 
 | `context.md` | inputs gathered (sources, facts, prior art) - not decisions |
 | `scenarios.md` | test scenarios, when a test plan is made |
 | `requirements.md` | R entries |
-| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome` and `## Review nits` |
+| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome`, `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), and `## Review nits` |
 | `<topic>.md` | optional deep-dive notes; forks found there go into `decisions.md` as Q |
 | `spec.md` | the spec produced by a cycle's spec stage; carries `Reviewed:` footer markers |
 | `plan.md` | the checkbox-tracked implementation plan; carries `Reviewed:` footer markers and the `Implemented` footer line |
@@ -85,11 +85,12 @@ Bytes that cycle-driving skills write on artifacts and read back; their *interpr
 - `Implemented` - appended to a plan footer when implementation completes.
 - `## Outcome` - section in `decisions.md` recording the confirmed outcome at the launch gate.
 - `## Review nits` - section in `decisions.md` where LOW review findings live.
+- `## Review findings` - section in `decisions.md` where the code-review stage files its scored findings before writing `state: verify-fix`; the verify-fix stage triages from this copy and appends each finding's disposition.
 
 ## Legacy conversion
 
 A `.agents/plans/` directory is the pre-rename location of `.agents/work/`
-(pre-2026-10-14): when only it exists, treat it as the canonical package
+: when only it exists, treat it as the canonical package
 store and rename the directory on next touch (contents unchanged); when
 both exist, reconcile before editing. A flat `<date>-<topic>-decisions.md` /
 `-spec.md` / `-plan.md` triple is a pre-package cycle. Read its shared basename as the package dir, and at the next gate convert, not just move: put the three files into `.agents/work/<basename>/` as `decisions.md` / `spec.md` / `plan.md`, renumber the legacy `## Design decisions` lines as D entries, and extract the `## Test scenarios` section into `scenarios.md`.

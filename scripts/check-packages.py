@@ -3,14 +3,17 @@ and position (REQ-SKILLS-14). Reads, never writes. Fail-closed: malformed
 input is a finding, never a silent pass.
 
 The repo's own .agents/work/ is machine-local (gitignored): a fresh CI
-clone has no packages and this is a no-op there - the CI verification is
-the unit tests; this run is the local gate. Pass --path <dir> to lint
-another repo's package store."""
+clone has no packages and the default run is a no-op there - the CI
+verification is the unit tests; this run is the local gate. An explicit
+path argument is validated fail-closed: a missing dir is an error, never
+a silent zero-finding pass."""
 
 import importlib.util
 import re
-import sys
 from pathlib import Path
+from typing import Annotated
+
+import typer
 
 STATE_RE = re.compile(r"^state: ([a-z0-9-]+)$")
 FIX_RE = re.compile(r"^fix-attempts: (\d+)$")
@@ -64,7 +67,7 @@ def lint_decisions(text: str, rel: str) -> list[str]:
             findings.append(f"{rel}: fix-attempts required in debug state {state!r}")
     elif fix is not None:
         findings.append(f"{rel}: fix-attempts forbidden without a debug state (state: {state or 'no state line'})")
-    for heading in ("## Outcome", "## Review nits"):
+    for heading in ("## Outcome", "## Review findings", "## Review nits"):
         base = heading[3:]
         for line in lines:
             s = line.rstrip()
@@ -138,18 +141,23 @@ def lint_all(work_dir: Path) -> list[str]:
     return findings
 
 
-def main() -> int:
-    args = sys.argv[1:]
-    if "--path" in args:
-        work_dir = Path(args[args.index("--path") + 1])
-    else:
-        work_dir = Path(__file__).resolve().parent.parent / ".agents" / "work"
+app = typer.Typer()
+
+
+@app.command()
+def main(
+    path: Annotated[
+        Path | None,
+        typer.Argument(exists=True, file_okay=False, help="Package store to lint; defaults to this repo's .agents/work/"),
+    ] = None,
+) -> None:
+    work_dir = path if path is not None else Path(__file__).resolve().parent.parent / ".agents" / "work"
     findings = lint_all(work_dir)
     for f in findings:
         print(f"check-packages: {f}")
     print(f"check-packages: {len(findings)} findings")
-    return 1 if findings else 0
+    raise typer.Exit(1 if findings else 0)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

@@ -4,6 +4,7 @@ layer: worker
 description: >
   Use when the user asks to debug a stubborn or non-obvious bug - one that resisted a first fix attempt, or where the root cause is unclear. Enforces reproduce-first, root-cause-before-fix discipline. Not auto-triggered: never invoke for trivial obvious bugs unless the user asks for systematic debugging.
 deps: [tdd-core, verification-before-completion, work-package]
+exits: ['decisions.md D/X entries', 'state: resolved']
 forked-from: superpowers@claude-plugins-official v6.3.0 (systematic-debugging)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
