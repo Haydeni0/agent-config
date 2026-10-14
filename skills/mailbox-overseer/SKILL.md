@@ -49,13 +49,17 @@ without any of them touching the expensive context.
 
 ## Working loop
 
-- **Brief**: one `mailbox send` per mission-sized brief - goal, context
-  by path (package files the worker should read), constraints, and what
-  to report back. The worker decomposes each brief into its own units; do
-  not dispatch at unit granularity. Batch small related items into one
-  brief. The first brief front-loads standing answers (scope,
-  conventions, git gates - anything the worker's grill would ask) so
-  questions do not become mailbox ping-pong.
+- **Brief**: one `mailbox send` per brief - goal, context by path
+  (package files the worker should read), constraints, and what to
+  report back. Size each brief as large as stays one coherent
+  instruction with no follow-up questions; a small task earns a small
+  brief. What to avoid is per-unit dispatch and question ping-pong -
+  every message costs the worker a model turn. The first brief
+  front-loads standing answers (scope, conventions, git gates -
+  anything the worker's grill would ask).
+- **Status**: read the worker's state from its files - the orchestrator
+  ledger, package artifacts - never send a message to ask how work is
+  going. Messages are for decisions and briefs; files carry status.
 - **In-flight work**: if something is already running from your session
   when this pattern starts, hand it over in the brief: how to find the
   process (its command line or a pgrep pattern), where its output lands,
