@@ -20,7 +20,8 @@ from scenarios import SCENARIO_IDS
 from summarize import aggregate, load_runs, render
 
 app = typer.Typer(no_args_is_help=True)
-HARD_CHECKS = ("mcp.launch", "no-mcp.launch", "rule", "skill", "mcp.connected", "no-mcp.tool_absent", "native.unchanged")
+HARD_CHECKS = ("mcp.launch", "no-mcp.launch", "rule", "skill", "mcp.connected", "no-mcp.tool_absent",
+               "native.unchanged", "native.isolated")
 
 
 @app.command()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -75,10 +76,27 @@ def _entry(path: Path) -> str:
     return "missing"
 
 
-def native_snapshot(claude_dir: Path, claude_json: Path) -> dict[str, str]:
-    snap = {name: _entry(claude_dir / name) for name in SYNC_OWNED}
-    snap[".claude.json"] = _entry(claude_json)
-    return snap
+def native_snapshot(claude_dir: Path) -> dict[str, str]:
+    return {name: _entry(claude_dir / name) for name in SYNC_OWNED}
+
+
+def project_slug(p: Path | str) -> str:
+    return re.sub(r"[^A-Za-z0-9]", "-", str(p))
+
+
+def isolation_evidence(arm_home: Path, native_dir: Path, native_json: Path, scratch: Path,
+                       workspaces: list[Path]) -> dict[str, bool]:
+    return {
+        "arm_projects": all((arm_home / "projects" / project_slug(ws)).is_dir() for ws in workspaces),
+        "native_projects_absent":
+            all(not (native_dir / "projects" / project_slug(ws)).exists() for ws in workspaces),
+        "native_json_clean": str(scratch) not in native_json.read_text(),
+    }
+
+
+def rule_answers(text: str) -> set[str]:
+    stripped = text.replace("**", "").replace("*", "").replace("`", "").upper()
+    return set(re.findall(r"\bRULE\b\W{0,5}(YES|NO)\b", stripped))
 
 
 @dataclass(slots=True, frozen=True)
@@ -125,9 +143,11 @@ PROBE_PROMPT = (
 
 def probe(launcher: Path, home: Path, scratch: Path) -> ProbeResult:
     claude_dir, claude_json = Path.home() / ".claude", Path.home() / ".claude.json"
-    before = native_snapshot(claude_dir, claude_json)
+    workspaces = [scratch / f"probe-{cond}" for cond in (Condition.MCP, Condition.NO_MCP)]
+    before = native_snapshot(claude_dir)
     checks: dict[str, bool] = {}
     details: dict[str, str] = {}
+    final_texts: list[str] = []
     for cond in (Condition.MCP, Condition.NO_MCP):
         ws = scratch / f"probe-{cond}"
         ws.mkdir(parents=True, exist_ok=True)
@@ -140,9 +160,9 @@ def probe(launcher: Path, home: Path, scratch: Path) -> ProbeResult:
             continue
         checks[f"{cond}.launch"] = True
         text = t.final_text
+        final_texts.append(text)
         details[f"{cond}.final"] = text[-2000:]
         if cond is Condition.MCP:
-            checks["rule"] = "RULE: NO" in text.upper().replace("**", "")
             checks["skill"] = any(u.name == "Skill" and "work-package" in str(u.input) for u in t.tool_uses) \
                 and "# work-package" in text
             checks["subagent"] = any(u.name in ("Agent", "Task") for u in t.tool_uses) \
@@ -150,13 +170,21 @@ def probe(launcher: Path, home: Path, scratch: Path) -> ProbeResult:
             checks["mcp.connected"] = t.mcp_servers.get("verifier") == "connected"
         else:
             checks["no-mcp.tool_absent"] = VERIFIER_TOOL not in t.tools
-    after = native_snapshot(claude_dir, claude_json)
+    answers: set[str] = set()
+    for text in final_texts:
+        answers |= rule_answers(text)
+    checks["rule"] = "NO" in answers and "YES" not in answers
+    after = native_snapshot(claude_dir)
     if after != before:
         time.sleep(NATIVE_RETRY_S)
-        after = native_snapshot(claude_dir, claude_json)
+        after = native_snapshot(claude_dir)
     changed = sorted(k for k in before if before[k] != after.get(k))
     details["native.changed"] = ",".join(changed)
     checks["native.unchanged"] = not changed
+    evidence = isolation_evidence(home, claude_dir, claude_json, scratch, workspaces)
+    checks["native.isolated"] = all(evidence.values())
+    for name, value in evidence.items():
+        details[f"native.{name}"] = str(value)
     return ProbeResult(checks, details)
 
 
