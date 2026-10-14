@@ -164,7 +164,7 @@ flowchart LR
     %% jupyter_to_marimo[jupyter-to-marimo]
     %% kubectl[kubectl]
     %% lavish[lavish]
-    %% librarian[librarian]
+    librarian[librarian]
     linear_agent_update[linear-agent-update]
     living_doc[living-doc]
     m_pair[m-pair]
@@ -182,6 +182,7 @@ flowchart LR
     %% python_notebook[python-notebook]
     reflect[reflect]
     repo_agent_setup[repo-agent-setup]
+    research_spike[research-spike]
     %% stack_pr[stack-pr]
     systematic_debugging[systematic-debugging]
     task_brainstorm[task-brainstorm]
@@ -232,6 +233,9 @@ flowchart LR
     reflect --> writing_skills
     repo_agent_setup --> grill_me
     repo_agent_setup --> backlog
+    research_spike --> librarian
+    research_spike --> living_doc
+    research_spike --> work_package
     systematic_debugging --> tdd_core
     systematic_debugging --> verification_before_completion
     systematic_debugging --> work_package
