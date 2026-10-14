@@ -77,9 +77,11 @@ Every span you submit is a verbatim quote, never a paraphrase.
   the quote.
 - Computation: the span is a verbatim excerpt of the output. Save the
   script under the script directory matching your log file (the log path
-  minus its `.md`), and record in the log the exact command, package
-  versions, input source and content hash, and the seed. Scripts are
-  deterministic - fixed seeds - so the audit can re-run them.
+  minus its `.md`), and record in the log the exact command, the exact
+  package versions (printed by the script itself, e.g.
+  `numpy.__version__`, into the captured output), input source and
+  content hash, and the seed. Scripts are deterministic - fixed seeds -
+  so the audit can re-run them.
 - Existence: the span is a quote from the found artifact's page, with its
   URL.
 
