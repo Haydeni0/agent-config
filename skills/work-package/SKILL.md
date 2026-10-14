@@ -33,7 +33,7 @@ package: consumers report it and stop; the lint names the allowed values.
 Canonical enum (defined in `scripts/package_states.py`, mirrored here;
 the lint validates against the same list and a CI test asserts equality):
 
-state: grill | test-plan | spec | plan | implement | code-review | verify-fix | complete | root-cause | pattern-analysis | hypothesis | implementation | resolved
+state: grill | test-plan | spec | plan | implement | code-review | verify-fix | complete | research | root-cause | pattern-analysis | hypothesis | implementation | resolved
 
 Dev-pipeline stages: grill, test-plan, spec, plan, implement,
 code-review, verify-fix, complete. Debug-cycle phases

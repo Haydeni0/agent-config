@@ -107,6 +107,11 @@ def test_fix_attempts_required_in_debug_state(lint: types.ModuleType, tmp_work: 
     assert any("fix-attempts" in f and "required" in f for f in fs)
 
 
+def test_research_state_passes(lint: types.ModuleType, tmp_work: Path) -> None:
+    make_package(tmp_work, "p", decisions="state: research\n\n# D\n")
+    assert findings(lint, tmp_work) == []
+
+
 def test_fix_attempts_bad_syntax_fails(lint: types.ModuleType, tmp_work: Path) -> None:
     make_package(tmp_work, "p", decisions="state: hypothesis\nfix-attempts: two\n\n# D\n")
     fs = findings(lint, tmp_work)

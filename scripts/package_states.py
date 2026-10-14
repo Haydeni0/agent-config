@@ -11,7 +11,8 @@ DEV_CYCLE_STATES = {
 DEBUG_STATES = {
     "root-cause", "pattern-analysis", "hypothesis", "implementation", "resolved",
 }
-ALL_STATES = DEV_CYCLE_STATES | DEBUG_STATES
+RESEARCH_STATES = {"research"}
+ALL_STATES = DEV_CYCLE_STATES | DEBUG_STATES | RESEARCH_STATES
 CONTRACT_FILES = (
     "context.md", "scenarios.md", "requirements.md", "decisions.md", "spec.md", "plan.md",
 )
