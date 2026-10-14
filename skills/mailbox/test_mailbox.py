@@ -267,6 +267,38 @@ def wake_line(mesh: Mesh, name: str) -> str:
     return f": mail waiting in {mesh.root}/inboxes/{name}/ - follow {mesh.root}/README.md"
 
 
+def worker_has_a_request_and_a_reply(mesh: Mesh) -> None:
+    """Leave worker's inbox holding planner.001-review-api.msg and planner.001-ask.reply - both <planner, 001>."""
+    for args, pane, body in (
+        (("send", "review-api", "worker"), PLANNER_PANE, "review it\n"),
+        (("send", "ask", "planner"), WORKER_PANE, "which api?\n"),
+        (("reply", "001-ask", "worker"), PLANNER_PANE, "here is the answer\n"),
+    ):
+        result = mesh.run(*args, "--no-ring", pane=pane, stdin=body)
+        assert result.returncode == 0, result.stderr
+    mesh.herdr.clear_log()
+
+
+def test_inbox_lists_unread_mail_with_citable_ids_and_takes_nothing(mesh: Mesh) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+
+    result = mesh.run("inbox", pane=WORKER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "001-review-api  from planner  msg" in result.stdout
+    assert "001-ask  from planner  reply" in result.stdout
+    unread = {p.name for p in mesh.inbox("worker").iterdir() if p.is_file()}
+    assert unread == {"planner.001-review-api.msg", "planner.001-ask.reply"}
+    assert mesh.herdr.calls() == []
+
+
+def test_inbox_with_nothing_unread_says_so_and_exits_zero(mesh: Mesh) -> None:
+    result = mesh.run("inbox", pane=WORKER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "no unread mail"
+
+
 def test_send_writes_request_named_by_sender_seq_and_slug(mesh: Mesh) -> None:
     result = mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
 

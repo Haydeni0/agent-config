@@ -29,6 +29,11 @@ import typer
 # `.` separates filename fields, so names and slugs must never contain one
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ID_RE = re.compile(r"^\d{3,}-[a-z0-9]+(-[a-z0-9]+)*$")
+# `<from>.<seq>-<slug>.<kind>`; groups mirror NAME_RE
+MESSAGE_RE = re.compile(
+    r"^(?P<sender>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<seq>\d+)-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<kind>msg|reply)$"
+)
+NO_MAIL = "no unread mail"
 # zero-padded so `ls` lists one sender's requests in send order
 SEQ_WIDTH = 3
 # long enough to catch a turn that is finishing, short enough not to stall the
@@ -180,6 +185,53 @@ class Kind(StrEnum):
     REPLY = "reply"
 
 
+@dataclass(frozen=True, slots=True)
+class Message:
+    path: Path
+    sender: str
+    seq: int
+    slug: str
+    msg_id: str  # `<seq>-<slug>` exactly as in the filename, zero padding kept
+    kind: Kind
+
+
+def parse_message(path: Path) -> Message | None:
+    """The message PATH names, or None when the file is not a mailbox message."""
+    match = MESSAGE_RE.fullmatch(path.name)
+    if match is None:
+        return None
+    return Message(
+        path=path,
+        sender=match["sender"],
+        seq=int(match["seq"]),
+        slug=match["slug"],
+        msg_id=f"{match['seq']}-{match['slug']}",
+        kind=Kind(match["kind"]),
+    )
+
+
+def messages_in(directory: Path, *, strict: bool = True) -> list[Message]:
+    """Messages directly in DIRECTORY in `ls` order; `.`-prefixed in-flight writes are skipped.
+
+    Strict (inbox, take): a foreign file is a loud failure. Lenient (status):
+    one member's stray file must not hide every member's counts."""
+    messages = []
+    for path in sorted(directory.iterdir()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        message = parse_message(path)
+        if message is None:
+            if strict:
+                fail(f"{path} is not a mailbox message (<from>.<seq>-<slug>.msg|reply); move it out of the inbox")
+            continue
+        messages.append(message)
+    return messages
+
+
+def describe(message: Message) -> str:
+    return f"{message.msg_id}  from {message.sender}  {message.kind}  {message.path.stat().st_size} B"
+
+
 class RingOutcome(StrEnum):
     RUNG = "rung"
     BUSY = "rung while busy: recipient was mid-turn; the line queues in its input until it reads it"
@@ -328,6 +380,18 @@ def reply(msg_id: Annotated[str, typer.Argument(metavar="ID")], to: str, ring_no
     check_members(root, [to])
     sender = own_name(root)
     deliver(root, sender, msg_id, Kind.REPLY, [to], ring_now)
+
+
+@app.command()
+def inbox() -> None:
+    """List your unread mail without taking it."""
+    root = mailbox_root()
+    unread = messages_in(root / "inboxes" / own_name(root))
+    if not unread:
+        typer.echo(NO_MAIL)
+        return
+    for message in unread:
+        typer.echo(describe(message))
 
 
 if __name__ == "__main__":
