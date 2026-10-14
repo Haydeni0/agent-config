@@ -29,7 +29,14 @@ import typer
 
 # `.` separates filename fields, so names and slugs must never contain one
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-ID_RE = re.compile(r"^\d{3,}-[a-z0-9]+(-[a-z0-9]+)*$")
+# what agents type for a request: `7`, `007`, `007-review-api`, or its (prefixed) filename
+REQUEST_REF_RE = re.compile(
+    r"^(?:[a-z0-9]+(?:-[a-z0-9]+)*\.)?(?P<seq>\d+)(?:-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*))?(?:\.msg)?$"
+)
+ONE_REPLY_PER_REQUEST = (
+    "one reply per request id - for a second report, send a new message whose slug references the request id, "
+    "with a delta body, not a duplicate"
+)
 # `<from>.<seq>-<slug>.<kind>`; groups mirror NAME_RE
 MESSAGE_RE = re.compile(
     r"^(?P<sender>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<seq>\d+)-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<kind>msg|reply)$"
@@ -306,7 +313,8 @@ def write_messages(root: Path, sender: str, msg_id: str, kind: Kind, body: str, 
     paths = {name: root / "inboxes" / name / f"{sender}.{msg_id}.{kind}" for name in recipients}
     taken = [str(p) for p in paths.values() if p.exists() or (p.parent / "handled" / p.name).exists()]
     if taken:
-        fail(f"refusing to overwrite existing message files: {taken}")
+        hint = f"; {ONE_REPLY_PER_REQUEST}" if kind is Kind.REPLY else ""
+        fail(f"refusing to overwrite existing message files: {taken}{hint}")
     for path in paths.values():
         write_atomic(path, body)
     return paths
@@ -386,15 +394,42 @@ def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
     deliver(root, sender, msg_id, Kind.MSG, to, ring_now)
 
 
+def resolve_request(root: Path, me: str, ref: str, sender: str) -> Message:
+    """The request REF from SENDER, unread or handled, in ME's inbox."""
+    match = REQUEST_REF_RE.fullmatch(Path(ref).name)
+    if match is None:
+        fail(f"id {ref!r} must be the request's seq (7), id (007-review-api) or filename")
+    seq, slug = int(match["seq"]), match["slug"]
+    box = root / "inboxes" / me
+    # requests only: a `.reply` carries the replier's name with *your* seq, so it can share <sender, seq> with one
+    requests = [m for d in (box, box / "handled") for m in messages_in(d) if m.kind is Kind.MSG]
+    same_seq = [m for m in requests if m.seq == seq]
+    found = [m for m in same_seq if m.sender == sender and slug in (None, m.slug)]
+    if len(found) == 1:
+        return found[0]
+    if found:
+        fail(f"id {ref!r} matches several requests from {sender!r}: {[m.path.name for m in found]}")
+    if same_seq:
+        listing = ", ".join(f"{m.path.name} (from {m.sender})" for m in same_seq)
+        fail(f"no request {ref!r} from {sender!r}; requests with seq {seq}: {listing} - reply to the name before the first '.'")
+    from_sender = [m.msg_id for m in requests if m.sender == sender]
+    fail(f"no request with seq {seq} in your inbox or handled/; requests from {sender!r}: {from_sender or 'none'}")
+
+
 @app.command()
-def reply(msg_id: Annotated[str, typer.Argument(metavar="ID")], to: str, ring_now: RingFlag = True) -> None:
+def reply(
+    ref: Annotated[str, typer.Argument(metavar="ID", help="The request's seq (7), id (007-review-api) or filename")],
+    to: str,
+    ring_now: RingFlag = True,
+) -> None:
     """Reply (body on stdin) to request ID from member TO."""
     root = mailbox_root()
-    if not ID_RE.fullmatch(msg_id):
-        fail(f"id {msg_id!r} must look like 007-review-api (<seq>-<slug> from the request filename)")
     check_members(root, [to])
     sender = own_name(root)
-    deliver(root, sender, msg_id, Kind.REPLY, [to], ring_now)
+    if to == sender:
+        fail(f"you are {sender!r}; address the reply to the request's sender - the name before the first '.' in its filename")
+    request = resolve_request(root, sender, ref, to)
+    deliver(root, sender, request.msg_id, Kind.REPLY, [to], ring_now)
 
 
 @app.command()

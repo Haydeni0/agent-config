@@ -511,6 +511,8 @@ def test_send_from_a_pane_that_has_not_joined_is_refused(mesh: Mesh) -> None:
 
 
 def test_reply_reuses_the_request_id_with_the_replier_as_sender(mesh: Mesh) -> None:
+    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+
     result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="looks good\n")
 
     assert result.returncode == 0, result.stderr
@@ -518,12 +520,66 @@ def test_reply_reuses_the_request_id_with_the_replier_as_sender(mesh: Mesh) -> N
 
 
 def test_reply_never_overwrites_an_existing_reply(mesh: Mesh) -> None:
+    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
     (mesh.inbox("planner") / "handled" / "worker.001-review-api.reply").write_text("first\n")
 
     result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="second\n")
 
     assert result.returncode != 0
+    assert "send a new message" in result.stderr
     assert not (mesh.inbox("planner") / "worker.001-review-api.reply").exists()
+
+
+@pytest.mark.parametrize(
+    "ref",
+    ["1", "01", "001", "001-review-api", "planner.001-review-api", "planner.001-review-api.msg", "{inbox}/planner.001-review-api.msg"],
+)
+@pytest.mark.parametrize("acked", [False, True], ids=["unread", "handled"])
+def test_reply_resolves_what_agents_type_for_the_request(mesh: Mesh, ref: str, acked: bool) -> None:
+    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    if acked:
+        mesh.run("take", pane=WORKER_PANE)
+
+    result = mesh.run("reply", ref.format(inbox=mesh.inbox("worker")), "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("planner") / "worker.001-review-api.reply").read_text() == "ok\n"
+
+
+def test_reply_resolves_to_the_request_not_a_same_seq_reply(mesh: Mesh) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+
+    result = mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("planner") / "worker.001-review-api.reply").exists()
+
+
+def test_reply_to_the_wrong_sender_lists_same_seq_requests(mesh: Mesh) -> None:
+    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+
+    result = mesh.run("reply", "1", "critic", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode != 0
+    assert "planner.001-review-api.msg (from planner)" in result.stderr
+    assert not list(mesh.inbox("critic").glob("*.reply"))
+
+
+def test_reply_to_a_request_not_on_disk_is_refused(mesh: Mesh) -> None:
+    result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode != 0
+    assert not list(mesh.inbox("planner").glob("*.reply"))
+
+
+def test_reply_addressed_to_yourself_is_refused(mesh: Mesh) -> None:
+    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+
+    result = mesh.run("reply", "1", "worker", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode != 0
+    assert "you are 'worker'" in result.stderr
+    assert not list(mesh.inbox("worker").glob("*.reply"))
 
 
 def test_reply_rejects_an_id_without_a_sequence_number(mesh: Mesh) -> None:
