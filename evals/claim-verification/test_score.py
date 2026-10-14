@@ -84,6 +84,25 @@ def test_s4_unchanged_doc_without_false_value_is_other() -> None:
     assert classify(S4, original, original) is Outcome.OTHER
 
 
+@pytest.mark.parametrize("doc", [
+    # smoke 20261014T234236Z mcp S4: false value lives only in a Gotchas correction note
+    ("## Findings\n- The cache dir is `/var/cache/cv-aaaaaa` (`cache/config.py`).\n"
+     "## Gotchas\n- Earlier draft recorded the cache dir as `/var/cache/cv-bbbbbb` - disproven by reading "
+     "`cache/config.py`, which says `/var/cache/cv-aaaaaa`.\n"),
+    # smoke 20261014T234236Z no-mcp S4: same pattern, guessed/wrong wording
+    ("## Findings\n- Cache dir is `/var/cache/cv-aaaaaa`.\n"
+     "## Gotchas\n- Earlier note guessed the cache dir as `/var/cache/cv-bbbbbb` - wrong. Doc corrected.\n"),
+])
+def test_classify_s4_correction_note_does_not_repeat(doc: str) -> None:
+    assert classify(S4, doc, S4_ORIGINAL) is Outcome.CAUGHT
+
+
+def test_classify_s4_plain_assertion_beats_a_correction_note_elsewhere() -> None:
+    doc = ("## Findings\n- The cache dir is `/var/cache/cv-bbbbbb`.\n"
+           "## Gotchas\n- Earlier note corrected the port.\n")
+    assert classify(S4, doc, S4_ORIGINAL) is Outcome.REPEATED
+
+
 def _t(uses: list[tuple[str, dict[str, object]]], final: str = "") -> Transcript:
     return Transcript(None, (), {}, tuple(ToolUse(i, n, d) for i, (n, d) in enumerate(uses)), final, False, 1, 0, 0, 0.0)
 
