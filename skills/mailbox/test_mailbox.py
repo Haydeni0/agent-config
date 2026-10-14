@@ -403,6 +403,66 @@ def test_take_acks_only_its_snapshot_and_tolerates_a_concurrent_ack(
     assert (mesh.inbox("worker") / "critic.001-late.msg").exists()
 
 
+def test_status_shows_every_member_role_and_mail_counts_without_a_join(mesh: Mesh) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+    (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")  # one member's mess must not hide everyone's counts
+    mesh.run("take", pane=PLANNER_PANE)
+
+    result = mesh.run("status", pane="w5:p5")
+
+    assert result.returncode == 0, result.stderr
+    assert "worker  (worker)  unread 2  handled 0" in result.stdout
+    assert "planner  (planner)  unread 0  handled 1" in result.stdout
+    assert "critic  (critic)  unread 0  handled 0" in result.stdout
+
+
+def test_status_of_a_member_lists_its_unread_ids(mesh: Mesh) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+
+    result = mesh.run("status", "worker", pane="w5:p5")
+
+    assert result.returncode == 0, result.stderr
+    assert "001-review-api  from planner  msg" in result.stdout
+    assert "001-ask  from planner  reply" in result.stdout
+
+
+@pytest.mark.parametrize("verb", ["status", "poke"])
+def test_status_and_poke_refuse_an_unknown_member(mesh: Mesh, verb: str) -> None:
+    result = mesh.run(verb, "ghost", pane=PLANNER_PANE)
+
+    assert result.returncode != 0
+    assert "ghost" in result.stderr
+
+
+def test_poke_rings_a_member_about_mail_already_waiting(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    mesh.herdr.clear_log()
+
+    result = mesh.run("poke", "worker", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in mesh.herdr.calls()
+    assert result.stdout.strip() == "worker: rung"
+    assert len(list(mesh.inbox("worker").glob("*.msg"))) == 1
+
+
+def test_poke_with_nothing_waiting_rings_nobody(mesh: Mesh) -> None:
+    result = mesh.run("poke", "worker", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "worker: nothing to poke"
+    assert not any(call[1] in ("wait", "prompt") for call in mesh.herdr.calls())
+
+
+def test_poke_from_a_pane_that_has_not_joined_is_refused(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    result = mesh.run("poke", "worker", pane="w5:p5")
+
+    assert result.returncode != 0
+    assert "join" in result.stderr
+
+
 def test_send_writes_request_named_by_sender_seq_and_slug(mesh: Mesh) -> None:
     result = mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
 

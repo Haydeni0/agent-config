@@ -432,5 +432,40 @@ def take() -> None:
             message.path.rename(box / "handled" / message.path.name)
 
 
+@app.command()
+def status(member: Annotated[str | None, typer.Argument(help="Show only this member's unread ids")] = None) -> None:
+    """Every member's role and unread/handled counts, or one member's unread ids. Needs no join."""
+    root = mailbox_root()
+    if member is not None:
+        check_members(root, [member])
+        unread = messages_in(root / "inboxes" / member)
+        if not unread:
+            typer.echo(f"{member}: {NO_MAIL}")
+        for message in unread:
+            typer.echo(describe(message))
+        return
+    for m in members(root):
+        box = root / "inboxes" / m.name
+        # lenient: one member's stray file must not hide every member's counts
+        typer.echo(f"{m.name}  ({m.role})  unread {len(messages_in(box, strict=False))}  handled {len(messages_in(box / 'handled', strict=False))}")
+
+
+@app.command()
+def poke(member: str) -> None:
+    """Ring MEMBER again about mail already waiting in its inbox."""
+    root = mailbox_root()
+    check_members(root, [member])
+    own_name(root)  # poking is acting in the mesh, so only members may
+    if not messages_in(root / "inboxes" / member):
+        # a wake line with nothing behind it trains members to ignore wake lines
+        typer.echo(f"{member}: nothing to poke")
+        return
+    try:
+        outcome = ring(root, member)
+    except HerdrError as exc:
+        fail(f"{member}: ring failed: {exc}")
+    typer.echo(f"{member}: {outcome}")
+
+
 if __name__ == "__main__":
     app()
