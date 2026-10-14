@@ -100,7 +100,6 @@ flowchart LR
     %% fetch_paper[fetch-paper]
     grill_me[grill-me]
     %% handoff[handoff]
-    %% headless_chromium_rootless_libs[headless-chromium-rootless-libs]
     %% herdr[herdr]
     %% jupyter_to_marimo[jupyter-to-marimo]
     %% kubectl[kubectl]
@@ -220,7 +219,6 @@ FC = format contract (passive on-disk format knowledge) | EL = elicitation | DIS
 | fetch-paper | EXE | fetch + convert + verify |
 | grill-me | EL | one fork at a time, decision log |
 | handoff | CAP | compaction for next session |
-| headless-chromium-rootless-libs | ref | troubleshooting runbook |
 | herdr | ref | terminal multiplexer control |
 | jupyter-to-marimo | EXE | vendored |
 | kubectl | ref + DIS | read-only contract, mutation verbs blocked |

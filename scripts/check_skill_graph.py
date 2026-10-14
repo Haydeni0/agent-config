@@ -2,11 +2,14 @@
 when the committed graph is stale (REQ-SKILLS-11 verification).
 
 `deps:` validity (unknown names, self-references, worker->orchestrator) is
-check-skills.py's job; this script generates, compares, and warns. Testable
-entry points take (skills_dir, ...); main() resolves the repo root via __file__.
+check-skills.py's job; this script generates, compares, and warns. Gitignored
+(machine-local) skills are excluded: a fresh CI clone lacks them, so any node
+for one would gate as stale. Testable entry points take (skills_dir, ...);
+main() resolves the repo root via __file__.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -89,11 +92,32 @@ def compare_block(readme_text: str, generated: str) -> list[str]:
     return diffs
 
 
+def gitignored_skills(repo_root: Path) -> set[str]:
+    """Skill names under skills/ that git excludes: machine-local skills never
+    appear in the committed README map (a fresh CI clone lacks them, so every
+    such node would gate as stale)."""
+    proc = subprocess.run(
+        ["git", "check-ignore", "--stdin", "--"],
+        input="".join(
+            f"skills/{p.parent.name}/SKILL.md\n"
+            # vendored skill dirs are symlinks: a pathspec through one makes
+            # check-ignore abort entirely, so they never enter the input
+            for p in (repo_root / "skills").glob("*/SKILL.md")
+            if not p.parent.is_symlink()
+        ),
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,  # exit 1 = nothing ignored; 128 outside a repo is main()'s caller's bug
+    )
+    return {Path(line).parts[1] for line in proc.stdout.splitlines()}
+
+
 def warn_lint(skills_dir: Path, skills: dict[str, dict]) -> list[str]:
     warnings: list[str] = []
     names = sorted(skills)
-    for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
-        name = skill_md.parent.name
+    for name in names:
+        skill_md = skills_dir / name / "SKILL.md"
         if skill_md.parent.is_symlink():
             continue  # vendored: never edited, never linted
         deps = set(skills[name].get("deps") or [])
@@ -131,7 +155,12 @@ def splice_block(readme_text: str, block: str) -> str:
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
-    skills = load_skills(repo_root / "skills")
+    ignored = gitignored_skills(repo_root)
+    skills = {
+        name: frontmatter
+        for name, frontmatter in load_skills(repo_root / "skills").items()
+        if name not in ignored
+    }
     generated = generate_graph(skills)
     readme = repo_root / "README.md"
     readme_text = readme.read_text()

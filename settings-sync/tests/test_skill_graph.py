@@ -1,6 +1,7 @@
 """Tests for scripts/check_skill_graph.py (S1, S4, S5, S11)."""
 
 import importlib.util
+import subprocess
 import types
 from pathlib import Path
 
@@ -122,3 +123,21 @@ def test_s4_warn_lint_hyphen_sibling_no_false_positive(graph_module: types.Modul
     make_skill(skills, "writer", body="load the tdd-core skill", deps=["tdd-core"])
     warnings = graph_module.warn_lint(skills, graph_module.load_skills(skills))
     assert not any("writer" in w for w in warnings)
+
+
+def test_s11_gitignored_skills_excluded(graph_module: types.ModuleType, tmp_path: Path) -> None:
+    # machine-local skill is gitignored: it must not become a node that a
+    # fresh CI clone (without the skill) gates as stale
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    skills = tmp_path / "skills"
+    make_skill(skills, "alpha")
+    make_skill(skills, "local-only")
+    (tmp_path / ".gitignore").write_text("skills/local-only/\n")
+    assert graph_module.gitignored_skills(tmp_path) == {"local-only"}
+    loaded = {
+        name: fm
+        for name, fm in graph_module.load_skills(skills).items()
+        if name not in {"local-only"}
+    }
+    generated = graph_module.generate_graph(loaded)
+    assert "local_only" not in generated

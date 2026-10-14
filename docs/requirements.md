@@ -52,7 +52,7 @@ into the machine-local, gitignored `.agents/backlog.md`.
 | REQ-SKILLS-08 | A skill writing cycle-state artifacts uses the `.agents/plans/<slug>/` package layout. | manual (grep `decisions.md\|## Outcome` in `skills/`) |
 | REQ-SKILLS-09 | Skills that persist artifacts or must not fire unprompted declare it in their description ("Not auto-triggered" / "Invoke only via ..."). | manual (grep `Not auto-triggered` and review new skills' descriptions) |
 | REQ-SKILLS-10 | Cross-skill dependencies are declared data: a skill's strong dependencies (directives to load/invoke/run another skill) live in its `deps:` frontmatter; entries name existing skills, never self, and a `layer: worker` skill never declares an `layer: orchestrator` skill. | `scripts/check-skills.py` (CI) |
-| REQ-SKILLS-11 | The README skill map's mermaid graph is generated from `deps:` frontmatter; verify.sh fails when the committed graph differs from the generated one, and a warn-only lint flags body directives missing from `deps:` without blocking. | `scripts/check_skill_graph.py` (CI); `settings-sync/tests/test_skill_graph.py` |
+| REQ-SKILLS-11 | The README skill map's mermaid graph is generated from `deps:` frontmatter of tracked skills only - gitignored (machine-local) skills are excluded, so a fresh clone generates the same graph; verify.sh fails when the committed graph differs from the generated one, and a warn-only lint flags body directives missing from `deps:` without blocking. | `scripts/check_skill_graph.py` (CI); `settings-sync/tests/test_skill_graph.py` (incl. `test_s11_gitignored_skills_excluded`) |
 
 ## Hooks - guards and safety
 
