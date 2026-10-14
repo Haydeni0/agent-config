@@ -7,6 +7,8 @@ error code, and logs every invocation so tests can assert what was rung.
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import json
 import os
 import subprocess
@@ -14,8 +16,10 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 import pytest
+from typer.testing import CliRunner
 
 HELPER = Path(__file__).resolve().parent / "mailbox.py"
 PLANNER_PANE = "w1:p1"
@@ -297,6 +301,106 @@ def test_inbox_with_nothing_unread_says_so_and_exits_zero(mesh: Mesh) -> None:
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "no unread mail"
+
+
+def test_take_prints_every_unread_message_then_marks_it_handled(mesh: Mesh) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+
+    result = mesh.run("take", pane=WORKER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "=== planner.001-review-api.msg\nreview it" in result.stdout
+    assert "=== planner.001-ask.reply\nhere is the answer" in result.stdout
+    assert [p for p in mesh.inbox("worker").iterdir() if p.is_file()] == []
+    handled = {p.name for p in (mesh.inbox("worker") / "handled").iterdir()}
+    assert handled == {"planner.001-review-api.msg", "planner.001-ask.reply"}
+
+
+def test_take_with_nothing_unread_says_so_and_exits_zero(mesh: Mesh) -> None:
+    result = mesh.run("take", pane=WORKER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "no unread mail"
+
+
+@pytest.mark.parametrize("live_worker_pane", ["w1:p9", None], ids=["moved", "gone"])
+def test_take_refuses_a_seat_whose_live_agent_is_elsewhere(mesh: Mesh, live_worker_pane: str | None) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+    agents = {"planner": PLANNER_PANE, "critic": CRITIC_PANE}
+    if live_worker_pane is not None:
+        agents["worker"] = live_worker_pane
+    mesh.herdr.set("agents", agents)
+
+    result = mesh.run("take", pane=WORKER_PANE)
+
+    assert result.returncode != 0
+    assert "join" in result.stderr
+    assert (mesh.inbox("worker") / "planner.001-review-api.msg").exists()
+
+
+@pytest.fixture
+def helper(mesh: Mesh, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    """The mesh's bin/mailbox loaded in-process, to stage races a subprocess cannot."""
+    for key in ("PATH", "FAKE_HERDR_STATE", "FAKE_HERDR_LOG"):
+        monkeypatch.setenv(key, mesh.herdr.env[key])
+    monkeypatch.setenv("HERDR_SESSION", SESSION)
+    loader = importlib.machinery.SourceFileLoader("mesh_mailbox", str(mesh.root / "bin" / "mailbox"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def test_take_skips_a_message_a_concurrent_take_acked_before_it_printed(
+    mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for slug in ("a", "b"):
+        mesh.run("send", slug, "worker", "--no-ring", pane=PLANNER_PANE, stdin=f"body {slug}\n")
+    real_messages_in = helper.messages_in
+
+    def snapshot_then_concurrent_take(directory: Path) -> list[object]:
+        listed = real_messages_in(directory)
+        listed[0].path.rename(directory / "handled" / listed[0].path.name)
+        return listed
+
+    monkeypatch.setattr(helper, "messages_in", snapshot_then_concurrent_take)
+    monkeypatch.setenv("HERDR_PANE_ID", WORKER_PANE)
+
+    result = CliRunner().invoke(helper.app, ["take"])
+
+    assert result.exit_code == 0, result.output
+    assert "body a" not in result.stdout
+    assert "body b" in result.stdout
+    handled = {p.name for p in (mesh.inbox("worker") / "handled").iterdir()}
+    assert handled == {"planner.001-a.msg", "planner.002-b.msg"}
+
+
+def test_take_acks_only_its_snapshot_and_tolerates_a_concurrent_ack(
+    mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for slug in ("a", "b"):
+        mesh.run("send", slug, "worker", "--no-ring", pane=PLANNER_PANE, stdin=f"body {slug}\n")
+    real_read_text = Path.read_text
+
+    def read_amid_concurrent_activity(self: Path, encoding: str | None = None, errors: str | None = None) -> str:
+        text = real_read_text(self, encoding=encoding, errors=errors)
+        if self.name == "planner.001-a.msg":
+            self.rename(self.parent / "handled" / self.name)  # a concurrent take acks it after this print
+            (self.parent / "critic.001-late.msg").write_text("late\n")  # mail arriving mid-take
+        return text
+
+    monkeypatch.setattr(Path, "read_text", read_amid_concurrent_activity)
+    monkeypatch.setenv("HERDR_PANE_ID", WORKER_PANE)
+
+    result = CliRunner().invoke(helper.app, ["take"])
+
+    assert result.exit_code == 0, result.output
+    assert "body a" in result.stdout
+    assert "body b" in result.stdout
+    handled = {p.name for p in (mesh.inbox("worker") / "handled").iterdir()}
+    assert handled == {"planner.001-a.msg", "planner.002-b.msg"}
+    assert (mesh.inbox("worker") / "critic.001-late.msg").exists()
 
 
 def test_send_writes_request_named_by_sender_seq_and_slug(mesh: Mesh) -> None:

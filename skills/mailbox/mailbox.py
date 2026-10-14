@@ -13,6 +13,7 @@ name. Requests are `<from>.<seq>-<slug>.msg`; a reply reuses the request id
 as `<from>.<id>.reply`.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -261,6 +262,20 @@ def own_name(root: Path) -> str:
     return claimants[0]
 
 
+def verified_own_name(root: Path) -> str:
+    """own_name, cross-checked against herdr: a herdr restart reuses pane ids, so a seat can outlive its session."""
+    name = own_name(root)
+    pane = own_pane()
+    live = live_pane(name)
+    if live != pane:
+        fail(
+            f"member file {name!r} claims pane {pane}, but the live herdr agent {name!r} is in "
+            f"{live or 'no pane'} - a stale claim; re-join with {root / 'bin' / 'mailbox'} join <name> --role <role> "
+            "before taking mail"
+        )
+    return name
+
+
 def check_members(root: Path, names: list[str]) -> None:
     members = sorted(p.name for p in (root / "members").iterdir())
     unknown = [name for name in names if name not in members]
@@ -392,6 +407,29 @@ def inbox() -> None:
         return
     for message in unread:
         typer.echo(describe(message))
+
+
+@app.command()
+def take() -> None:
+    """Print all unread mail, then mark exactly what was printed handled."""
+    root = mailbox_root()
+    box = root / "inboxes" / verified_own_name(root)
+    printed: list[Message] = []
+    for message in messages_in(box):
+        try:
+            body = message.path.read_text()
+        except FileNotFoundError:
+            continue  # a concurrent take already acked it
+        typer.echo(f"=== {message.path.name}")
+        typer.echo(body.rstrip("\n"))
+        printed.append(message)
+    if not printed:
+        typer.echo(NO_MAIL)
+        return
+    (box / "handled").mkdir(parents=True, exist_ok=True)  # an old-mesh member may lack it
+    for message in printed:
+        with contextlib.suppress(FileNotFoundError):  # a concurrent take already acked it
+            message.path.rename(box / "handled" / message.path.name)
 
 
 if __name__ == "__main__":
