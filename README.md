@@ -170,6 +170,7 @@ flowchart LR
     m_pair[m-pair]
     %% marimo_notebook[marimo-notebook]
     marimo_pair[marimo-pair]
+    %% mcp_headless_oauth[mcp-headless-oauth]
     %% no_mistakes[no-mistakes]
     orchestrator[orchestrator]
     %% ponytail[ponytail]
