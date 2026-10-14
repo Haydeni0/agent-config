@@ -147,14 +147,14 @@ def check(skills_dir: Path, repo_root: Path) -> tuple[list[str], int]:
 
     # deps graph must be a DAG (REQ-SKILLS-17): the stdlib topological
     # sort raises CycleError carrying the loop's node chain
-    graph = {
-        name: [d for d in (frontmatter.get("deps") or []) if isinstance(d, str) and d in parsed]
-        for name, (frontmatter, _) in parsed.items()
-    }
+    graph: dict[str, list[str]] = {}
+    for name, (frontmatter, _) in parsed.items():
+        raw = frontmatter.get("deps")
+        graph[name] = [d for d in (raw if isinstance(raw, list) else []) if isinstance(d, str) and d in parsed]
     try:
         TopologicalSorter(graph).prepare()
     except CycleError as exc:
-        failures.append(f"deps cycle: {' -> '.join(exc.args[1])}")
+        failures.append(f"deps cycle: {' -> '.join(reversed(exc.args[1]))}")
 
     for peer in ORCHESTRATOR_PEERS:
         if peer not in parsed:
