@@ -175,6 +175,7 @@ flowchart LR
     repo_agent_setup --> backlog
     systematic_debugging --> tdd_core
     systematic_debugging --> verification_before_completion
+    systematic_debugging --> work_package
     task_brainstorm --> grill_me
     tdd --> tdd_core
     tdd --> pytest_guidelines

@@ -3,7 +3,7 @@ name: systematic-debugging
 layer: worker
 description: >
   Use when the user asks to debug a stubborn or non-obvious bug - one that resisted a first fix attempt, or where the root cause is unclear. Enforces reproduce-first, root-cause-before-fix discipline. Not auto-triggered: never invoke for trivial obvious bugs unless the user asks for systematic debugging.
-deps: [tdd-core, verification-before-completion]
+deps: [tdd-core, verification-before-completion, work-package]
 forked-from: superpowers@claude-plugins-official v6.3.0 (systematic-debugging)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
@@ -225,21 +225,17 @@ You MUST complete each phase before proceeding to the next.
 
 On the FIRST failed fix attempt (not on skill entry), create a lightweight
 work-package at `.agents/work/<date>-<topic>-debug/` containing only
-`decisions.md`, opened with:
-
-    state: root-cause
-    fix-attempts: 1
-
-Map phases to the state line as you progress: Phase 1 `root-cause`, Phase 2
-`pattern-analysis`, Phase 3 `hypothesis`, Phase 4 `implementation`; a
-confirmed investigation end sets `state: resolved`. Increment
-`fix-attempts` on every failed fix. Record confirmed root-cause hypotheses
-as D entries; every failed fix as an X entry pointing at the hypothesis it
-disproved. Re-read `decisions.md` after any compaction - the counter and
-phase are on disk, never in memory. At >= 3 fix attempts, the existing halt
-rule applies; the counter on disk is the authority. The lint
-(`scripts/check-packages.py`) validates the lines; this skill owns the
-transitions. This skill is `layer: worker`: reference the contract only in
+`decisions.md`. Load the work-package skill before writing it - it owns the
+layout, entry formats (IDs, D/X), and the state-line contract. This skill
+owns only the transitions: open it at `state: root-cause` with
+`fix-attempts: 1` directly after the state line, then map Phase 1
+`root-cause`, Phase 2 `pattern-analysis`, Phase 3 `hypothesis`, Phase 4
+`implementation`, and set `state: resolved` at confirmed investigation end.
+Increment `fix-attempts` on every failed fix; record each failed fix as an X
+entry pointing at the hypothesis it disproved. Re-read `decisions.md` after
+any compaction - the counter and phase are on disk, never in memory. At
+>= 3 fix attempts, the existing halt rule applies; the counter on disk is
+the authority. This skill is `layer: worker`: reference the contract only in
 hyphenated form ("work-package") - never the bare word.
 
 ## Red Flags - STOP and Follow Process

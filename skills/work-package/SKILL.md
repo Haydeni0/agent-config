@@ -33,12 +33,13 @@ the same list and a CI test asserts equality):
 
 state: grill | test-plan | spec | plan | implement | code-review | verify-fix | complete | root-cause | pattern-analysis | hypothesis | implementation | resolved
 
-Dev-cycle stages: grill, test-plan, spec, plan, implement, code-review,
-verify-fix, complete. Debug-cycle phases (systematic-debugging):
-root-cause, pattern-analysis, hypothesis, implementation, plus terminal
-`resolved`. The launch gate is a checkpoint, not a state: resumes into
-autonomous stages (cases 3-7, and `state: verify-fix`) pass it; `complete`
-and interview restarts do not.
+Dev-pipeline stages: grill, test-plan, spec, plan, implement,
+code-review, verify-fix, complete. Debug-cycle phases
+(systematic-debugging): root-cause, pattern-analysis, hypothesis,
+implementation, plus terminal `resolved`. The launch gate is a checkpoint,
+not a state: resumes into autonomous stages (including `state: verify-fix`)
+pass it; `complete` and interview restarts do not - the driving skill
+defines which resumes are autonomous.
 
 Precedence: when present, the state line is authoritative - file presence
 and markers refine within the named stage but never override it. One
