@@ -1,12 +1,16 @@
-"""Subprocess tests for the mailbox helper against a fake herdr on PATH.
+"""Tests for the mailbox helper against a fake herdr on PATH.
 
-The fake keeps an agent-name -> pane map in a JSON state file, applies
-renames, can be told to fail `wait` / `prompt` for a named agent with a herdr
-error code, and logs every invocation so tests can assert what was rung.
+Invocations run the helper in-process under a replaced environment (see
+`invoke_helper`); the tests that call `subprocess.run` directly keep the real
+process boundary covered. The fake keeps an agent-name -> pane map in a JSON
+state file, applies renames, can be told to fail `wait` / `prompt` for a named
+agent with a herdr error code, and logs every invocation so tests can assert
+what was rung.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -15,7 +19,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -90,20 +93,75 @@ class FakeHerdr:
 
 
 @dataclass(slots=True)
+class Proc:
+    """CompletedProcess-shaped result of an in-process helper invocation.
+
+    Transport swap only: every test keeps asserting on returncode/stdout/stderr
+    exactly as against `subprocess.run`. The subprocess boundary itself stays
+    covered by the tests that call `subprocess.run` directly.
+    """
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+_module_cache: dict[str, ModuleType] = {}
+
+
+def load_helper(target: Path) -> ModuleType:
+    """Exec the helper's current bytes once per (path, content).
+
+    The path is part of the key because `mailbox_root()` resolves from the
+    invoked file's location: a mesh's bin/mailbox is byte-identical to the
+    skill helper but must act on its own mesh. The content half gives a test
+    that rewrites a copy (version stamps, stripped constants) a fresh module.
+    """
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    key = f"{target}:{digest}"
+    module = _module_cache.get(key)
+    if module is None:
+        loader = importlib.machinery.SourceFileLoader(f"mailbox_{digest[:12]}", str(target))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        _module_cache[key] = module
+    return module
+
+
+def invoke_helper(target: Path, args: list[str], env: dict[str, str], stdin: str = "") -> Proc:
+    """One helper invocation in-process under a fully replaced environment.
+
+    Same contract as `subprocess.run([sys.executable, target, *args], env=env,
+    input=stdin, capture_output=True, text=True)` minus the process boundary:
+    `mailbox_root()` still resolves from the invoked file's path, and herdr
+    subprocesses spawn under the replaced os.environ so the fake on PATH wins.
+    """
+    module = load_helper(target)
+    saved = dict(os.environ)
+    try:
+        os.environ.clear()
+        os.environ.update(env)
+        result = CliRunner().invoke(module.app, args, input=stdin or None)
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+    return Proc(returncode=result.exit_code, stdout=result.stdout, stderr=result.stderr)
+
+
+@dataclass(slots=True)
 class Mesh:
     root: Path
     herdr: FakeHerdr
 
-    def run(self, *args: str, pane: str, session: str | None = SESSION, stdin: str = "") -> subprocess.CompletedProcess[str]:
+    def run(self, *args: str, pane: str, session: str | None = SESSION, stdin: str = "") -> Proc:
         env = {**self.herdr.env, "HERDR_PANE_ID": pane}
         # the developer's own herdr session leaks in through os.environ
         env.pop("HERDR_SESSION", None)
         if session is not None:
             env["HERDR_SESSION"] = session
-        return subprocess.run(
-            [sys.executable, str(self.root / "bin" / "mailbox"), *args],
-            input=stdin, capture_output=True, text=True, env=env,
-        )
+        return invoke_helper(self.root / "bin" / "mailbox", list(args), env, stdin)
 
     def inbox(self, name: str) -> Path:
         return self.root / "inboxes" / name
@@ -129,19 +187,16 @@ def fake_env(tmp_path: Path) -> FakeHerdr:
     return FakeHerdr(env=env, state_path=state_path, log_path=log_path)
 
 
-def run_init(root: Path, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(HELPER), "init", str(root)],
-        capture_output=True, text=True, env=herdr.env,
-    )
+def run_init(root: Path, herdr: FakeHerdr) -> Proc:
+    return invoke_helper(HELPER, ["init", str(root)], herdr.env)
 
 
-def run_skill_helper(*args: str, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([sys.executable, str(HELPER), *args], capture_output=True, text=True, env=herdr.env)
+def run_skill_helper(*args: str, herdr: FakeHerdr) -> Proc:
+    return invoke_helper(HELPER, list(args), herdr.env)
 
 
-def run_update(mesh_root: Path, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([sys.executable, str(HELPER), "update", str(mesh_root)], capture_output=True, text=True, env=herdr.env)
+def run_update(mesh_root: Path, herdr: FakeHerdr) -> Proc:
+    return invoke_helper(HELPER, ["update", str(mesh_root)], herdr.env)
 
 
 def set_mesh_version(mesh_root: Path, version: str) -> None:
@@ -157,13 +212,55 @@ def empty_mesh(tmp_path: Path, fake_env: FakeHerdr) -> Mesh:
     return Mesh(root=root, herdr=fake_env)
 
 
-@pytest.fixture
-def mesh(empty_mesh: Mesh) -> Iterator[Mesh]:
+@dataclass(slots=True)
+class MeshTemplate:
+    """A populated mesh (init + the three standard joins) built once per
+    session; every `mesh` test clones it instead of repeating those four
+    helper invocations."""
+    root: Path
+    herdr_state: str
+
+
+@pytest.fixture(scope="session")
+def mesh_template(tmp_path_factory: pytest.TempPathFactory) -> MeshTemplate:
+    base = tmp_path_factory.mktemp("mesh-template")
+    fakebin = base / "fakebin"
+    fakebin.mkdir()
+    herdr = fakebin / "herdr"
+    herdr.write_text(FAKE_HERDR)
+    herdr.chmod(0o755)
+    state_path = base / "herdr-state.json"
+    state_path.write_text(json.dumps({"agents": {}}))
+    log_path = base / "herdr-log.jsonl"
+    log_path.write_text("")
+    env = {
+        **os.environ,
+        "PATH": f"{fakebin}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_HERDR_STATE": str(state_path),
+        "FAKE_HERDR_LOG": str(log_path),
+    }
+    root = (base / "mailbox").resolve()
+    result = invoke_helper(HELPER, ["init", str(root)], env)
+    assert result.returncode == 0, result.stderr
     for name, pane in (("planner", PLANNER_PANE), ("worker", WORKER_PANE), ("critic", CRITIC_PANE)):
-        result = empty_mesh.run("join", name, "--role", name, pane=pane)
+        join_env = {**env, "HERDR_PANE_ID": pane, "HERDR_SESSION": SESSION}
+        result = invoke_helper(root / "bin" / "mailbox", ["join", name, "--role", name], join_env)
         assert result.returncode == 0, result.stderr
-    empty_mesh.herdr.clear_log()
-    yield empty_mesh
+    return MeshTemplate(root=root, herdr_state=state_path.read_text())
+
+
+@pytest.fixture
+def mesh(tmp_path: Path, fake_env: FakeHerdr, mesh_template: MeshTemplate) -> Mesh:
+    root = (tmp_path / "mailbox").resolve()
+    shutil.copytree(mesh_template.root, root)
+    # the contract carries the mesh's absolute paths
+    readme = root / "README.md"
+    readme.write_text(readme.read_text().replace(str(mesh_template.root), str(root)))
+    # the joins renamed the members' panes in herdr's state; seed this test's
+    # fake with the same agent map so ring/poke find them
+    fake_env.state_path.write_text(mesh_template.herdr_state)
+    fake_env.clear_log()
+    return Mesh(root=root, herdr=fake_env)
 
 
 def test_init_creates_layout_and_fills_absolute_paths_into_contract(tmp_path: Path, fake_env: FakeHerdr) -> None:
@@ -450,12 +547,7 @@ def helper(mesh: Mesh, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     for key in ("PATH", "FAKE_HERDR_STATE", "FAKE_HERDR_LOG"):
         monkeypatch.setenv(key, mesh.herdr.env[key])
     monkeypatch.setenv("HERDR_SESSION", SESSION)
-    loader = importlib.machinery.SourceFileLoader("mesh_mailbox", str(mesh.root / "bin" / "mailbox"))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
+    return load_helper(mesh.root / "bin" / "mailbox")
 
 
 def test_version_comparison_parses_revisions_not_strings(helper: ModuleType) -> None:
