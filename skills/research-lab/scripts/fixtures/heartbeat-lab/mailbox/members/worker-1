@@ -1,0 +1,5 @@
+role=worker
+pane=wX:p1
+session=00000000-0000-0000-0000-000000000001
+harness=claude
+harness-session=00000000-0000-0000-0000-000000000001
