@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # Launch one lab member in its own herdr tab and hand it its connect prompt; prints the pane id.
-# Usage: spawn-member.sh <member-name> <cwd> <prompt-file>
-# The launcher comes from the PI profile's LAUNCHER line, never a harness default:
-# `herdr agent start --kind claude` runs the native binary, ignoring the profile.
+# Usage: spawn-member.sh <member-name> <cwd> <prompt-file> [role]
+# The launcher comes from the PI profile, never a harness default (`herdr agent start --kind
+# claude` runs the native binary, ignoring the profile): `LAUNCHER.<role>:` when the profile
+# has one for this role, else `LAUNCHER:`.
 set -euo pipefail
-name=$1 cwd=$2 prompt_file=$3
+name=$1 cwd=$2 prompt_file=$3 role=${4:-}
 profile=${RESEARCH_LAB_PROFILE:-$HOME/.config/research-lab/pi-profile.md}
-launcher=$(sed -n 's/^LAUNCHER: *//p' "$profile" | head -1)
-[[ -n $launcher ]] || { echo "spawn-member: no 'LAUNCHER:' line in $profile" >&2; exit 1; }
+launcher=
+[[ -n $role ]] && launcher=$(sed -n "s/^LAUNCHER\.$role: *//p" "$profile" | head -1)
+[[ -n $launcher ]] || launcher=$(sed -n 's/^LAUNCHER: *//p' "$profile" | head -1)
+[[ -n $launcher && $launcher != *"<"* ]] \
+  || { echo "spawn-member: no filled-in 'LAUNCHER:' line in $profile" >&2; exit 1; }
 [[ -r $prompt_file ]] || { echo "spawn-member: prompt file $prompt_file unreadable" >&2; exit 1; }
 
 pane=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$cwd" --label "$name" --no-focus \

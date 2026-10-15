@@ -22,7 +22,8 @@ a file or a probe answers. The code repo is the current directory unless the PI 
 1. **Profile.** Read `~/.config/research-lab/pi-profile.md` (including its Resources
    section: known data paths and environment facts - use them before searching) (template: `pi-profile.example.md`
    here). Missing: copy the example, then send the PI one message listing only the lines you
-   could not fill. Its `LAUNCHER:` line is the only way members are launched.
+   could not fill. Its `LAUNCHER:` / `LAUNCHER.<role>:` lines are the only way members are
+   launched; name the launcher per role in your startup report so the PI sees it every lab.
 2. **Probe.** `date`, `nvidia-smi` (free GPUs), `df -h` on the work dirs, `printenv
    COMMIT_AUTHORISED PUSH_AUTHORISED`, the code repo and branch. A code repo needs a
    worktree: `wt switch -c hayden/lab-<slug> --no-cd`.
@@ -47,9 +48,10 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    are prefixed `<id>-` (herdr agent names are global across labs).
 5. **Staff** (D3, D13). Long-lived members on the mesh, each in its own herdr tab:
    write the connect prompt to a file, then
-   `scripts/spawn-member.sh <id>-worker <cwd> <prompt-file>` (prints the pane id).
+   `scripts/spawn-member.sh <id>-worker <cwd> <prompt-file> <role>` (role `worker` or
+   `author`; prints the pane id).
    Connect prompt: the mailbox template + `Load the orchestrator skill: you own all
-   execution.` + `Read <lab>/policy.md; launch nothing except the LAUNCHER in
+   execution.` + `Read <lab>/policy.md; launch nothing except the launchers in
    ~/.config/research-lab/pi-profile.md. Before the first expensive run, stub-verify timing
    and counting code on a cheap input where the counters provably move.` Default staff: one worker per independent
    question stream; one author when there is a page to write. Critics and literature spikes

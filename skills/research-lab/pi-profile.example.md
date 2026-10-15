@@ -3,14 +3,16 @@
 Standing rules for every lab this PI runs. Labs copy these into policy.md and record only
 deltas. Machine facts (free GPUs, disk, env gates) are probed at startup, not written here.
 
-LAUNCHER: COMMIT_AUTHORISED=1 ~/.local/bin/local-claude
-TRUSTED_ROOTS: ~/gitrepos/research-lab-pilot ~/worktrees/research-lpm ~/gitrepos/research-lpm
+LAUNCHER: <shell command that starts a member's agent session, e.g. `claude`>
+TRUSTED_ROOTS: <space-separated directories members may be started in>
 
+- LAUNCHER: the default command for every member and spawned session. Override it per role
+  with `LAUNCHER.<role>: <command>` (roles: worker, author), e.g. an author on a
+  vision-capable model. Members run only these launchers, never another binary or a harness
+  default; subagents never set a `model` override. Note here any launcher that costs money,
+  so labs avoid it unless the PI says otherwise.
 - TRUSTED_ROOTS: directories whose folder-trust dialog spawn-member may accept for a
   member; anything else stops for the PI.
-- Launchers: members and spawned sessions run only the LAUNCHER above (internal GLM
-  gateway). Never `claude`, `claudec`, `claudep`, or `herdr agent start --kind claude`: they
-  bill the Anthropic API. Subagents never set a `model` override.
 - GPUs: use a GPU only if `nvidia-smi` shows it free immediately before launch. SLURM QoS
   preemptible-mid allowed for resumable jobs. OMP threads 8-16 per process.
 - Data: S3 bucket `training-data-04a` is read-only. Scripts that read S3 run with
