@@ -10,10 +10,11 @@ allowed skipping hooks; hooks now run on everything except ``--data`` files).
 
 Checks, in order - the first failure aborts with nothing committed:
 
-1. accepted: the experiment is marked accepted - a decisions.md D entry whose
-   text accepts it (pilot format ``**R4 accepted (E1-E4).**``; single ids and
-   id-ranges both read), or a ``[x]`` state in the status.md experiment table
-   (the index).
+1. accepted: the experiment is marked accepted, read by the one shared parser
+   (``lab_text.accepted_ids``, also lab_lint's): a decisions.md D-entry sentence
+   naming it alongside "accepted" (``E<n>`` ids and ``E<n>-E<m>`` ranges, minus
+   ids whose next words name a cut/drop/rejection), or a ``[x]`` state in the
+   status.md experiment table (the index).
 2. silent-deletion guard: the staged diff may not delete lines from any
    accepted entry in the lab's experiment files (``experiments.md`` or
    ``experiments/<eid>.md``) - a member once regenerated a shared experiments
@@ -50,13 +51,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lab_text import accepted_ids
+
 SCRIPTS = Path(__file__).resolve().parent
 LAB_LINT = SCRIPTS / "lab_lint.py"
 
 ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-D_LINE_RE = re.compile(r"^\s*-\s*D\d+\b")
-# "E1-E4" (or "E1-4") inside an accepted D entry expands to every id it covers
-ID_RANGE_RE = re.compile(r"\b([A-Za-z]+)(\d+)\s*-\s*(?:[A-Za-z]+)?(\d+)\b")
 
 
 def _die(msg: str) -> None:
@@ -71,28 +71,6 @@ def _git(workdir: Path, *args: str, check: bool = True) -> subprocess.CompletedP
     if check and p.returncode:
         _die(f"git {' '.join(args[:2])} failed: {(p.stderr or p.stdout).strip()}")
     return p
-
-
-def _accepted_ids(lab: Path) -> set[str]:
-    """Every id the lab marks accepted: decisions.md D entries + the status index."""
-    ids: set[str] = set()
-    decisions = lab / "decisions.md"
-    if decisions.is_file():
-        for line in decisions.read_text().splitlines():
-            if "accepted" not in line.lower() or not D_LINE_RE.match(line):
-                continue
-            for m in ID_RANGE_RE.finditer(line):
-                lo, hi = int(m.group(2)), int(m.group(3))
-                if lo <= hi and hi - lo < 1000:
-                    ids.update(f"{m.group(1)}{i}" for i in range(lo, hi + 1))
-            ids.update(re.findall(r"[A-Za-z][A-Za-z0-9_-]*", line))
-    status = lab / "status.md"
-    if status.is_file():
-        for line in status.read_text().splitlines():
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cells) >= 4 and cells[0] and "[x]" in cells[3]:
-                ids.add(cells[0])
-    return ids
 
 
 def _title_from(rest: str) -> str:
@@ -318,11 +296,12 @@ def main() -> int:
     if stray:
         _die(f"--data paths must also be commit paths: {', '.join(stray)}")
 
-    accepted = _accepted_ids(lab)
+    accepted = set(accepted_ids(lab))
     if args.exp_id not in accepted:
         _die(
-            f"{args.exp_id} is not marked accepted - no decisions.md D entry accepts it and "
-            "its status.md index row is not [x]. Only accepted experiments get a provenance commit."
+            f"{args.exp_id} is not marked accepted - no decisions.md D-entry sentence "
+            "accepts it and its status.md index row is not [x]. Only accepted "
+            "experiments get a provenance commit."
         )
     print(f"{args.exp_id}: accepted (decisions.md D entries / status.md index)")
 

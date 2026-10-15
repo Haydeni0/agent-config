@@ -53,7 +53,7 @@ from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
-from lab_text import d_entries, sentences
+from lab_text import accepted_ids, table_cells
 
 import lab_checker as lc  # numpy is imported lazily; the lint stays stdlib-only
 
@@ -96,10 +96,6 @@ def _audit_events() -> set[str]:
     return set(re.findall(r"`([A-Z_]+)`", m.group(1)))
 
 
-def _cells(line: str) -> list[str]:
-    return [c.strip() for c in line.strip().strip("|").split("|")]
-
-
 def _planned(line: str, start: int) -> bool:
     """True when the clause before a stamp marks it as planned, not an event."""
     words = line[:start].lower().split()
@@ -130,7 +126,7 @@ def lint_timestamps(lab: Path) -> list[Finding]:
         for i, line in enumerate(text.splitlines(), start=1):
             is_table = line.lstrip().startswith("|")
             if is_table and not prev_table:
-                header = _cells(line)  # first row of a table block is its header
+                header = table_cells(line)  # first row of a table block is its header
             elif not is_table:
                 header = None
             prev_table = is_table
@@ -177,7 +173,7 @@ def lint_status(lab: Path) -> list[Finding]:
             Finding(status, 1, "status", f"line 1 is not a one-line state: {first.strip()[:80]!r}")
         )
     for cols, table in ((MILESTONE_COLS, "milestone"), (EXPERIMENT_COLS, "experiment")):
-        if not any(_cells(l) == cols for l in lines if l.lstrip().startswith("|")):
+        if not any(table_cells(l) == cols for l in lines if l.lstrip().startswith("|")):
             findings.append(
                 Finding(status, 0, "status", f"{table} table missing (header | {' | '.join(cols)} |)")
             )
@@ -192,7 +188,7 @@ def lint_audit_log(lab: Path, events: set[str]) -> list[Finding]:
     for i, line in enumerate(log.read_text().splitlines(), start=1):
         if not line.lstrip().startswith("|"):
             continue
-        cells = _cells(line)
+        cells = table_cells(line)
         if len(cells) < 3 or cells[0].lower() == "time" or set(cells[0]) <= {"-", " ", ":"}:
             continue  # header, separator, or malformed row - not an event row
         if cells[1] not in events:
@@ -200,41 +196,7 @@ def lint_audit_log(lab: Path, events: set[str]) -> list[Finding]:
     return findings
 
 
-_EID_RE = re.compile(r"\bE\d+\b")
-_EID_RANGE_RE = re.compile(r"\bE(\d+)\s*-\s*E(\d+)\b")
-_NOT_ACCEPTED_RE = re.compile(r"\b(cut|dropped|rejected|deferred)\b")
 _ENTRY_HEADING_RE = re.compile(r"^#{1,6}\s+(E\d+)\b", re.MULTILINE)
-_ACCEPTED_WORD_RE = re.compile(r"\baccepted\b", re.IGNORECASE)
-
-
-def _accepted_ids(lab: Path) -> dict[str, tuple[Path, int]]:
-    """Experiment ids marked accepted -> (marker file, 1-based marker line)."""
-    accepted: dict[str, tuple[Path, int]] = {}
-    decisions = lab / "decisions.md"
-    if decisions.is_file():
-        for _did, entry, first_line in d_entries(decisions.read_text()):
-            for sentence, offset in sentences(entry):
-                if not _ACCEPTED_WORD_RE.search(sentence):
-                    continue
-                line = first_line + entry[:offset].count("\n") + 1
-                ids: set[str] = set()
-                for m in _EID_RANGE_RE.finditer(sentence):
-                    ids.update(
-                        f"E{n}" for n in range(int(m.group(1)), int(m.group(2)) + 1)
-                    )
-                for m in _EID_RE.finditer(sentence):
-                    two_words = " ".join(sentence[m.end() :].split()[:2])
-                    if not _NOT_ACCEPTED_RE.search(two_words):
-                        ids.add(m.group(0))
-                for eid in sorted(ids):
-                    accepted.setdefault(eid, (decisions, line))
-    status = lab / "status.md"
-    if status.is_file():
-        for i, line in enumerate(status.read_text().splitlines(), start=1):
-            cells = _cells(line)
-            if len(cells) >= 4 and re.fullmatch(r"E\d+", cells[0]) and cells[3] == "[x]":
-                accepted.setdefault(cells[0], (status, i))
-    return accepted
 
 
 def _experiments_files(lab: Path) -> list[Path]:
@@ -291,7 +253,7 @@ def lint_accepted_entries(lab: Path) -> list[Finding]:
     ``[x]`` row) is the finding's location; when git history is reachable the
     detail also names a heading the last commit still had.
     """
-    accepted = _accepted_ids(lab)
+    accepted = accepted_ids(lab)
     if not accepted:
         return []
     files = _experiments_files(lab)
