@@ -1,6 +1,7 @@
 """Tests for scripts/check-skills.py (hyphenated module, loaded via importlib)."""
 
 import importlib.util
+import os
 import types
 from pathlib import Path
 
@@ -132,3 +133,43 @@ def test_deps_diamond_passes(check_module: types.ModuleType, tmp_path: Path) -> 
     make_skill(tmp_path / "skills", "base", "body")
     failures, _ = run_check(check_module, tmp_path)
     assert not any("cycle" in f for f in failures)
+
+
+CORE_DIR = REPO_ROOT / "skills" / "claim-verification"
+# REQ-SKILLS-21 carve-out: the one sentence allowed to name the CLI. Must match the core's SKILL.md verbatim.
+PROHIBITION = "Never shell out to a `verify-claims` binary; the oracle is the MCP tool or the fallback above."
+# REQ-SKILLS-20: terms that only the core's fallback procedure may define.
+FALLBACK_TERMS = ("self-pass", "degraded - LLM-judged")
+
+
+def _skill_and_rule_docs() -> list[Path]:
+    # os.walk(followlinks=True): skills/ links vendored skill dirs, and rglob only follows dir symlinks from 3.13
+    out = []
+    for root in (REPO_ROOT / "skills", REPO_ROOT / "rules"):
+        for d, _, files in os.walk(root, followlinks=True):
+            out += [Path(d) / f for f in files if f.endswith(".md")]
+    return sorted(out)
+
+
+def test_req_skills_20_fallback_procedure_lives_only_in_core() -> None:
+    hits = [
+        f"{p.relative_to(REPO_ROOT)}: {term!r}"
+        for p in _skill_and_rule_docs()
+        if CORE_DIR not in p.parents
+        for term in FALLBACK_TERMS
+        if term in p.read_text()
+    ]
+    assert hits == []
+
+
+def test_req_skills_21_no_skill_or_rule_directs_to_cli() -> None:
+    core_md = CORE_DIR / "SKILL.md"
+    assert PROHIBITION in core_md.read_text()
+    hits = []
+    for p in _skill_and_rule_docs():
+        text = p.read_text()
+        if p == core_md:
+            text = text.replace(PROHIBITION, "")
+        if "verify-claims" in text:
+            hits.append(str(p.relative_to(REPO_ROOT)))
+    assert hits == []
