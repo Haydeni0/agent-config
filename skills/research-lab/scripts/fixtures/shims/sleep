@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# Test shim: spawn-member.sh's settle sleeps are instant under test.
-exit 0

@@ -1,5 +1,0 @@
-role=overseer: plans, staffs, reviews; never executes
-pane=wA:pZ
-session=test-session
-harness=claude
-harness-session=44444444-4444-4444-8444-444444444444
