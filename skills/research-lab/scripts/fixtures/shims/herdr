@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Test shim for the herdr surface the research-lab scripts use. Every call is
+# appended to $SHIM_LOG as `herdr <args>`; panes listed in $HERDR_DEAD_PANES
+# (comma-separated) have no live agent. Answers:
+#   pane current        -> {"result":{"pane":{"pane_id":$HERDR_TEST_CALLER_PANE}}}
+#   pane read           -> empty screen (never a trust dialog)
+#   tab create          -> {"result":{"root_pane":{"pane_id":"wA:pT1"}}}
+#   agent get <pane>    -> idle agent whose tab is wA:t<pane number>
+printf 'herdr %s\n' "$*" >>"${SHIM_LOG:-/dev/null}"
+case "$1" in
+  pane)
+    [[ ${2:-} == current ]] && printf '{"result":{"pane":{"pane_id":"%s"}}}\n' "${HERDR_TEST_CALLER_PANE:-wA:pZ}"
+    exit 0
+    ;;
+  tab)
+    [[ ${2:-} == create ]] && printf '{"result":{"root_pane":{"pane_id":"wA:pT1"}}}\n'
+    exit 0
+    ;;
+  agent)
+    if [[ ${2:-} == get ]]; then
+      pane=${3:-}
+      if [[ ",${HERDR_DEAD_PANES:-}," == *",$pane,"* ]]; then exit 1; fi
+      printf '{"result":{"agent":{"agent_status":"idle","tab_id":"wA:t%s"}}}\n' "${pane##*:p}"
+    fi
+    exit 0
+    ;;
+esac
+exit 0

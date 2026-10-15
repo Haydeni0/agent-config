@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Test shim: `wt -C <repo> list --format json` cats
+# $WT_LIST_JSON_DIR/<repo path with / -> _>.json; every call (including
+# `wt remove --foreground <branch>`) is appended to $SHIM_LOG and not executed.
+printf 'wt %s\n' "$*" >>"${SHIM_LOG:-/dev/null}"
+if [[ ${1:-} == -C ]]; then
+  repo=$2
+  shift 2
+  if [[ ${1:-} == list ]]; then
+    key=$(printf '%s' "$repo" | tr '/' '_')
+    cat "${WT_LIST_JSON_DIR:?WT_LIST_JSON_DIR unset}/${key}.json"
+  fi
+fi
+exit 0
