@@ -58,7 +58,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.02"
+MAILBOX_VERSION = "2026-10-15.03"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -619,6 +619,51 @@ def poke(member: str) -> None:
     except HerdrError as exc:
         fail(f"{member}: ring failed: {exc}")
     typer.echo(f"{member}: {outcome}")
+
+
+def audit_members(root: Path) -> None:
+    """Placeholder until Task 4; kept so update is functional end-to-end."""
+    pass
+
+
+@app.command()
+def update(mesh_path: Annotated[Path, typer.Argument(help="The mesh to bring current with this skill source")]) -> None:
+    """Migrate a mesh's helper and README, then audit its members. Run from the skill, not the mesh."""
+    if not TEMPLATE.is_file():
+        fail(f"{TEMPLATE} is missing - run update from the skill source, not from a mesh's bin/ copy")
+    root = mesh_path.resolve()
+    missing = [str(p) for p in (root / "README.md", root / "members", root / "bin" / "mailbox") if not p.exists()]
+    if missing:
+        fail(f"{root} is not an initialised mailbox - missing: {missing}; refusing to touch it")
+    skill_script = Path(__file__).resolve()
+    # text-parse both sides; the mesh copy is by design possibly foreign bytes - never import it
+    mesh_version = read_version(root / "bin" / "mailbox")  # None = pre-stamp
+    skill_version = read_version(skill_script)
+    if mesh_version is not None and mesh_version > skill_version:
+        fail(
+            f"mesh runs {format_version(mesh_version)}, newer than this skill's {format_version(skill_version)}; "
+            "update the agent-config checkout running this session instead - refusing to downgrade the mesh"
+        )
+    changed = False
+    if mesh_version != skill_version:
+        helper = root / "bin" / "mailbox"
+        tmp = helper.with_name(f".{helper.name}.tmp")
+        tmp.write_text(skill_script.read_text())
+        os.chmod(tmp, 0o755)  # members run bin/mailbox directly; a default-mode copy breaks every command
+        os.replace(tmp, helper)
+        changed = True
+        typer.echo(f"helper: {format_version(mesh_version) if mesh_version else 'pre-stamp'} -> {format_version(skill_version)}")
+    rendered = TEMPLATE.read_text().replace("{{MAILBOX}}", str(root))
+    if (root / "README.md").read_text() != rendered:
+        write_atomic(root / "README.md", rendered)
+        changed = True
+        typer.echo("README.md: re-rendered from the current template")
+    audit_members(root)
+    if not changed:
+        typer.echo("mesh is current")
+        return
+    log_event(root, event="update", from_version=None if mesh_version is None else format_version(mesh_version),
+              to_version=format_version(skill_version))
 
 
 if __name__ == "__main__":

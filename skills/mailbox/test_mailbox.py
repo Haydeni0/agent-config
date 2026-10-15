@@ -28,7 +28,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.02"
+SKILL_VERSION = "2026-10-15.03"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -137,6 +137,15 @@ def run_init(root: Path, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
 
 def run_skill_helper(*args: str, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
     return subprocess.run([sys.executable, str(HELPER), *args], capture_output=True, text=True, env=herdr.env)
+
+
+def run_update(mesh_root: Path, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, str(HELPER), "update", str(mesh_root)], capture_output=True, text=True, env=herdr.env)
+
+
+def set_mesh_version(mesh_root: Path, version: str) -> None:
+    helper = mesh_root / "bin" / "mailbox"
+    helper.write_text(helper.read_text().replace(f'MAILBOX_VERSION = "{SKILL_VERSION}"', f'MAILBOX_VERSION = "{version}"'))
 
 
 @pytest.fixture
@@ -944,3 +953,120 @@ def test_send_strips_only_a_slug_prefix_equal_to_its_own_seq(mesh: Mesh, slug: s
 
     assert result.returncode == 0, result.stderr
     assert (mesh.inbox("worker") / filename).exists()
+
+
+def test_update_swaps_a_stale_helper_for_the_skill_copy(mesh: Mesh) -> None:
+    set_mesh_version(mesh.root, "2026-10-01.01")
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    helper = mesh.root / "bin" / "mailbox"
+    assert helper.read_text() == HELPER.read_text()
+    assert helper.stat().st_mode & 0o755 == 0o755
+    assert subprocess.run([sys.executable, str(helper), "--version"], capture_output=True, text=True, env=mesh.herdr.env).stdout.strip() == SKILL_VERSION
+    assert [p.name for p in mesh.root.rglob("*.tmp")] == []
+
+
+def test_update_leaves_a_same_version_byte_diff_alone(mesh: Mesh) -> None:
+    helper = mesh.root / "bin" / "mailbox"
+    helper.write_text(helper.read_text() + "\n# a hand edit the version line does not know about\n")
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert "current" in result.stdout
+    assert "# a hand edit the version line does not know about" in helper.read_text()
+    assert not (mesh.root / "log.jsonl").exists()
+
+
+def test_update_re_renders_a_stale_readme_without_touching_the_helper(mesh: Mesh) -> None:
+    readme = mesh.root / "README.md"
+    stale = readme.read_text()
+    readme.write_text(stale + "\nstale hand edit\n")
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert "stale hand edit" not in readme.read_text()
+    assert (mesh.root / "bin" / "mailbox").read_text() == HELPER.read_text()
+    events = [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
+    assert [e["event"] for e in events] == ["update"]
+    assert events[0]["from_version"] == SKILL_VERSION and events[0]["to_version"] == SKILL_VERSION
+
+
+def test_update_on_a_current_mesh_writes_nothing(mesh: Mesh) -> None:
+    helper_before = (mesh.root / "bin" / "mailbox").read_bytes()
+    readme_before = (mesh.root / "README.md").read_bytes()
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert "mesh is current" in result.stdout
+    assert (mesh.root / "bin" / "mailbox").read_bytes() == helper_before
+    assert (mesh.root / "README.md").read_bytes() == readme_before
+    assert not (mesh.root / "log.jsonl").exists()
+
+
+def test_update_preserves_mail_and_handled_files(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="body")
+    (mesh.inbox("worker") / "handled").mkdir(parents=True, exist_ok=True)
+    (mesh.inbox("worker") / "handled" / "planner.000-old.msg").write_text("old")
+    set_mesh_version(mesh.root, "2026-10-01.01")
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert (mesh.inbox("worker") / "planner.001-x.msg").read_text() == "body"
+    assert (mesh.inbox("worker") / "handled" / "planner.000-old.msg").read_text() == "old"
+
+
+def test_update_refuses_a_dir_that_is_not_a_mesh(tmp_path: Path, fake_env: FakeHerdr) -> None:
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    result = run_update(plain, fake_env)
+    assert result.returncode != 0
+    assert "not an initialised mailbox" in result.stderr
+    assert list(plain.iterdir()) == []
+
+    readme_only = tmp_path / "readme-only"
+    readme_only.mkdir()
+    (readme_only / "README.md").write_text("x")
+    result = run_update(readme_only, fake_env)
+    assert result.returncode != 0
+    assert "not an initialised mailbox" in result.stderr
+
+
+def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
+    helper = mesh.root / "bin" / "mailbox"
+    helper.write_text(helper.read_text().replace(f'MAILBOX_VERSION = "{SKILL_VERSION}"\n', ""))
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert f'MAILBOX_VERSION = "{SKILL_VERSION}"' in helper.read_text()
+    assert "pre-stamp" in result.stdout
+    events = [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
+    assert events[0]["from_version"] is None and events[0]["to_version"] == SKILL_VERSION
+
+
+def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
+    set_mesh_version(mesh.root, "2026-10-15.10")
+    readme_before = (mesh.root / "README.md").read_text()
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode != 0
+    assert "2026-10-15.10" in result.stderr and SKILL_VERSION in result.stderr
+    assert 'MAILBOX_VERSION = "2026-10-15.10"' in (mesh.root / "bin" / "mailbox").read_text()
+    assert (mesh.root / "README.md").read_text() == readme_before
+    assert not (mesh.root / "log.jsonl").exists()
+
+
+def test_update_refuses_a_malformed_mesh_version(mesh: Mesh) -> None:
+    set_mesh_version(mesh.root, "banana")
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode != 0
+    assert "banana" in result.stderr and "MAILBOX_VERSION" in result.stderr
