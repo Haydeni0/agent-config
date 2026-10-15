@@ -283,7 +283,7 @@ Before writing a claim about the codebase or environment, ask: can I verify this
 - **No, and the claim is blocking** → stop and ask. Don't proceed on a guess.
 - **No, and the claim is non-blocking** → flag the assumption explicitly: "Assuming X — correct me if wrong."
 
-When a verifier MCP (`verify_claims` tool) is available, run draft answers with factual codebase claims through it before presenting, fixing flagged sentences. It is session-dependent - do not assume it is available; when absent, direct tool verification above applies.
+Before sending any claim-bearing message (chat answer, peer-agent or subagent report, status file, doc, PR or Linear post), run the claim-verification skill.
 
 **Blocking** means: the claim influences what tool call comes next, what code gets written, or what recommendation is made. If getting it wrong changes your next action, it's blocking.
 
