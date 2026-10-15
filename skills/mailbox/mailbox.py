@@ -63,7 +63,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.08"
+MAILBOX_VERSION = "2026-10-15.09"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -627,7 +627,7 @@ def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
 
 
 def resolve_request(root: Path, me: str, ref: str, sender: str) -> Message:
-    """The request REF from SENDER, unread or handled, in ME's inbox."""
+    """The request REF from SENDER, unread, in flight or handled, in ME's inbox."""
     match = REQUEST_REF_RE.fullmatch(Path(ref).name)
     if match is None:
         fail(f"id {ref!r} must be the request's seq (7), id (007-review-api) or filename")
@@ -646,7 +646,7 @@ def resolve_request(root: Path, me: str, ref: str, sender: str) -> Message:
         listing = ", ".join(f"{m.path.name} (from {m.sender})" for m in same_seq)
         fail(f"no request {ref!r} from {sender!r}; requests with seq {seq}: {listing} - reply to the name before the first '.'")
     from_sender = [m.msg_id for m in requests if m.sender == sender]
-    fail(f"no request with seq {seq} in your inbox or handled/; requests from {sender!r}: {from_sender or 'none'}")
+    fail(f"no request with seq {seq} in your inbox, inflight/ or handled/; requests from {sender!r}: {from_sender or 'none'}")
 
 
 @app.command()
@@ -677,7 +677,7 @@ def inbox() -> None:
         try:
             typer.echo(describe(message))
         except FileNotFoundError:
-            continue  # a concurrent take already acked it
+            continue  # a concurrent take already moved it to inflight
 
 
 @app.command()

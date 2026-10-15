@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.08"
+SKILL_VERSION = "2026-10-15.09"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
