@@ -123,6 +123,10 @@ actions, spend above policy, dead ends, and the final report. Everything else: d
 an agent-picked D, continue. The PI never writes lab files; questions they give in prose,
 you file. Keep `status.md` line 1 current.
 
+PI directives, including ones a member relays, are dispatched the turn they arrive. Hold
+ready work only for a real dependency, never to batch it with unrelated work; anything held
+gets a `status.md` line naming what it waits on, so the PI sees it without asking.
+
 The interrupt list limits what *you* start, not how you talk when the PI does. When the PI
 chats, think with them as a colleague (D6): which questions are worth answering is worked
 out together and keeps changing as results come in. `questions.md` is that shared agenda;
