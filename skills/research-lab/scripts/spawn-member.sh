@@ -46,7 +46,11 @@ herdr agent wait "$pane" --until idle --timeout 180000 >/dev/null
 herdr agent prompt "$pane" "$(cat "$prompt_file")" >/dev/null
 # a prompt typed while the UI is still settling can sit unsubmitted in the input box
 sleep 5
-[[ $(herdr agent get "$pane" | jq -r '.result.agent.agent_status') == working ]] \
-  || herdr pane send-keys "$pane" Enter >/dev/null
+# re-send Enter only when the input line holds our prompt, never into an unknown dialog
+if [[ $(herdr agent get "$pane" | jq -r '.result.agent.agent_status') != working ]]; then
+  head_of_prompt=$(head -c 40 "$prompt_file")
+  grep -qF "❯ $head_of_prompt" <<<"$(herdr pane read "$pane")" \
+    && herdr pane send-keys "$pane" Enter >/dev/null
+fi
 herdr agent rename "$pane" "$name" >/dev/null
 echo "$pane"
