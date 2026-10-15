@@ -13,9 +13,19 @@ launcher=$(sed -n 's/^LAUNCHER: *//p' "$profile" | head -1)
 pane=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$cwd" --label "$name" --no-focus \
   | jq -r '.result.root_pane.pane_id')
 [[ $pane == *:p* ]] || { echo "spawn-member: tab create for $name failed" >&2; exit 1; }
-herdr pane run "$pane" "$launcher" >/dev/null
-# herdr only knows the pane as an agent once the harness has drawn its UI
-for _ in $(seq 60); do herdr agent get "$pane" >/dev/null 2>&1 && break; sleep 2; done
+# herdr only knows the pane as an agent once the harness has drawn its UI; a launcher can
+# exit early (e.g. a busy model backend failing its health check), so relaunch a few times
+agent_up=no
+for attempt in 1 2 3; do
+  herdr pane run "$pane" "$launcher" >/dev/null
+  for _ in $(seq 40); do
+    herdr agent get "$pane" >/dev/null 2>&1 && { agent_up=yes; break; }
+    sleep 3
+  done
+  [[ $agent_up == yes ]] && break
+  sleep $((attempt * 15))
+done
+[[ $agent_up == yes ]] || { echo "spawn-member: launcher never came up in $pane: $(herdr pane read "$pane" | tail -5)" >&2; exit 1; }
 # A cwd the harness has not seen opens its folder-trust dialog. Accept it only for a cwd under
 # a root the PI listed in the profile (TRUSTED_ROOTS:) and only when the dialog names that
 # cwd and shows the expected option; anything else stops for the PI.
