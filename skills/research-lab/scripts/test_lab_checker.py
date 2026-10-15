@@ -240,3 +240,115 @@ def test_normal_checks_unchanged_by_vacuity_rule(tmp_path):
         lc.Check(id="c-quant", quote="all losses at least 0.2", data=str(data), expr="d['losses']", kind="quantifier", predicate="ge", bound=0.2),
     ]
     assert lc.run_checks(normal, quiet=True) == []
+
+
+# cross-index, third direction: a decisions.md D entry restating this experiment's
+# numbers must stay inside what its manifest claims. Pilot incident: the audited Entry
+# corrected a claim (5x -> ~4.7x) but the acceptance D entry, written afterwards,
+# restated the stale 5x - it matched no claim.
+def _claim_checks(tmp_path: Path) -> list[lc.Check]:
+    data = tmp_path / "d.json"
+    data.write_text('{"speedup": 4.7, "lo": 0.6, "hi": 1.0}')
+    return [
+        lc.Check(id="c-speed", quote="the stage costs 4.7x vs baseline", data=str(data), expr="d['speedup']", kind="value", rounding=1),
+        lc.Check(id="c-shift", quote="shifts span 0.6-1.0x a condition change", data=str(data), expr="[d['lo'], d['hi']]", kind="range"),
+    ]
+
+
+def _lab_with_decisions(tmp_path: Path, d_text: str) -> Path:
+    (tmp_path / "experiments").mkdir(exist_ok=True)
+    entry = tmp_path / "experiments" / "E1.md"
+    entry.write_text("## Entry\n\nThe stage costs 4.7x vs baseline; shifts span 0.6-1.0x.\n")
+    (tmp_path / "decisions.md").write_text(d_text)
+    return entry
+
+
+def test_decision_restating_claim_numbers_passes(tmp_path):
+    entry = _lab_with_decisions(
+        tmp_path,
+        "- D1 (2026-10-15). **E1 accepted: the stage costs 4.7x vs baseline; "
+        "a mid-range shift sits at 0.75x.**\n",
+    )
+    # 4.7 is a quote single; 0.75 falls inside the quoted 0.6-1.0 range
+    assert lc.decision_numbers(_claim_checks(tmp_path), entry) == []
+
+
+def test_decision_stale_number_flagged(tmp_path):
+    # the claim was corrected to 4.7x in the Entry; the D entry restates the old 5x
+    entry = _lab_with_decisions(
+        tmp_path,
+        "- D1 (2026-10-15). **E1 accepted: the stage costs ~5x vs baseline.**\n",
+    )
+    failures = lc.decision_numbers(_claim_checks(tmp_path), entry)
+    assert len(failures) == 1
+    f = failures[0]
+    assert (f.check_id, f.rule) == ("E1", "cross-index decision")
+    assert "5 " in f.detail or "5x" in f.detail
+    assert "~5x vs baseline" in f.detail  # the sentence is quoted for review
+
+
+def test_decision_numbers_exempt_stamps_ids_labels(tmp_path):
+    # dates, clock times, id-embedded digits (E9, RL2, z95, P3) and zero-padded
+    # labels (msg 053) are not claim numbers
+    entry = _lab_with_decisions(
+        tmp_path,
+        "- D2 (2026-10-15 21:04). E1 audit closed at 21:04; RL2 and z95 noted "
+        "(msg 053); P3 holds.\n",
+    )
+    assert lc.decision_numbers(_claim_checks(tmp_path), entry) == []
+
+
+def test_decision_numbers_only_sentence_citing_the_experiment(tmp_path):
+    entry = _lab_with_decisions(
+        tmp_path,
+        "- D3 (2026-10-15). E1 accepted, headline clean. A later note records 9.9 "
+        "elsewhere, citing no experiment id.\n",
+    )
+    assert lc.decision_numbers(_claim_checks(tmp_path), entry) == []
+
+
+def test_decision_citations_of_other_experiments_skipped(tmp_path):
+    # E2's restatement is E2's own checker run's slice, not E1's
+    entry = _lab_with_decisions(
+        tmp_path,
+        "- D4 (2026-10-15). **E2 accepted with a 7.3x gain.**\n",
+    )
+    assert lc.decision_numbers(_claim_checks(tmp_path), entry) == []
+
+
+def test_decision_numbers_skipped_without_decisions_or_eid(tmp_path):
+    # no decisions.md next to the lab -> nothing to check
+    exp = tmp_path / "experiments"
+    exp.mkdir()
+    entry = exp / "E1.md"
+    entry.write_text("## Entry\n\nThe stage costs 4.7x vs baseline.\n")
+    assert lc.decision_numbers(_claim_checks(tmp_path), entry) == []
+    # a shared single-file layout (stem is not an experiment id) -> skipped
+    (tmp_path / "decisions.md").write_text("- D5. E1 shows 123x.\n")
+    shared = tmp_path / "experiments.md"
+    shared.write_text("## E1 (2026-10-15). done\n")
+    assert lc.decision_numbers(_claim_checks(tmp_path), shared) == []
+
+
+def test_main_warns_stale_decision_number(monkeypatch, capsys, tmp_path):
+    data = tmp_path / "d.json"
+    data.write_text('{"speedup": 4.7}')
+    exp = tmp_path / "experiments"
+    exp.mkdir()
+    entry = exp / "E1.md"
+    entry.write_text("## Entry\n\nthe stage costs 4.7x vs baseline [c-speed].\n")
+    (tmp_path / "decisions.md").write_text(
+        "- D1 (2026-10-15). **E1 accepted: the stage costs ~5x vs baseline.**\n"
+    )
+    manifest = tmp_path / "m.py"
+    manifest.write_text(
+        "from lab_checker import Check\n"
+        "CHECKS = [Check(id='c-speed', quote='the stage costs 4.7x vs baseline', "
+        f"data={str(data)!r}, expr=\"d['speedup']\", kind='value', rounding=1)]\n"
+    )
+    rc, out = _run_main([str(manifest), str(entry)], monkeypatch, capsys)
+    # a decision restatement is a flag for review, not a gate failure
+    assert rc == 0, out
+    assert "WARN E1 [cross-index decision]" in out
+    # the stale 5 is named
+    assert "5 about E1" in out

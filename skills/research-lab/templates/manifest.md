@@ -36,7 +36,9 @@ Rules:
 - **Cross-index, both directions** (checker-enforced): every `[c-*]` id cited in the
   Entry must resolve to a manifest Check id, and every Check `quote` must appear
   verbatim in the Entry. A dangling citation or a dropped quote is a failure, not a
-  typo.
+  typo. A third direction flags (WARN, via the checker and the heartbeat lint) a
+  decisions.md D entry restating about this experiment a number no claim covers -
+  restatement of a value since corrected in the Entry.
 - `kind="novelty"` (D27): `data` is a literature-spike file; required for "first", "novel",
   "new", "unlike prior work".
 - Uncovered fragments the owner has judged not to need a check are waived explicitly:

@@ -26,6 +26,16 @@ Rules (each answers a pilot incident):
   is inside the template's fixed vocabulary, so D28 measures and D32
   budget-vs-actual stay grep-able. The vocabulary is parsed from the template
   at run time; a missing template fails the run.
+- ``accepted-entry``: every experiment id marked accepted - a decisions.md
+  D-entry sentence naming ids alongside "accepted" (``E<n>-E<m>`` ranges
+  expanded; an id followed within two words by cut/dropped/rejected/deferred is
+  not), or a status.md experiment-table row decided ``[x]`` - must still head an
+  entry in ``experiments.md`` / ``experiments/*.md``. When git history is
+  reachable, a heading the last commit still had is named as dropped since it.
+- decision-number WARNs: for every ``experiments/<eid>.md`` with its manifest,
+  lab_checker's cross-index third direction runs over decisions.md restatements
+  of that experiment (numbers matching no manifest claim are flagged for
+  review). Non-blocking; printed as ``WARN`` lines.
 
 Usage:
     uv run --script lab_lint.py <lab dir>
@@ -36,10 +46,16 @@ Exits 1 on any finding, 0 clean.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
+from typing import Any
+
+from lab_text import d_entries, sentences
+
+import lab_checker as lc  # numpy is imported lazily; the lint stays stdlib-only
 
 # a stamp at most this far past the file's mtime is fine: edits lag stamps and
 # mtimes are second-granular
@@ -184,6 +200,138 @@ def lint_audit_log(lab: Path, events: set[str]) -> list[Finding]:
     return findings
 
 
+_EID_RE = re.compile(r"\bE\d+\b")
+_EID_RANGE_RE = re.compile(r"\bE(\d+)\s*-\s*E(\d+)\b")
+_NOT_ACCEPTED_RE = re.compile(r"\b(cut|dropped|rejected|deferred)\b")
+_ENTRY_HEADING_RE = re.compile(r"^#{1,6}\s+(E\d+)\b", re.MULTILINE)
+_ACCEPTED_WORD_RE = re.compile(r"\baccepted\b", re.IGNORECASE)
+
+
+def _accepted_ids(lab: Path) -> dict[str, tuple[Path, int]]:
+    """Experiment ids marked accepted -> (marker file, 1-based marker line)."""
+    accepted: dict[str, tuple[Path, int]] = {}
+    decisions = lab / "decisions.md"
+    if decisions.is_file():
+        for _did, entry, first_line in d_entries(decisions.read_text()):
+            for sentence, offset in sentences(entry):
+                if not _ACCEPTED_WORD_RE.search(sentence):
+                    continue
+                line = first_line + entry[:offset].count("\n") + 1
+                ids: set[str] = set()
+                for m in _EID_RANGE_RE.finditer(sentence):
+                    ids.update(
+                        f"E{n}" for n in range(int(m.group(1)), int(m.group(2)) + 1)
+                    )
+                for m in _EID_RE.finditer(sentence):
+                    two_words = " ".join(sentence[m.end() :].split()[:2])
+                    if not _NOT_ACCEPTED_RE.search(two_words):
+                        ids.add(m.group(0))
+                for eid in sorted(ids):
+                    accepted.setdefault(eid, (decisions, line))
+    status = lab / "status.md"
+    if status.is_file():
+        for i, line in enumerate(status.read_text().splitlines(), start=1):
+            cells = _cells(line)
+            if len(cells) >= 4 and re.fullmatch(r"E\d+", cells[0]) and cells[3] == "[x]":
+                accepted.setdefault(cells[0], (status, i))
+    return accepted
+
+
+def _experiments_files(lab: Path) -> list[Path]:
+    files = []
+    single = lab / "experiments.md"
+    if single.is_file():
+        files.append(single)
+    exp_dir = lab / "experiments"
+    if exp_dir.is_dir():
+        files.extend(sorted(exp_dir.glob("*.md")))
+    return files
+
+
+def _head_ids_at_head(lab: Path) -> set[str]:
+    """Entry-heading ids the last commit still had in the lab's experiments
+    file(s); empty when the lab is not a git repo or nothing is tracked
+    (read-only git queries only). Walks HEAD's tree, not the working tree, so a
+    deleted file's heading is still seen."""
+    try:
+        prefix = subprocess.run(
+            ["git", "-C", str(lab), "rev-parse", "--show-prefix"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if prefix.returncode != 0:
+            return set()
+        listing = subprocess.run(
+            ["git", "-C", str(lab), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if listing.returncode != 0:
+            return set()
+        ids: set[str] = set()
+        pre = prefix.stdout.strip()
+        for rel in listing.stdout.splitlines():
+            local = rel[len(pre) :] if rel.startswith(pre) else ""
+            if local != "experiments.md" and not re.fullmatch(r"experiments/[^/]+\.md", local):
+                continue
+            blob = subprocess.run(
+                ["git", "-C", str(lab), "show", f"HEAD:{rel}"],
+                capture_output=True, text=True, timeout=10, errors="replace",
+            )
+            if blob.returncode == 0:
+                ids.update(_ENTRY_HEADING_RE.findall(blob.stdout))
+        return ids
+    except (OSError, subprocess.SubprocessError):
+        return set()
+
+
+def lint_accepted_entries(lab: Path) -> list[Finding]:
+    """Rule ``accepted-entry``: accepted work must still head an entry.
+
+    A regenerated experiments file must not silently drop an accepted entry; the
+    pilot's miss was exactly that. The marker (decisions.md sentence or status
+    ``[x]`` row) is the finding's location; when git history is reachable the
+    detail also names a heading the last commit still had.
+    """
+    accepted = _accepted_ids(lab)
+    if not accepted:
+        return []
+    files = _experiments_files(lab)
+    heading_ids: set[str] = set()
+    for p in files:
+        heading_ids.update(_ENTRY_HEADING_RE.findall(p.read_text(errors="replace")))
+    at_head = _head_ids_at_head(lab)
+    findings = []
+    for eid in sorted(accepted):
+        if eid in heading_ids:
+            continue
+        src, line = accepted[eid]
+        detail = f"{eid} marked accepted but no entry heading remains in experiments.md or experiments/"
+        if eid in at_head:
+            detail += " (its heading was present in the last commit)"
+        findings.append(Finding(src, line, "accepted-entry", detail))
+    return findings
+
+
+def decision_number_warns(lab: Path) -> list[str]:
+    """WARN lines from lab_checker's cross-index third direction, run over every
+    experiment's manifest each beat - the D entry is written after the worker's
+    last checker run, so the heartbeat is where stale restatements surface."""
+    if not (lab / "decisions.md").is_file():
+        return []
+    warns = []
+    for exp in sorted((lab / "experiments").glob("*.md")):
+        manifest = exp.with_name(f"{exp.stem}_manifest.py")
+        if not manifest.is_file():
+            continue
+        namespace: dict[str, Any] = {"Check": lc.Check, "CHECKS": [], "__file__": str(manifest)}
+        try:
+            exec(manifest.read_text(), namespace)  # noqa: S102 - trusted lab code
+        except Exception:
+            continue  # the worker's own checker run surfaces manifest errors
+        for f in lc.decision_numbers(namespace["CHECKS"], exp):
+            warns.append(f"WARN {f.check_id} [{f.rule}]: {f.detail}")
+    return warns
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -192,7 +340,14 @@ def main() -> int:
     if not lab.is_dir():
         print(f"not a directory: {lab}")
         return 2
-    findings = lint_timestamps(lab) + lint_status(lab) + lint_audit_log(lab, _audit_events())
+    findings = (
+        lint_timestamps(lab)
+        + lint_status(lab)
+        + lint_audit_log(lab, _audit_events())
+        + lint_accepted_entries(lab)
+    )
+    for w in decision_number_warns(lab):
+        print(w)
     for f in findings:
         loc = f"{f.file}:{f.line}" if f.line else str(f.file)
         print(f"FAIL {loc} [{f.rule}]: {f.detail}")

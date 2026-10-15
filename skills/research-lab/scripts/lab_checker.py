@@ -32,9 +32,13 @@ defines kinds, no other wiring.
 literature-spike artifact) must exist, and the quote is cross-indexed like
 every other check.
 
-Cross-index, both directions over the Entry section:
+Cross-index, three directions:
 - every ``[c-*]`` id cited in the Entry must resolve to a manifest Check id;
-- every manifest Check quote must appear verbatim in the Entry.
+- every manifest Check quote must appear verbatim in the Entry;
+- every number a decisions.md D entry restates about this experiment must match
+  a value the manifest claims cover (a quote single, or a value inside a quoted
+  range) - a restatement of a number since corrected in the Entry matches no
+  claim and is flagged (WARN, non-blocking), not guessed at.
 
 Claim-ledger fields (``status``, ``falsification``, ``forbidden``,
 ``depends_on``, ``audit_note``) are carried, not evaluated here; status changes
@@ -62,7 +66,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import numpy as np
+from lab_text import d_entries, sentences
 
 _NUM = r"[+-]?\d+(?:\.\d+)?"
 RANGE_RE = re.compile(rf"({_NUM})\s*(?:to|-|–|—)\s*({_NUM})")
@@ -143,6 +147,8 @@ class Waive:
 def _load(data_path: str) -> Any:
     import json
 
+    import numpy as np
+
     p = Path(data_path)
     if p.suffix == ".json":
         return json.loads(p.read_text())
@@ -180,6 +186,8 @@ def _value_matches(prose: float, target: float, check: Check) -> str | None:
 
 
 def run_check(check: Check, data: Any) -> Failure | None:
+    import numpy as np
+
     core = check.core_kind()
 
     if core == "novelty":
@@ -379,6 +387,94 @@ def cross_index(checks: list[Check], md_path: Path, section: str = "## Entry") -
     return failures
 
 
+_DT_STAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}|\b\d{1,2}:\d{2}(?::\d{2})?\b")
+_ORDINAL_RE = re.compile(r"\(\d{1,2}\)")
+
+
+def _prose_numbers(sentence: str) -> list[float]:
+    """Numeric claims a decisions sentence states, conservatively.
+
+    Dates, clock times, list ordinals ``(1)``, digits embedded in ids (E9, RL2,
+    z95, P3) and zero-padded labels (msg 053) are not claim numbers; a trailing
+    x (multiplier) or % is.
+    """
+    text = _ORDINAL_RE.sub(" ", _DT_STAMP_RE.sub(" ", sentence))
+    out = []
+    for start, s in _extract_quote_numbers(text)["singles"]:
+        before = text[start - 1] if start else ""
+        end = start + len(s)
+        after = text[end : end + 1]
+        if before.isalpha() or before.isdigit() or before == ".":
+            continue
+        if after.isalpha() and after.lower() != "x":
+            continue
+        if s.startswith("0") and len(s) > 1 and "." not in s:
+            continue
+        out.append(float(s))
+    return out
+
+
+def _claim_values(checks: list[Check]) -> tuple[list[float], list[tuple[float, float]]]:
+    """(single values, closed ranges) the manifest quotes state - the coverage
+    set a downstream restatement of the experiment's numbers must stay inside."""
+    singles: list[float] = []
+    ranges: list[tuple[float, float]] = []
+    for c in checks:
+        q = _extract_quote_numbers(c.quote)
+        singles.extend(float(s) for _, s in q["singles"])
+        if q["lo"] is not None:
+            ranges.append((q["lo"], q["hi"]))
+    return singles, ranges
+
+
+def decision_numbers(
+    checks: list[Check], md_path: Path, eid: str | None = None
+) -> list[Failure]:
+    """Cross-index, third direction: decisions.md restatements of this experiment.
+
+    Every number in a D-entry sentence citing the experiment id must match a
+    value the manifest claims cover - a quote single, or a value inside a quoted
+    range. The pilot incident: an audited correction (5x -> ~4.7x) was restated
+    stale in the acceptance D entry, written afterwards; the old number matches
+    no claim. Conservative: uncovered numbers are flagged (WARN, non-blocking -
+    counts and scores in decision prose also land here) with their sentence for
+    review, never repaired; the findings page is not read (the checker knows no
+    page path). Skipped when the file is not a per-experiment entry
+    (``experiments/<eid>.md``) or no decisions.md sits beside the lab dir.
+    """
+    if eid is None:
+        eid = md_path.stem
+    if not re.fullmatch(r"[A-Za-z]+\d+", eid):
+        return []
+    for lab in (md_path.parent.parent, md_path.parent):
+        decisions = lab / "decisions.md"
+        if decisions.is_file():
+            break
+    else:
+        return []
+    singles, ranges = _claim_values(checks)
+    cite = re.compile(rf"\b{re.escape(eid)}\b")
+    failures = []
+    for did, entry, first_line in d_entries(decisions.read_text()):
+        for sentence, offset in sentences(entry):
+            if not cite.search(sentence):
+                continue
+            line = first_line + entry[:offset].count("\n") + 1
+            for n in dict.fromkeys(_prose_numbers(sentence)):
+                if n in singles or any(lo <= n <= hi for lo, hi in ranges):
+                    continue
+                failures.append(
+                    Failure(
+                        eid,
+                        "cross-index decision",
+                        f"decisions.md line {line} ({did}): {n:g} about {eid} matches "
+                        f"no manifest claim (corrected in the Entry?): "
+                        f"{sentence.strip()[:80]!r}",
+                    )
+                )
+    return failures
+
+
 def apply_waivers(
     uncovered: list[str], waivers: list[Waive]
 ) -> tuple[list[str], list[tuple[str, str]], list[Waive]]:
@@ -411,6 +507,7 @@ def main() -> int:
     md = Path(experiment_path)
     try:
         xfailures = cross_index(checks, md)
+        dwarns = decision_numbers(checks, md)
         uncovered = coverage_scan(md, [c.quote for c in checks], section="## Entry")
     except ValueError as e:
         print(f"COVERAGE-ERROR: {e}")
@@ -419,6 +516,8 @@ def main() -> int:
     print(f"checks: {len(checks) - len(failures)}/{len(checks)} pass")
     for f in xfailures:
         print(f"FAIL {f.check_id} [{f.rule}]: {f.detail}")
+    for f in dwarns:
+        print(f"WARN {f.check_id} [{f.rule}]: {f.detail}")
     for w in stale:
         print(
             f"FAIL waive [stale waiver]: fragment no longer uncovered: "

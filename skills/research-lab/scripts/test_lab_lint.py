@@ -1,4 +1,5 @@
-"""Tests for lab_lint.py: future stamps, status.md shape, audit vocabulary.
+"""Tests for lab_lint.py: future stamps, status.md shape, audit vocabulary,
+accepted-entry presence.
 
 Timestamp tests pin the file mtime with ``os.utime`` so they do not depend on
 when they run; HH:MM-with-date-context cases write today's date into the file.
@@ -7,6 +8,8 @@ when they run; HH:MM-with-date-context cases write today's date into the file.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
@@ -41,6 +44,11 @@ def _make_lab(tmp_path: Path) -> Path:
         "|---|---|---|---|---|---|\n"
         "| E1 | does B dominate? | headline | [x] | 2 h | eta 18:00 |\n"
     )
+    (tmp_path / "experiments").mkdir()
+    # E1 is decided [x] in the status table, so its entry heading must exist
+    (tmp_path / "experiments" / "E1.md").write_text(
+        "# E1: does B dominate?\n\n## Entry\n\nDecided at D7.\n"
+    )
     (tmp_path / "audit" / "log.md").write_text(
         "# Audit log\n\n"
         "Events: `GATE` `CATCH` (see template).\n\n"
@@ -70,9 +78,7 @@ def test_clean_lab_passes(tmp_path, monkeypatch, capsys):
 
 def test_future_iso_stamp_fails(tmp_path, monkeypatch, capsys):
     lab = _make_lab(tmp_path)
-    entry = lab / "experiments"
-    entry.mkdir()
-    f = entry / "E1.md"
+    f = lab / "experiments" / "E1.md"
     f.write_text(f"## Entry\n\nClosed {_iso(NOW + HOUR)} after the run.\n")
     _pin_mtime(f, NOW)
     rc, out = _run(lab, monkeypatch, capsys)
@@ -242,3 +248,128 @@ def test_every_vocabulary_event_passes(tmp_path, monkeypatch, capsys):
     )
     rc, out = _run(lab, monkeypatch, capsys)
     assert rc == 0, out
+
+
+# accepted-entry: every id marked accepted (decisions.md acceptance sentence, or a
+# status.md experiment-table row decided [x]) must still head an entry in the
+# experiments file(s). Pilot incident: a member regenerated a shared experiments
+# file and silently dropped an accepted entry.
+def _accept_e1_e2_e3_e5(lab: Path) -> None:
+    (lab / "decisions.md").write_text(
+        "- D2 (2026-10-15). R6 E1-E3, E5 accepted. Headlines follow.\n"
+    )
+    for n in (2, 3, 5):
+        (lab / "experiments" / f"E{n}.md").write_text(f"# E{n}: title\n\n## Entry\n\nDone.\n")
+
+
+def test_accepted_entries_present_passes(tmp_path, monkeypatch, capsys):
+    lab = _make_lab(tmp_path)
+    _accept_e1_e2_e3_e5(lab)
+    for p in lab.rglob("*"):
+        if p.is_file():
+            _pin_mtime(p, NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 0, out
+
+
+def test_dropped_accepted_entry_fails(tmp_path, monkeypatch, capsys):
+    lab = _make_lab(tmp_path)
+    _accept_e1_e2_e3_e5(lab)
+    (lab / "experiments" / "E2.md").unlink()  # the regenerated file dropped E2
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 1
+    assert "accepted-entry" in out
+    assert "E2" in out
+    assert "decisions.md:1" in out  # the marker is reported with its line
+
+
+def test_accepted_entry_in_single_file_experiments_md(tmp_path, monkeypatch, capsys):
+    lab = _make_lab(tmp_path)
+    (lab / "decisions.md").write_text("- D2 (2026-10-15). E1, E2 accepted.\n")
+    shutil.rmtree(lab / "experiments")
+    (lab / "experiments.md").write_text(
+        "# Experiment log\n\n## E1 (2026-10-15). First - done\n\ntext\n\n"
+        "## E2 (2026-10-15). Second - done\n\ntext\n"
+    )
+    _pin_mtime(lab / "experiments.md", NOW)
+    _pin_mtime(lab / "decisions.md", NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 0, out
+    # drop E2's heading the way a regenerated file would
+    (lab / "experiments.md").write_text(
+        "# Experiment log\n\n## E1 (2026-10-15). First - done\n\ntext\n"
+    )
+    _pin_mtime(lab / "experiments.md", NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 1
+    assert "accepted-entry" in out and "E2" in out
+
+
+def test_cut_id_in_accepting_sentence_not_required(tmp_path, monkeypatch, capsys):
+    lab = _make_lab(tmp_path)
+    (lab / "decisions.md").write_text(
+        "- D2 (2026-10-15). E1 accepted, E2 cut when the clock bit.\n"
+    )
+    _pin_mtime(lab / "decisions.md", NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 0, out  # only E1 is accepted and its heading exists
+
+
+def test_status_decided_row_requires_heading(tmp_path, monkeypatch, capsys):
+    # the index alone (a status.md [x] row, no decisions.md) marks E1 accepted
+    lab = _make_lab(tmp_path)
+    (lab / "experiments" / "E1.md").write_text("## Entry\n\nNo heading survived.\n")
+    _pin_mtime(lab / "experiments" / "E1.md", NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 1
+    assert "accepted-entry" in out and "E1" in out
+
+
+def test_dropped_accepted_heading_since_last_commit(tmp_path, monkeypatch, capsys):
+    # git history, when reachable, names accepted headings the last commit still had
+    lab = _make_lab(tmp_path)
+    _accept_e1_e2_e3_e5(lab)
+    for p in lab.rglob("*"):
+        if p.is_file():
+            _pin_mtime(p, NOW)
+    # build a commit with plumbing (commit-tree, not `git commit`)
+    def _git(*args: str) -> str:
+        r = subprocess.run(
+            ["git", "-C", str(lab), *args], capture_output=True, text=True, check=True
+        )
+        return r.stdout.strip()
+
+    _git("init", "-q")
+    _git("add", "-A")
+    tree = _git("write-tree")
+    commit = _git(
+        "-c", "user.name=lab", "-c", "user.email=lab@lab", "commit-tree", tree, "-m", "state"
+    )
+    _git("update-ref", _git("symbolic-ref", "HEAD"), commit)
+    (lab / "experiments" / "E2.md").unlink()
+    _pin_mtime(lab / "experiments", NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 1
+    assert "accepted-entry" in out and "E2" in out
+    assert "last commit" in out
+
+
+def test_decision_number_warns_non_blocking(tmp_path, monkeypatch, capsys):
+    # the heartbeat runs lab_checker's cross-index third direction over every
+    # manifest: a stale restatement in decisions.md is flagged, not a block
+    lab = _make_lab(tmp_path)
+    (lab / "decisions.md").write_text(
+        "- D2 (2026-10-15). **E1 accepted: the stage costs ~5x vs baseline.**\n"
+    )
+    data = lab / "d.json"
+    data.write_text('{"speedup": 4.7}')
+    (lab / "experiments" / "E1_manifest.py").write_text(
+        "from lab_checker import Check\n"
+        "CHECKS = [Check(id='c-speed', quote='the stage costs 4.7x vs baseline', "
+        f"data={str(data)!r}, expr=\"d['speedup']\", kind='value', rounding=1)]\n"
+    )
+    _pin_mtime(lab / "decisions.md", NOW)
+    rc, out = _run(lab, monkeypatch, capsys)
+    assert rc == 0, out  # WARN, not a finding
+    assert "WARN E1 [cross-index decision]" in out
+    assert "5 about E1" in out
