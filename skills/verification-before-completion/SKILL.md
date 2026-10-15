@@ -2,9 +2,11 @@
 name: verification-before-completion
 description: >
   Use when about to claim work is complete, fixed, or passing, or before committing/PR - to enforce running verification commands and confirming output before any success claim. Evidence before assertions always. Not auto-triggered for trivial reads; invoke before any completion or success claim.
+layer: worker
+deps: [claim-verification]
 forked-from: superpowers@claude-plugins-official v6.3.0 (verification-before-completion)
 forked-date: 2026-09-01
-forked-note: description rewritten to require explicit user request; see Provenance line in body
+forked-note: description lightly edited; see Provenance line in body
 ---
 
 # verification-before-completion
@@ -43,17 +45,9 @@ BEFORE claiming any status or expressing satisfaction:
 Skip any step = lying, not verifying
 ```
 
-## Common Failures
+## Evidence per claim type
 
-| Claim | Requires | Not Sufficient |
-|-------|----------|----------------|
-| Tests pass | Test command output: 0 failures | Previous run, "should pass" |
-| Linter clean | Linter output: 0 errors | Partial check, extrapolation |
-| Build succeeds | Build command: exit 0 | Linter passing, logs look good |
-| Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
-| Regression test works | Red-green cycle verified | Test passes once |
-| Agent completed | VCS diff shows changes | Agent reports "success" |
-| Requirements met | Line-by-line checklist | Tests passing |
+What counts as evidence for each claim type - tests, build, regression tests, agent reports, values, remote state - is claim-verification's Evidence table. This skill is the completion gate on top of it: the moment, the fresh run, and the commit/PR checkpoint.
 
 ## Red Flags - STOP
 
@@ -103,18 +97,6 @@ Skip any step = lying, not verifying
 ```
 ✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
 ❌ "Tests pass, phase complete"
-```
-
-**Agent delegation:**
-```
-✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
-❌ Trust agent report
-```
-
-**Draft prose claims (verifier MCP):**
-```
-✅ Tool list shows verify_claims → run draft through it → fix flagged sentences
-❌ Assume it's available, or skip it when present
 ```
 
 ## When To Apply

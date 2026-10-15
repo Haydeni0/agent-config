@@ -3,7 +3,7 @@ name: executing-plans
 layer: worker
 description: >
   Use when the user asks to execute or implement a written implementation plan (checkbox-tracked plan file), in this or a fresh session. Not auto-triggered: never invoke unless a written plan document exists and the user asks to carry it out.
-deps: [tdd]
+deps: [tdd, verification-before-completion]
 forked-from: superpowers@claude-plugins-official v6.3.0 (executing-plans)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
@@ -44,7 +44,7 @@ For each task:
 ### Step 3: Complete Development
 
 After all tasks complete and verified:
-- Verify tests pass, then summarize the work and ask the user how to finish (merge, PR, keep branch) - per your normal git workflow
+- Run verification-before-completion (fresh test run, requirements line by line), then summarize the work and ask the user how to finish (merge, PR, keep branch) - per your normal git workflow
 
 ## When to Stop and Ask for Help
 
