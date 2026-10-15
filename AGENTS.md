@@ -29,6 +29,7 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 - Nested `AGENTS.md` files are authoritative for the directories they cover. Keep the root file source-scoped rather than duplicating subproject rules.
 - The README skill map is generated: declare cross-skill dependencies in each skill's `deps:` frontmatter, regenerate with `uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py --write`, and commit the result. verify.sh fails on a stale graph. Vendored skills are never edited; they appear as nodes only.
 - Requirements live in `docs/requirements.md` (ID / Requirement / Verification tables). Update it with or before any behavior change it covers, cite entries as ID plus one-line meaning, and never mark work complete without running the cited verification.
+- Test suites stay fast (REQ-PROCESS-06): a suite's full run completes under 20s wall on an idle box on a single core - aim under 10s. When a suite crosses the line, cut process spawns or I/O, never buy speed with core count (8 workers max).
 - Commit and push only under the active authorization gate. Branches use `hayden/`.
 
 ## Documents
