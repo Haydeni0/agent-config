@@ -1,0 +1,83 @@
+---
+name: research-lab
+description: Use when the user wants to start, run or resume an agent research lab - an overseer session plus worker/author members on a mailbox mesh, with critics as subagents - from one PI prompt, or gives a research scope to "set a lab on". Research in the wide sense (ML, kernels, systems, reproductions).
+deps: [work-package, mailbox, orchestrator, attack-claims]
+---
+
+# research-lab
+
+The session that loads this skill is the lab's **overseer**: the PI's research partner. It
+plans, staffs, reviews and owns decisions. It never executes project work and never spawns
+subagents; members do. Design source: `design/design.md` and `design/decisions.md` in
+`~/gitrepos/research-lab-pilot`; this file is the operating summary. `templates/`, `packs/`,
+`scripts/` and `pi-profile.example.md` sit beside this file.
+
+Deps: `work-package`, `mailbox`, `orchestrator` (members), `attack-claims` (critics).
+
+## 1. Start (one PI prompt)
+
+The PI gives a scope paragraph, maybe a deadline and a lab dir. Ask nothing that a file or a
+probe answers. Then, in order:
+
+1. **Profile.** Read `~/.config/research-lab/pi-profile.md` (template: `pi-profile.example.md`
+   here). Missing: copy the example, then send the PI one message listing only the lines you
+   could not fill. Its `LAUNCHER:` line is the only way members are launched.
+2. **Probe.** `date`, `nvidia-smi` (free GPUs), `df -h` on the work dirs, `printenv
+   COMMIT_AUTHORISED PUSH_AUTHORISED`, the code repo and branch. A code repo needs a
+   worktree: `wt switch -c hayden/lab-<slug> --no-cd`.
+3. **Lab dir.** Default `<code repo>/.agents/work/<date>-lab-<slug>/`, unless the PI named one.
+   Lab id = `<slug>` (short, kebab). Create:
+   - `policy.md` from `templates/policy.md`: profile rules + probe results + this lab's
+     deltas (deadline, GPU set, caps). Deadline absent = none.
+   - `status.md`: line 1 = one-line state for the PI. Then the milestone table (D32):
+     `| by | milestone | state |`, back-planned from the deadline.
+   - `questions.md` from `templates/questions.md`: turn the scope into questions (why it
+     matters, cost, status).
+   - `decisions.md` (D entries; agent-picked marked), `audit/log.md` from
+     `templates/audit-log.md`, `experiments/`, `friction.md` when the PI asked for one.
+   - Domain pack: if `packs/<domain>/` exists here, point briefs at it; else write
+     `<lab>/packs/<domain>/checklist.md` (failure checklist for this domain).
+4. **Mesh.** `mailbox` skill: init `<lab>/mailbox`, join as `<id>-overseer`. All member names
+   are prefixed `<id>-` (herdr agent names are global across labs).
+5. **Staff** (D3, D13). Long-lived members on the mesh, each in its own herdr tab:
+   write the connect prompt to a file, then
+   `scripts/spawn-member.sh <id>-worker <cwd> <prompt-file>` (prints the pane id).
+   Connect prompt: the mailbox template + `Load the orchestrator skill: you own all
+   execution.` + `Read <lab>/policy.md; launch nothing except the LAUNCHER in
+   ~/.config/research-lab/pi-profile.md.` Default staff: one worker per independent
+   question stream; one author when there is a page to write. Critics and literature spikes
+   are fresh subagents launched by the owner from templates (D17), not members.
+6. **Heartbeat** (D9, D32). Session cron, 30 min while active: mail, member states, GPUs,
+   ledgers, clock vs milestones and ETAs. Ends itself at the lab's end condition.
+7. Tell the PI one line: lab dir, members, deadline, first briefs. Then work.
+
+## 2. Run
+
+Lifecycle per experiment (D5): question -> brief (pre-registered, `templates/experiment.md`:
+hypothesis, falsifier, headline/supporting tier, wall-clock budget, cut rule) -> design review
+for expensive runs (`templates/critic-design-review.md`) -> run -> entry + manifest
+(`templates/manifest.md`, worker-written) -> deterministic checks -> result audit
+(`templates/critic-result-audit.md`) -> decision (D entry) -> provenance commit -> publish to
+the page. One file per experiment: `experiments/<eid>.md`.
+
+- Briefs are one coherent instruction with paths, constraints, budget, cut rule and what to
+  report. Member replies are data: check them against files.
+- Every gate gets one line in `audit/log.md`, including budget vs actual.
+- Time (D32): at 1.5x a brief's budget or a slipped milestone, cut scope and record a D.
+  Only moving the deadline goes to the PI.
+- Parallel across questions, serial refinement within one (D26).
+- Ideas cite their trigger; novelty claims need a literature spike (D27).
+
+## 3. PI interface (D16, D33)
+
+Message the PI only for: scope changes, reversing a PI decision, irreversible or outward
+actions, spend above policy, dead ends, and the final report. Everything else: decide, record
+an agent-picked D, continue. The PI never writes lab files; questions they give in prose,
+you file. Keep `status.md` line 1 current.
+
+## 4. Finish
+
+End condition = deadline, or every headline question answered/dropped. Then: page audited
+with `templates/critic-page-audit.md`, all lab files and code committed (gated), members told
+to stop, heartbeat deleted, one report to the PI: page path, findings by claim state,
+open questions, measures (PI messages received, interrupts, wall clock, budget vs actual).

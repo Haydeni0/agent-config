@@ -223,6 +223,7 @@ flowchart LR
     %% python_notebook[python-notebook]
     reflect[reflect]
     repo_agent_setup[repo-agent-setup]
+    research_lab[research-lab]
     research_spike[research-spike]
     %% stack_pr[stack-pr]
     systematic_debugging[systematic-debugging]
@@ -283,6 +284,10 @@ flowchart LR
     reflect --> writing_skills
     repo_agent_setup --> grill_me
     repo_agent_setup --> backlog
+    research_lab --> work_package
+    research_lab --> mailbox
+    research_lab --> orchestrator
+    research_lab --> attack_claims
     research_spike --> librarian
     research_spike --> living_doc
     research_spike --> work_package
