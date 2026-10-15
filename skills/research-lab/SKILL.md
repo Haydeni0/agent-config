@@ -16,8 +16,8 @@ Deps: `work-package`, `mailbox`, `orchestrator` (members), `attack-claims` (crit
 
 ## 1. Start (one PI prompt)
 
-The PI gives a scope paragraph, maybe a deadline and a lab dir. Ask nothing that a file or a
-probe answers. Then, in order:
+The PI gives a scope in prose, maybe a deadline and a lab location in words. Ask nothing that
+a file or a probe answers. The code repo is the current directory unless the PI names one. Then, in order:
 
 1. **Profile.** Read `~/.config/research-lab/pi-profile.md` (template: `pi-profile.example.md`
    here). Missing: copy the example, then send the PI one message listing only the lines you
@@ -69,6 +69,10 @@ the page. One file per experiment: `experiments/<eid>.md`.
 - Ideas cite their trigger; novelty claims need a literature spike (D27).
 
 ## 3. PI interface (D16, D33)
+
+The PI talks to you in this pane, in prose; the PI is never a mesh member. Never ask the
+PI for paths or commands: derive them. Interrupts and the final report are messages in this
+pane (and `herdr notification` if the PI may not be watching).
 
 Message the PI only for: scope changes, reversing a PI decision, irreversible or outward
 actions, spend above policy, dead ends, and the final report. Everything else: decide, record
