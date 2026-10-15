@@ -32,7 +32,9 @@ Sections (FLAG lines are urgent, then one summary line each):
   (branch, dirty, commits ahead, age) for branches matching the lab's branch
   prefix + lab id. The repo comes from a ``code repo`` line in policy.md or
   status.md, else the lab dir's ``<repo>/.agents/work/`` parent; the branch
-  from a ``branch`` line, else ``<BRANCH_PREFIX>lab-<id>`` from the PI profile.
+  from a ``branch`` line, else ``<BRANCH_PREFIX>lab-<id>`` from the PI profile
+  (no default - a profile without ``BRANCH_PREFIX:`` and a lab without a
+  ``branch`` line skip the section, R7).
   FLAG on a dirty worktree whose member is gone (no live agent works there).
   Skipped silently when the lab records no repo.
 
@@ -329,20 +331,25 @@ def _lab_repo(lab: Path) -> Path | None:
     return None
 
 
-def _branch_prefix(profile: str | None) -> str:
-    """BRANCH_PREFIX: from the PI profile (default `hayden/`)."""
+def _branch_prefix(profile: str | None) -> str | None:
+    """BRANCH_PREFIX: from the PI profile; None when the profile has none.
+
+    No harness default - the prefix is a machine fact (R7), so a profile
+    without it and a lab without a `branch` line skip the worktree section.
+    """
     path = Path(os.path.expanduser(profile or os.environ.get("RESEARCH_LAB_PROFILE") or DEFAULT_PROFILE))
     try:
         text = path.read_text()
     except OSError:
-        return "hayden/"
+        return None
     m = re.search(r"^BRANCH_PREFIX:\s*(\S+)", text, re.MULTILINE)
-    return (m.group(1) if m else "hayden/").rstrip("/") + "/"
+    return m.group(1).rstrip("/") + "/" if m else None
 
 
-def _lab_branch(lab: Path, profile: str | None) -> str:
+def _lab_branch(lab: Path, profile: str | None) -> str | None:
     """The branch token lab worktrees carry: a `branch` line in the lab files,
-    else <BRANCH_PREFIX>lab-<id> from the lab dir name."""
+    else <BRANCH_PREFIX>lab-<id> from the lab dir name; None when neither
+    the lab nor the profile names a branch."""
     for name in ("policy.md", "status.md"):
         f = lab / name
         if not f.is_file():
@@ -350,8 +357,11 @@ def _lab_branch(lab: Path, profile: str | None) -> str:
         m = _BRANCH_RE.search(f.read_text(errors="replace"))
         if m:
             return m.group(1)
+    prefix = _branch_prefix(profile)
+    if prefix is None:
+        return None
     lab_id = re.sub(r"^\d{4}-\d{2}-\d{2}-", "", lab.name)
-    return _branch_prefix(profile) + (lab_id if lab_id.startswith("lab-") else f"lab-{lab_id}")
+    return prefix + (lab_id if lab_id.startswith("lab-") else f"lab-{lab_id}")
 
 
 def _wt_dirty(item: dict) -> bool:

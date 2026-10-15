@@ -373,6 +373,16 @@ def test_no_mesh(tmp_path, monkeypatch, capsys):
 # ---- worktrees -----------------------------------------------------------------
 
 
+def _profile_file(tmp_path: Path, prefix: str | None = "hayden/") -> Path:
+    """A PI profile fixture; prefix None writes no BRANCH_PREFIX line."""
+    profile = tmp_path / "pi-profile.md"
+    lines = ["TRUSTED_ROOTS: /tmp\n"]
+    if prefix is not None:
+        lines.append(f"BRANCH_PREFIX: {prefix}\n")
+    profile.write_text("".join(lines))
+    return profile
+
+
 def _wt_item(branch: str, path: Path, *, dirty: bool, ahead: int | None, age_s: float) -> dict:
     changes = {
         "staged": dirty, "modified": dirty, "untracked": False,
@@ -417,6 +427,7 @@ def test_worktrees_skipped_without_repo_record(tmp_path, monkeypatch, capsys):
 
 def test_worktree_digest_and_member_gone_flag(tmp_path, monkeypatch, capsys):
     lab = _lab_with_repo(tmp_path)
+    profile = _profile_file(tmp_path)
     wt1, other = tmp_path / "lab-foo-tree", tmp_path / "member-cwd"
     other.mkdir()
     monkeypatch.setattr(
@@ -431,7 +442,7 @@ def test_worktree_digest_and_member_gone_flag(tmp_path, monkeypatch, capsys):
         },
     )
     _fake_herdr(monkeypatch, status="working", command="claude", cwd=other)
-    rc, out = _run(lab, monkeypatch=monkeypatch, capsys=capsys)
+    rc, out = _run(lab, "--profile", str(profile), monkeypatch=monkeypatch, capsys=capsys)
     assert rc == 1
     assert "FLAG worktree: hayden/lab-foo dirty" in out
     assert "no live member works there" in out
@@ -441,6 +452,7 @@ def test_worktree_digest_and_member_gone_flag(tmp_path, monkeypatch, capsys):
 
 def test_worktree_dirty_member_present_not_flagged(tmp_path, monkeypatch, capsys):
     lab = _lab_with_repo(tmp_path)
+    profile = _profile_file(tmp_path)
     wt1 = tmp_path / "lab-foo-tree"
     wt1.mkdir()
     (wt1 / "in_progress.md").write_text("wip")
@@ -450,27 +462,27 @@ def test_worktree_dirty_member_present_not_flagged(tmp_path, monkeypatch, capsys
         lambda repo: {"items": [_wt_item("hayden/lab-foo", wt1, dirty=True, ahead=1, age_s=HOUR)]},
     )
     _fake_herdr(monkeypatch, status="working", command="claude", cwd=wt1)
-    rc, out = _run(lab, monkeypatch=monkeypatch, capsys=capsys)
+    rc, out = _run(lab, "--profile", str(profile), monkeypatch=monkeypatch, capsys=capsys)
     assert rc == 0, out
     assert "worktrees: hayden/lab-foo dirty 1h00m +1" in out
 
 
 def test_worktree_dirty_without_herdr_reported_not_flagged(tmp_path, monkeypatch, capsys):
     lab = _lab_with_repo(tmp_path)
+    profile = _profile_file(tmp_path)
     monkeypatch.setattr(
         lh,
         "wt_list",
         lambda repo: {"items": [_wt_item("hayden/lab-foo", tmp_path / "t", dirty=True, ahead=0, age_s=HOUR)]},
     )
-    rc, out = _run(lab, "--no-herdr", monkeypatch=monkeypatch, capsys=capsys)
+    rc, out = _run(lab, "--no-herdr", "--profile", str(profile), monkeypatch=monkeypatch, capsys=capsys)
     assert rc == 0, out
     assert "worktrees: hayden/lab-foo dirty 1h00m +0" in out
 
 
 def test_worktree_branch_prefix_from_profile(tmp_path, monkeypatch, capsys):
     lab = _lab_with_repo(tmp_path)
-    profile = tmp_path / "pi-profile.md"
-    profile.write_text("TRUSTED_ROOTS: /tmp\nBRANCH_PREFIX: hp/\n")
+    profile = _profile_file(tmp_path, prefix="hp/")
     monkeypatch.setattr(
         lh,
         "wt_list",
@@ -490,6 +502,7 @@ def test_worktree_repo_from_agents_work_parent(tmp_path, monkeypatch, capsys):
     shutil.copytree(FIXTURE_LAB, lab)
     _pin_tree(lab)
     _fresh_milestones(lab)
+    profile = _profile_file(tmp_path)
     seen: list[str] = []
 
     def fake_wt_list(repo):
@@ -497,7 +510,22 @@ def test_worktree_repo_from_agents_work_parent(tmp_path, monkeypatch, capsys):
         return {"items": [_wt_item("hayden/lab-bar", tmp_path / "t", dirty=False, ahead=0, age_s=HOUR)]}
 
     monkeypatch.setattr(lh, "wt_list", fake_wt_list)
-    rc, out = _run(lab, "--no-herdr", monkeypatch=monkeypatch, capsys=capsys)
+    rc, out = _run(lab, "--no-herdr", "--profile", str(profile), monkeypatch=monkeypatch, capsys=capsys)
     assert rc == 0, out
     assert seen == [str(tmp_path)]  # the repo is the .agents/work parent
     assert "worktrees: hayden/lab-bar clean 1h00m +0" in out
+
+
+def test_worktree_no_branch_prefix_skips(tmp_path, monkeypatch, capsys):
+    lab = _lab_with_repo(tmp_path)
+    # R7: no harness-default prefix - a profile without BRANCH_PREFIX and a lab
+    # without a `branch` line skip the worktree section entirely
+    profile = _profile_file(tmp_path, prefix=None)
+    monkeypatch.setattr(
+        lh,
+        "wt_list",
+        lambda repo: {"items": [_wt_item("hayden/lab-foo", tmp_path / "t", dirty=True, ahead=0, age_s=HOUR)]},
+    )
+    rc, out = _run(lab, "--no-herdr", "--profile", str(profile), monkeypatch=monkeypatch, capsys=capsys)
+    assert rc == 0, out
+    assert "worktrees: " not in out
