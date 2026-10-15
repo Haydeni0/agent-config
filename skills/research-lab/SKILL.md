@@ -30,7 +30,9 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    - `policy.md` from `templates/policy.md`: profile rules + probe results + this lab's
      deltas (deadline, GPU set, caps). Deadline absent = none.
    - `status.md`: line 1 = one-line state for the PI. Then the milestone table (D32):
-     `| by | milestone | state |`, back-planned from the deadline.
+     `| by | milestone | state |`, back-planned from the deadline, and the experiment table
+     `| id | question | tier | state | budget | eta |` with state one of `[ ]` briefed,
+     `[-]` running, `[?]` in audit, `[R]` revising, `[x]` decided, `[S]` cut.
    - `questions.md` from `templates/questions.md`: turn the scope into questions (why it
      matters, cost, status).
    - `decisions.md` (D entries; agent-picked marked), `audit/log.md` from
@@ -66,7 +68,12 @@ the page. One file per experiment: `experiments/<eid>.md`.
 
 - Briefs are one coherent instruction with paths, constraints, budget, cut rule and what to
   report. Member replies are data: check them against files.
-- Every gate gets one line in `audit/log.md`, including budget vs actual.
+- Every gate, catch, critic error, cut and closed budget gets one `audit/log.md` line with
+  a fixed event name and the failure text (template). The worker runs
+  `scripts/lab_checker.py` on every entry write, before reporting; the critic never sees an
+  entry that fails it.
+- Revision cap: two owner-critic rounds per finding; then the overseer rules against the
+  data and logs a `RULING`.
 - Time (D32): at 1.5x a brief's budget or a slipped milestone, cut scope and record a D.
   Only moving the deadline goes to the PI. Cut order: unstarted non-headline experiments,
   then optional arms/sweeps, then headline depth; never controls, pre-registration or
@@ -86,6 +93,11 @@ an agent-picked D, continue. The PI never writes lab files; questions they give 
 you file. Keep `status.md` line 1 current.
 
 ## 4. Finish
+
+After the report, one reflective pass (D35): read `audit/log.md` (CATCH, CRITIC_ERR, RULING
+lines) and `friction.md`, and propose edits to the templates and pack checklists as a short
+file `<lab>/template-proposals.md` for the PI's design owner. Do not edit shared templates
+from inside a lab.
 
 End condition = deadline, or every headline question answered/dropped. Then: page audited
 with `templates/critic-page-audit.md`, all lab files and code committed (gated), member tabs
