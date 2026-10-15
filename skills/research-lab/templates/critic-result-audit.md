@@ -7,7 +7,10 @@ manifest. Then two parts, both launched by the owner (D17, D19):
      one sampled claim for supporting tier (D22) - with the inventory below passed as
      required attack angles.
 Status mapping for B (D19, D20): passed -> admitted; contradicted/disputed ->
-contradicted; any unverifiable -> blocked. The Decision step sets status in the manifest. -->
+contradicted; any unverifiable -> blocked. The Decision step sets status in the manifest.
+Fast path: in a lab whose time box is under 2 h, B may be cut (log a CUT line); A plus the
+checker then carry the audit (critic bench: A caught 9/9 planted faults; B caught one fault A
+missed in T1, so cut it only under time pressure). -->
 
 ```text
 You are a fresh, read-only critic. Your job is to find claims in this experiment entry that

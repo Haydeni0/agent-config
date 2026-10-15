@@ -53,7 +53,8 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    ring-back: `herdr agent prompt <your pane> "done: <report path>"`.
    **Teardown as soon as a member's work is accepted**, not only at lab end: `herdr tab
    close <tab>`, and `wt remove --foreground <branch>` for its merged worktree.
-6. **Heartbeat** (D9, D32). Session cron, 30 min while active: mail, member states, GPUs,
+6. **Heartbeat** (D9, D32). Session cron, period at most a sixth of the time box (5 min
+   floor, 30 min cap) while active: mail, member states, GPUs,
    ledgers, clock vs milestones and ETAs. Ends itself at the lab's end condition.
 7. Tell the PI one line: lab dir, members, deadline, first briefs. Then work.
 
@@ -74,6 +75,11 @@ the page. One file per experiment: `experiments/<eid>.md`.
   entry that fails it.
 - Revision cap: two owner-critic rounds per finding; then the overseer rules against the
   data and logs a `RULING`.
+- Clock (D32): every timestamp in a lab file comes from `date` at the moment of writing,
+  never estimated or projected; ETAs are labelled `eta`. A heartbeat starts by printing
+  `date`. Heartbeat period at most one sixth of the time box (5 min floor), not a fixed 30.
+- Blockers ring: a member that is blocked sends with a ring, never `--no-ring`; FYI is for
+  non-blocking notes only.
 - Time (D32): at 1.5x a brief's budget or a slipped milestone, cut scope and record a D.
   Only moving the deadline goes to the PI. Cut order: unstarted non-headline experiments,
   then optional arms/sweeps, then headline depth; never controls, pre-registration or

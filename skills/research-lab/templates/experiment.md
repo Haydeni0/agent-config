@@ -26,7 +26,9 @@ run starts; later changes go in the Entry's Deviations. -->
 ## Entry
 
 <!-- Written by the worker after the run. A result contradicting a pre-registered prediction
-says so FIRST. Every quantitative sentence has a manifest check. -->
+says so FIRST. Every quantitative sentence has a manifest check. Setup facts (load, process
+counts, timestamps, versions) are copied from the run's JSON or logs, never from memory. Write
+the entry before replying to the overseer; the reply carries at most the headline numbers. -->
 
 - **Prediction outcomes:** P1 held / failed (<one line each, failures first>)
 - **Result:** <findings, each sentence citing its manifest check id in brackets, e.g. [c3]>

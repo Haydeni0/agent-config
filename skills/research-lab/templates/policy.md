@@ -23,6 +23,7 @@ overseer checks every brief against it and asks the PI only above the thresholds
 ## Permissions
 
 - Commit: yes, on <research branch / repo>; provenance commits use `--no-verify` (D8)
+  and `git add -f` for gitignored result dirs (e.g. `scratch/`)
 - Push: <yes/no>
 - Shared publishing (pages, docs): <who may publish where; PI message required?>
 
