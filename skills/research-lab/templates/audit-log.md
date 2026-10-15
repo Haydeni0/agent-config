@@ -2,7 +2,9 @@
 
 <!-- One line per event (D25, D35). Event is one of the fixed vocabulary below, so D28
 measures and D32 budget-vs-actual are grep-able. "Detail" carries the failure text (what the
-check or critic saw), not just "caught": it is the trace the end-of-lab template pass reads. -->
+check or critic saw), not just "caught": it is the trace the end-of-lab template pass reads. The Time cell is the output of
+`date +'%Y-%m-%d %H:%M'` run in the same command that writes the row, never an estimate; write
+rows with a single-quoted heredoc so the shell does not mangle them. -->
 
 Events: `GATE` (a gate ran: design review, result audit, attack-claims, page audit, checker),
 `CATCH` (a gate found a real error), `CRITIC_ERR` (a critic finding was wrong, settled against

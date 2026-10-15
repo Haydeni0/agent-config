@@ -3,6 +3,11 @@
 <!-- Written with the PI at lab startup (D23). Members read it from the brief's pointer; the
 overseer checks every brief against it and asks the PI only above the thresholds here. -->
 
+## Time box
+
+- Deadline: <ISO datetime from `date`, or none>
+- Gates: <by-time checkpoints for headline experiments, marked `by`>
+
 ## Compute
 
 - Allowed: <GPUs / queues / clusters>, conditions: <e.g. free on nvidia-smi immediately

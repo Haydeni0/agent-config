@@ -37,6 +37,8 @@ a file or a probe answers. The code repo is the current directory unless the PI 
      `[-]` running, `[?]` in audit, `[R]` revising, `[x]` decided, `[S]` cut.
    - `questions.md` from `templates/questions.md`: turn the scope into questions (why it
      matters, cost, status).
+   - `false-findings.md`: table of failure patterns (pattern, how detected, domain),
+     seeded from the domain pack checklist; members append every new pattern they hit.
    - `decisions.md` (D entries; agent-picked marked), `audit/log.md` from
      `templates/audit-log.md`, `experiments/`, `friction.md` when the PI asked for one.
    - Domain pack: if `packs/<domain>/` exists here, point briefs at it; else write
@@ -48,7 +50,8 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    `scripts/spawn-member.sh <id>-worker <cwd> <prompt-file>` (prints the pane id).
    Connect prompt: the mailbox template + `Load the orchestrator skill: you own all
    execution.` + `Read <lab>/policy.md; launch nothing except the LAUNCHER in
-   ~/.config/research-lab/pi-profile.md.` Default staff: one worker per independent
+   ~/.config/research-lab/pi-profile.md. Before the first expensive run, stub-verify timing
+   and counting code on a cheap input where the counters provably move.` Default staff: one worker per independent
    question stream; one author when there is a page to write. Critics and literature spikes
    are fresh subagents launched by the owner from templates (D17), not members.
    One-off sessions (a fix, a spike outside the mesh) get a brief that ends with a
@@ -69,7 +72,7 @@ The PI says "resume the lab in <place>". Files are the memory (D11): read `statu
 `members/` and `log.jsonl`. Then: re-join the mesh under the overseer's existing member name
 (the old seat is stale, join takes it over); `mailbox take`; for each member check its pane
 is alive (`herdr agent get <pane>`) and ring it with what you expect next, re-spawn the dead
-ones from their connect-prompt files; recreate the heartbeat; print `date` and replan
+ones from their connect-prompt files; recreate the heartbeat and list the session's cron jobs to confirm it is live; print `date` and replan
 against the milestones. Tell the PI one line: what state you found and what is next.
 
 ## 2. Run
@@ -99,6 +102,8 @@ the page. One file per experiment: `experiments/<eid>.md`.
   then optional arms/sweeps, then headline depth; never controls, pre-registration or
   audits - shrink the claim instead.
 - Parallel across questions, serial refinement within one (D26).
+- Critic concurrency: at most two critic subagents at once per lab when the profile's
+  Resources say the model backend is a single shared replica; queue the rest.
 - Ideas cite their trigger; novelty claims need a literature spike (D27).
 
 ## 3. PI interface (D16, D33)

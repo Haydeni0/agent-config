@@ -47,3 +47,6 @@ Rules:
 - Only the worker writes checks; only the Decision step changes `status` and `audit_note`.
 - `run_checks` must be all-pass and `coverage_scan` clean (or each uncovered sentence waived
   with a reason) before the result audit is launched.
+
+- Setup facts quoted in the Entry (load, process counts, run windows, versions) get a
+  `value` Check against the run's JSON, so transcription drift fails the checker, not the critic.
