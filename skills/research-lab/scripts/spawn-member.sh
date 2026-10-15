@@ -16,11 +16,27 @@ pane=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$cwd" --label "
 herdr pane run "$pane" "$launcher" >/dev/null
 # herdr only knows the pane as an agent once the harness has drawn its UI
 for _ in $(seq 60); do herdr agent get "$pane" >/dev/null 2>&1 && break; sleep 2; done
-# a cwd the harness has not seen before opens a folder-trust dialog (agent shows "blocked");
-# the PI granted this lab its directories, so accept it
+# A cwd the harness has not seen opens its folder-trust dialog. Accept it only for a cwd under
+# a root the PI listed in the profile (TRUSTED_ROOTS:) and only when the dialog names that
+# cwd and shows the expected option; anything else stops for the PI.
+cwd_real=$(realpath "$cwd")
+trusted=no
+for root in $(sed -n 's/^TRUSTED_ROOTS: *//p' "$profile" | head -1); do
+  root_real=$(realpath -m "${root/#\~/$HOME}")
+  [[ $cwd_real == "$root_real" || $cwd_real == "$root_real"/* ]] && trusted=yes
+done
 for _ in $(seq 15); do
-  if herdr pane read "$pane" | grep -q "trust this folder"; then
-    herdr pane send-keys "$pane" Down >/dev/null; herdr pane send-keys "$pane" Enter >/dev/null
+  screen=$(herdr pane read "$pane")
+  if grep -q "trust this folder" <<<"$screen"; then
+    if [[ $trusted != yes ]] || ! grep -qF "$cwd_real" <<<"$screen" \
+        || ! grep -q "Yes, I trust this folder" <<<"$screen"; then
+      echo "spawn-member: $pane waits on a folder-trust dialog for $cwd_real, outside TRUSTED_ROOTS; ask the PI" >&2
+      exit 2
+    fi
+    herdr pane send-keys "$pane" Down >/dev/null
+    grep -q "❯ Yes, I trust this folder" <<<"$(herdr pane read "$pane")" \
+      || { echo "spawn-member: trust dialog in $pane did not select 'Yes'; ask the PI" >&2; exit 2; }
+    herdr pane send-keys "$pane" Enter >/dev/null
     break
   fi
   [[ $(herdr agent get "$pane" | jq -r '.result.agent.agent_status') == idle ]] && break

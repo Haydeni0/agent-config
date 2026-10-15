@@ -4,7 +4,10 @@ Standing rules for every lab this PI runs. Labs copy these into policy.md and re
 deltas. Machine facts (free GPUs, disk, env gates) are probed at startup, not written here.
 
 LAUNCHER: COMMIT_AUTHORISED=1 ~/.local/bin/local-claude
+TRUSTED_ROOTS: ~/gitrepos/research-lab-pilot ~/worktrees/research-lpm ~/gitrepos/research-lpm
 
+- TRUSTED_ROOTS: directories whose folder-trust dialog spawn-member may accept for a
+  member; anything else stops for the PI.
 - Launchers: members and spawned sessions run only the LAUNCHER above (internal GLM
   gateway). Never `claude`, `claudec`, `claudep`, or `herdr agent start --kind claude`: they
   bill the Anthropic API. Subagents never set a `model` override.
