@@ -36,11 +36,22 @@ Requires: `HERDR_ENV=1` (every session in a herdr pane) and `uv`.
 ## Connect prompt template
 
 ```text
-You are `<name>` (<role>) in the agent mesh at `<absolute mailbox path>`.
-Run `<absolute mailbox path>/bin/mailbox join <name> --role "<role>"`, then
-read `<absolute mailbox path>/README.md` and follow it for the rest of this
-session.
+Run <absolute mailbox path>/bin/mailbox join <name> --role "<role>".
 ```
+
+`join` prints the contract pointer itself, so the prompt is the bare
+join command and nothing else.
+
+## Update a stale mesh
+
+Any session with this skill can migrate a mesh whose helper predates
+the skill: `uv run --script <this skill's directory>/mailbox.py update
+<absolute mesh path>`. It swaps the mesh's `bin/mailbox` and re-renders
+its `README.md` from the current template (refusing if the mesh is newer
+than this skill), then audits members: seat-less or malformed member
+files are listed with a re-join prompt (or a delete instruction for
+retired names) for the user to act on. Run it whenever a mesh shows
+pre-`take` behavior or its log lacks fields the current helper writes.
 
 ## Notes
 
