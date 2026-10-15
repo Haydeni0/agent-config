@@ -1,14 +1,51 @@
 #!/usr/bin/env bash
-# Test shim: `wt -C <repo> list --format json` cats
-# $WT_LIST_JSON_DIR/<repo path with / -> _>.json; every call (including
+# Test shim for the wt surface the research-lab scripts use. Every call (including
 # `wt remove --foreground <branch>`) is appended to $SHIM_LOG and not executed.
+#   wt -C <repo> list --format json   cats $WT_LIST_JSON_DIR/<repo path with / -> _>.json
+#   wt -C <repo> switch [-c] <branch> [--no-cd] [--format json]
+#     fakes wt's worktree store: the worktree is a marker dir under
+#     $WT_SWITCH_DIR named <branch with / -> ->; -c on an existing branch fails
+#     like the real wt ("already exists"), a plain switch to a missing one fails,
+#     and --format json prints wt's {"action":...,"branch":...,"path":...} result.
 printf 'wt %s\n' "$*" >>"${SHIM_LOG:-/dev/null}"
 if [[ ${1:-} == -C ]]; then
   repo=$2
   shift 2
-  if [[ ${1:-} == list ]]; then
+fi
+case ${1:-} in
+  list)
     key=$(printf '%s' "$repo" | tr '/' '_')
     cat "${WT_LIST_JSON_DIR:?WT_LIST_JSON_DIR unset}/${key}.json"
-  fi
-fi
+    ;;
+  switch)
+    shift
+    create=no branch=
+    while (($#)); do
+      case $1 in
+        -c|--create) create=yes ;;
+        --format) shift ;;
+        --format=*) ;;
+        -*) ;; # --no-cd and friends: flags without state
+        *) branch=$1 ;;
+      esac
+      shift
+    done
+    [[ -n $branch ]] || { echo 'wt switch: missing branch' >&2; exit 1; }
+    path="${WT_SWITCH_DIR:?WT_SWITCH_DIR unset}/$(printf '%s' "$branch" | tr '/' '-')"
+    if [[ $create == yes ]]; then
+      if [[ -e $path ]]; then
+        echo "✗ Branch $branch already exists" >&2
+        exit 1
+      fi
+      mkdir -p "$path"
+      printf '{"action":"created","branch":"%s","path":"%s","created_branch":true}\n' "$branch" "$path"
+    else
+      if [[ ! -e $path ]]; then
+        echo "wt switch: branch $branch not found" >&2
+        exit 1
+      fi
+      printf '{"action":"existing","branch":"%s","path":"%s"}\n' "$branch" "$path"
+    fi
+    ;;
+esac
 exit 0

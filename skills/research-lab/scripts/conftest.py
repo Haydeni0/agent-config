@@ -18,12 +18,15 @@ FIXTURES = Path(__file__).with_name("fixtures")
 
 @pytest.fixture()
 def shims(tmp_path, monkeypatch) -> SimpleNamespace:
-    """PATH with herdr/wt/sleep shims first; exposes run(), log and the wt-list dir."""
+    """PATH with herdr/wt/sleep shims first; exposes run(), log and the wt stubs' dirs."""
     log = tmp_path / "shim.log"
     wt_json = tmp_path / "wt-list-json"
     wt_json.mkdir()
+    wt_switch = tmp_path / "wt-switch"
+    wt_switch.mkdir()
     monkeypatch.setenv("SHIM_LOG", str(log))
     monkeypatch.setenv("WT_LIST_JSON_DIR", str(wt_json))
+    monkeypatch.setenv("WT_SWITCH_DIR", str(wt_switch))
     monkeypatch.setenv("HERDR_WORKSPACE_ID", "wA")
     monkeypatch.setenv("HERDR_PANE_ID", "wA:pZ")
     monkeypatch.setenv("HERDR_TEST_CALLER_PANE", "wA:pZ")
@@ -39,4 +42,4 @@ def shims(tmp_path, monkeypatch) -> SimpleNamespace:
             env={**os.environ, **extra_env},
         )
 
-    return SimpleNamespace(run=run, log=log, wt_json=wt_json)
+    return SimpleNamespace(run=run, log=log, wt_json=wt_json, wt_switch=wt_switch)

@@ -26,12 +26,11 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    members are launched.
 2. **Probe.** `date`, the compute check the profile names, `df -h` on the work dirs,
    `printenv COMMIT_AUTHORISED PUSH_AUTHORISED`, the code repo and branch. A code repo
-   needs a worktree: `wt switch -c <BRANCH_PREFIX>lab-<slug> --no-cd`. Setup belongs to the
-   repo, not the lab: if the repo configures worktrunk hooks, `wt switch` runs them;
-   otherwise take the setup command from the repo's own docs (AGENTS.md, README,
-   CONTRIBUTING) or its profile Resources entry, record it in `policy.md`, and append it to
-   Resources for the next lab. Use only generic `wt` verbs (`switch`, `list`, `remove`,
-   `merge`); never add repo config.
+   needs a worktree: run `scripts/lab-worktree.sh <lab> <repo> <slug> [--setup "<cmd
+   from the repo's docs>"]` - it creates (or reuses) the worktree, runs the repo's setup
+   (its worktrunk hooks, the given command, or its profile Resources entry) and records
+   code repo, branch, worktree and setup in `policy.md`. Use only generic `wt` verbs
+   (`switch`, `list`, `remove`, `merge`); never add repo config.
 3. **Lab dir.** The location the PI names is the lab dir itself (no extra level); default
    `<code repo>/.agents/work/<date>-lab-<slug>/`.
    Lab id = `<slug>` (short, kebab). Create:
