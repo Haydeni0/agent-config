@@ -19,6 +19,7 @@ import contextlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,7 +59,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.04"
+MAILBOX_VERSION = "2026-10-15.05"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -70,11 +71,21 @@ def parse_version(text: str, path: Path) -> Version:
     return match["date"], int(match["rev"])
 
 
+VERSION_LINE_RE = re.compile(r"^\s*MAILBOX_VERSION\s*=\s*(?P<rhs>.+?)\s*$")
+
+
 def read_version(script: Path) -> Version | None:
     """The version a helper copy carries, text-parsed (never imported); None = pre-stamp."""
     for line in script.read_text().splitlines():
-        if line.startswith("MAILBOX_VERSION ="):
-            return parse_version(line.partition('"')[2].rpartition('"')[0], script)
+        match = VERSION_LINE_RE.match(line)
+        if match is None:
+            continue
+        rhs = match["rhs"]
+        # a present constant in the wrong shape is hand-edited bytes - a loud
+        # refusal, never a silent pre-stamp (which would overwrite it)
+        if not (len(rhs) >= 2 and rhs.startswith('"') and rhs.endswith('"')):
+            fail(f"{script} carries MAILBOX_VERSION {rhs!r}, not a double-quoted value; refusing to order it")
+        return parse_version(rhs[1:-1], script)
     return None
 
 
@@ -641,10 +652,12 @@ def audit_members(root: Path) -> None:
         if problem is None:
             continue
         flagged = True
-        role = fields.get("role") or "<role>"
+        # the role is peer-controlled free text: quote it so a crafted role cannot
+        # escape the printed command when the user pastes it
+        role = shlex.quote(fields.get("role") or "<role>")
         typer.echo(
             f"{path.name}: {problem} - re-join if alive: run {root / 'bin' / 'mailbox'} join {path.name} "
-            f'--role "{role}"; if retired, delete {path} (the session running update deletes it on your confirmation)'
+            f"--role {role}; if retired, delete {path} (the session running update deletes it on your confirmation)"
         )
     if not flagged:
         typer.echo("member audit: every member file carries seat lines and a role")
@@ -656,38 +669,47 @@ def update(mesh_path: Annotated[Path, typer.Argument(help="The mesh to bring cur
     if not TEMPLATE.is_file():
         fail(f"{TEMPLATE} is missing - run update from the skill source, not from a mesh's bin/ copy")
     root = mesh_path.resolve()
-    missing = [str(p) for p in (root / "README.md", root / "members", root / "bin" / "mailbox") if not p.exists()]
+    missing: list[str] = []
+    if not (root / "README.md").is_file():
+        missing.append(str(root / "README.md"))
+    for sub in ("members", "inboxes"):
+        if not (root / sub).is_dir():
+            missing.append(str(root / sub))
+    if not (root / "bin" / "mailbox").is_file():
+        missing.append(str(root / "bin" / "mailbox"))
     if missing:
         fail(f"{root} is not an initialised mailbox - missing: {missing}; refusing to touch it")
     skill_script = Path(__file__).resolve()
     # text-parse both sides; the mesh copy is by design possibly foreign bytes - never import it
     mesh_version = read_version(root / "bin" / "mailbox")  # None = pre-stamp
     skill_version = read_version(skill_script)
+    if skill_version is None:
+        fail(f"{skill_script} carries no MAILBOX_VERSION line; update this agent-config checkout instead of guessing what is stale")
     if mesh_version is not None and mesh_version > skill_version:
         fail(
             f"mesh runs {format_version(mesh_version)}, newer than this skill's {format_version(skill_version)}; "
             "update the agent-config checkout running this session instead - refusing to downgrade the mesh"
         )
-    changed = False
+    changed: list[str] = []
     if mesh_version != skill_version:
         helper = root / "bin" / "mailbox"
         tmp = helper.with_name(f".{helper.name}.tmp")
         tmp.write_text(skill_script.read_text())
         os.chmod(tmp, 0o755)  # members run bin/mailbox directly; a default-mode copy breaks every command
         os.replace(tmp, helper)
-        changed = True
+        changed.append("helper")
         typer.echo(f"helper: {format_version(mesh_version) if mesh_version else 'pre-stamp'} -> {format_version(skill_version)}")
     rendered = TEMPLATE.read_text().replace("{{MAILBOX}}", str(root))
     if (root / "README.md").read_text() != rendered:
         write_atomic(root / "README.md", rendered)
-        changed = True
+        changed.append("README.md")
         typer.echo("README.md: re-rendered from the current template")
     audit_members(root)
     if not changed:
         typer.echo("mesh is current")
         return
     log_event(root, event="update", from_version=None if mesh_version is None else format_version(mesh_version),
-              to_version=format_version(skill_version))
+              to_version=format_version(skill_version), changed=changed)
 
 
 if __name__ == "__main__":
