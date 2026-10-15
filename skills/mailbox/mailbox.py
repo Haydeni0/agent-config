@@ -8,12 +8,13 @@
 Layout under the mailbox root: README.md (the contract), bin/mailbox (this
 script, copied by `init`), members/<name> (`role=`, plus the seat the member
 joined from - `pane=`, `session=`, `harness=`, `harness-session=` - as herdr
-reports them), inboxes/<name>/ (unread files), inboxes/<name>/handled/
-(acted-on files) and log.jsonl (the append-only trace of joins, sends, replies
-and takes). A member's name is mesh-local, not its herdr agent name: identity
-is the recorded seat pane plus the harness session, so one pane may hold
-different names in different meshes. Requests are
-`<from>.<seq>-<slug>.msg`; a reply reuses the request id as
+reports them), inboxes/<name>/ (unread files), inboxes/<name>/inflight/
+(printed but unacked - a crashed turn's mail waits here for its replay),
+inboxes/<name>/handled/ (acked files) and log.jsonl (the append-only trace of
+joins, sends, replies, takes and acks). A member's name is mesh-local, not its
+herdr agent name: identity is the recorded seat pane plus the harness
+session, so one pane may hold different names in different meshes. Requests
+are `<from>.<seq>-<slug>.msg`; a reply reuses the request id as
 `<from>.<id>.reply`.
 """
 
@@ -48,6 +49,7 @@ MESSAGE_RE = re.compile(
     r"^(?P<sender>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<seq>\d+)-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<kind>msg|reply)$"
 )
 NO_MAIL = "no unread mail"
+NO_UNACKED = "no unacked mail"
 # zero-padded so `ls` lists one sender's requests in send order (invariant
 # holds below 1000 sends per sender - `"1000-"` sorts before `"999-"`)
 SEQ_WIDTH = 3
@@ -61,7 +63,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.06"
+MAILBOX_VERSION = "2026-10-15.08"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -382,6 +384,55 @@ def describe(message: Message) -> str:
     return f"{message.msg_id}  from {message.sender}  {message.kind}  {message.path.stat().st_size} B"
 
 
+@dataclass(frozen=True, slots=True)
+class PendingRequest:
+    msg_id: str
+    to: tuple[str, ...]
+
+
+def pending_by_member(root: Path) -> dict[str, list[PendingRequest]]:
+    """Each member's sent requests with no reply yet - derived, never stored, so
+    a compacted or restarted session re-learns its outstanding set from disk.
+
+    A request is answered by any reply sharing its id whose `to` names the
+    request's sender, keyed (sender, id) so two senders drawing the same seq
+    never retire each other; a reply file in the sender's box (unread,
+    inflight or handled) answers it too, covering a crash between a reply
+    landing and its log line. Malformed log lines are skipped: status is the
+    lenient verb."""
+    requests: dict[tuple[str, str], tuple[str, ...]] = {}  # (sender, id) -> to
+    answered: set[tuple[str, str]] = set()
+    log = root / "log.jsonl"
+    if log.is_file():
+        for line in log.read_text().splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("event") != "sent":
+                continue
+            sender, msg_id = event.get("sender"), event.get("id")
+            to = event.get("to")
+            if not (isinstance(sender, str) and isinstance(msg_id, str) and isinstance(to, list) and to):
+                continue
+            if event.get("kind") == "msg":
+                requests[(sender, msg_id)] = tuple(str(name) for name in to)
+            elif event.get("kind") == "reply":
+                answered.add((str(to[0]), msg_id))
+    pending: dict[str, list[PendingRequest]] = {}
+    for (sender, msg_id), to in requests.items():
+        if (sender, msg_id) in answered:
+            continue
+        box = root / "inboxes" / sender
+        # the dot before the id anchors the match: `.1-x.reply` never hits `.01-x.reply`
+        if any(path.name.endswith(f".{msg_id}.reply")
+               for directory in (box, box / "inflight", box / "handled")
+               for path in directory.glob("*.reply")):
+            continue
+        pending.setdefault(sender, []).append(PendingRequest(msg_id=msg_id, to=to))
+    return pending
+
+
 class RingOutcome(StrEnum):
     RUNG = "rung"
     BUSY = "rung while busy: recipient was mid-turn; the line queues in its input until it reads it"
@@ -475,7 +526,10 @@ def log_event(root: Path, **event: object) -> None:
 
 def write_messages(root: Path, sender: str, msg_id: str, kind: Kind, body: str, recipients: list[str]) -> dict[str, Path]:
     paths = {name: root / "inboxes" / name / f"{sender}.{msg_id}.{kind}" for name in recipients}
-    taken = [str(p) for p in paths.values() if p.exists() or (p.parent / "handled" / p.name).exists()]
+    # inflight counts as taken too: a reply still awaiting its ack is just as
+    # answered as a handled one, so the one-reply-per-request refusal covers it
+    taken = [str(p) for p in paths.values()
+             if p.exists() or (p.parent / "inflight" / p.name).exists() or (p.parent / "handled" / p.name).exists()]
     if taken:
         hint = f"; {ONE_REPLY_PER_REQUEST}" if kind is Kind.REPLY else ""
         fail(f"refusing to overwrite existing message files: {taken}{hint}")
@@ -580,7 +634,8 @@ def resolve_request(root: Path, me: str, ref: str, sender: str) -> Message:
     seq, slug = int(match["seq"]), match["slug"]
     box = root / "inboxes" / me
     # requests only: a `.reply` carries the replier's name with *your* seq, so it can share <sender, seq> with one
-    requests = [m for d in (box, box / "handled") for m in messages_in(d) if m.kind is Kind.MSG]
+    # inflight sits between unread and handled: a request taken but not yet acked must still resolve
+    requests = [m for d in (box, box / "inflight", box / "handled") for m in messages_in(d) if m.kind is Kind.MSG]
     same_seq = [m for m in requests if m.seq == seq]
     found = [m for m in same_seq if m.sender == sender and slug in (None, m.slug)]
     if len(found) == 1:
@@ -627,35 +682,71 @@ def inbox() -> None:
 
 @app.command()
 def take() -> None:
-    """Print all unread mail, then mark exactly what was printed handled."""
+    """Print all unread mail plus unacked re-prints, moving exactly what was printed to inflight/.
+
+    Presentation, not the ack: `ack` confirms, and a turn that dies between
+    take and ack leaves its mail in inflight/ for the next take to replay."""
     root = mailbox_root()
     name = verified_own_name(root)
     box = root / "inboxes" / name
     printed: list[Message] = []
+    for message in messages_in(box / "inflight"):
+        try:
+            body = message.path.read_text()
+        except FileNotFoundError:
+            continue  # a concurrent ack promoted it
+        typer.echo(f"=== {message.path.name} (unacked - printed before)")
+        typer.echo(body.rstrip("\n"))
+        printed.append(message)
     for message in messages_in(box):
         try:
             body = message.path.read_text()
         except FileNotFoundError:
-            continue  # a concurrent take already acked it
+            continue  # a concurrent take already presented it
         typer.echo(f"=== {message.path.name}")
         typer.echo(body.rstrip("\n"))
         printed.append(message)
     if not printed:
         typer.echo(NO_MAIL)
         return
-    (box / "handled").mkdir(parents=True, exist_ok=True)  # an old-mesh member may lack it
+    (box / "inflight").mkdir(parents=True, exist_ok=True)  # an old-mesh member may lack it
     for message in printed:
-        with contextlib.suppress(FileNotFoundError):  # a concurrent take already acked it
-            message.path.rename(box / "handled" / message.path.name)
+        # a no-op rename for a re-printed inflight file (same path), and a
+        # suppressed FileNotFoundError for one a concurrent take or ack moved
+        with contextlib.suppress(FileNotFoundError):
+            message.path.rename(box / "inflight" / message.path.name)
     member = member_named(root, name)
     log_event(root, event="taken", member=name, session=member.harness_session if member else None,
               files=[message.path.name for message in printed])
 
 
 @app.command()
-def status(member: Annotated[str | None, typer.Argument(help="Show only this member's unread ids")] = None) -> None:
-    """Every member's role and unread/handled counts, or one member's unread ids. Needs no join."""
+def ack() -> None:
+    """Confirm everything taken: promote inflight mail to handled/ - that move is the ack the sender sees."""
     root = mailbox_root()
+    name = verified_own_name(root)
+    box = root / "inboxes" / name
+    unacked = messages_in(box / "inflight")
+    if not unacked:
+        typer.echo(NO_UNACKED)
+        return
+    (box / "handled").mkdir(parents=True, exist_ok=True)
+    promoted: list[str] = []
+    for message in unacked:
+        with contextlib.suppress(FileNotFoundError):  # a concurrent ack promoted it
+            message.path.rename(box / "handled" / message.path.name)
+            promoted.append(message.path.name)
+    if promoted:
+        member = member_named(root, name)
+        log_event(root, event="acked", member=name, session=member.harness_session if member else None,
+                  files=promoted)
+
+
+@app.command()
+def status(member: Annotated[str | None, typer.Argument(help="Show only this member's unread ids and pending requests")] = None) -> None:
+    """Every member's role and unread/inflight/handled/pending counts, or one member's unread ids and pending requests. Needs no join."""
+    root = mailbox_root()
+    pending = pending_by_member(root)
     if member is not None:
         check_members(root, [member])
         unread = messages_in(root / "inboxes" / member, strict=False)
@@ -663,11 +754,18 @@ def status(member: Annotated[str | None, typer.Argument(help="Show only this mem
             typer.echo(f"{member}: {NO_MAIL}")
         for message in unread:
             typer.echo(describe(message))
+        for request in pending.get(member, []):
+            typer.echo(f"pending  {request.msg_id}  to {', '.join(request.to)}")
         return
     for m in members(root):
         box = root / "inboxes" / m.name
         # lenient: one member's stray file must not hide every member's counts
-        typer.echo(f"{m.name}  ({m.role})  unread {len(messages_in(box, strict=False))}  handled {len(messages_in(box / 'handled', strict=False))}")
+        typer.echo(
+            f"{m.name}  ({m.role})  unread {len(messages_in(box, strict=False))}  "
+            f"inflight {len(messages_in(box / 'inflight', strict=False))}  "
+            f"handled {len(messages_in(box / 'handled', strict=False))}  "
+            f"pending {len(pending.get(m.name, []))}"
+        )
 
 
 @app.command()

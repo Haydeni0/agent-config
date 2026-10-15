@@ -252,3 +252,50 @@ def test_concurrent_hook_sync_is_idempotent(isolated_home: Path) -> None:
         group("local"),
         group("shared"),
     ]
+
+
+def test_claude_sync_installs_the_mailbox_stop_guard_alongside_the_wt_marker(
+    source_home: Path, isolated_home: Path
+) -> None:
+    # the Stop registration as shipped: the wt statusline marker stays, and a
+    # second group blocks turn ends on unread mesh mail
+    target = isolated_home / ".claude/settings.json"
+    paths = Paths(source_home, isolated_home / "opencode", claude_home=target.parent)
+    template = source_home / "harnesses/claude/settings.json"
+    template.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "Stop": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": 'bash "$HOME/.claude/custom/plugins/worktrunk/hooks/wt.sh" '
+                                    '-C "$CLAUDE_PROJECT_DIR" config state marker set x || true',
+                                }
+                            ]
+                        },
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": 'node "$HOME/.claude/hooks/mailbox-guard.mjs" claude',
+                                    "timeout": 20,
+                                }
+                            ]
+                        },
+                    ]
+                }
+            }
+        )
+    )
+
+    assert sync_claude_config(paths, False).status != Status.FAILED
+
+    stop = json.loads(target.read_text())["hooks"]["Stop"]
+    assert len(stop) == 2
+    assert "mailbox-guard.mjs" in stop[1]["hooks"][0]["command"]
+    assert stop[1]["hooks"][0]["timeout"] == 20
+    assert "wt.sh" in stop[0]["hooks"][0]["command"]
+    assert sync_claude_config(paths, False).status == Status.UNCHANGED

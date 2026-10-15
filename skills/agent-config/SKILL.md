@@ -68,7 +68,11 @@ Codex sync recursively merges the template's declared keys into `~/.codex/config
 - Global rules live in `rules/global.md`. `@skills/<name>` references are auto-transformed into `the \`<name>\` skill` for Codex, Pi, Opencode, Goose, AGY.
 - Harness-specific rules go in `harnesses/<tool>/rules.md` (e.g. `harnesses/opencode/rules.md`).
 - Submodules (`custom/plugins/`) are symlinked into `skills/`. Run `git submodule update --init --recursive` after clone/pull.
-- Hooks (`hooks/`) are Claude Code only and not bridged.
+- Hooks (`hooks/`) carry shared policy cores with thin per-harness adapters.
+  Only Claude Code registers them today: opencode plugins expose only
+  `tool.execute.before` and codex only `PreToolUse`, so no turn-end
+  registration exists there yet (the mailbox guard's core is ready when one
+  does).
 
 ## 3-Step Verification Runbook
 

@@ -208,6 +208,15 @@
             "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set \ud83d\udcac || true"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/mailbox-guard.mjs\" claude",
+            "timeout": 20
+          }
+        ]
       }
     ],
     "SessionEnd": [

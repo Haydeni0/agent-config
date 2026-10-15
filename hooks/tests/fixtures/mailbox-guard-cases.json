@@ -1,0 +1,65 @@
+[
+  {
+    "name": "no-memberships",
+    "facts": { "stopHookActive": false, "memberships": [] },
+    "expected": { "block": false }
+  },
+  {
+    "name": "membership-without-unread",
+    "facts": {
+      "stopHookActive": false,
+      "memberships": [{ "mailbox": "/mesh", "member": "planner", "unreadLines": [] }]
+    },
+    "expected": { "block": false }
+  },
+  {
+    "name": "unread-blocks-with-take-and-ack-commands",
+    "facts": {
+      "stopHookActive": false,
+      "memberships": [
+        {
+          "mailbox": "/mesh",
+          "member": "planner",
+          "unreadLines": ["001-x  from worker  msg  12 B"]
+        }
+      ]
+    },
+    "expected": {
+      "block": true,
+      "reasonContains": ["001-x", "take", "ack", "/mesh/bin/mailbox"]
+    }
+  },
+  {
+    "name": "unread-but-stop-hook-active-allows-one-follow-up-only",
+    "facts": {
+      "stopHookActive": true,
+      "memberships": [
+        {
+          "mailbox": "/mesh",
+          "member": "planner",
+          "unreadLines": ["001-x  from worker  msg  12 B"]
+        }
+      ]
+    },
+    "expected": { "block": false }
+  },
+  {
+    "name": "two-meshes-blocks-naming-only-the-unread-one",
+    "facts": {
+      "stopHookActive": false,
+      "memberships": [
+        { "mailbox": "/mesh-quiet", "member": "planner", "unreadLines": [] },
+        {
+          "mailbox": "/mesh-loud",
+          "member": "planner",
+          "unreadLines": ["007-y  from critic  reply  5 B"]
+        }
+      ]
+    },
+    "expected": {
+      "block": true,
+      "reasonContains": ["007-y", "/mesh-loud"],
+      "reasonAbsent": ["/mesh-quiet"]
+    }
+  }
+]

@@ -9,6 +9,12 @@ Config-write heuristics live in `core/config-policy.mjs`; Opencode and Pi keep
 their existing protected-directory sets. These command-string heuristics cover
 the existing policy, not arbitrary program behavior or a filesystem sandbox.
 
+The mailbox turn-end guard (`mailbox-guard.mjs` + `core/mailbox-guard-policy.mjs`)
+is a different breed: a Stop hook that blocks a Claude Code turn end while
+unread mesh mail waits. Unlike the guards above it fails open, silently - a
+broken mesh must never wedge turn ends (REQ-HOOKS-07). No other harness
+exposes a turn-end event yet.
+
 ## Coverage
 
 | Harness | Command registration | Verification |

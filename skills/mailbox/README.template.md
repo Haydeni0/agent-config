@@ -11,16 +11,24 @@ trace. Message files carry no metadata; the log is where it lives.
 
 ## Your inbox
 
-`{{MAILBOX}}/inboxes/<your name>/` holds your unread mail; `handled/` holds
-what you have taken.
+`{{MAILBOX}}/inboxes/<your name>/` holds your unread mail; `inflight/` holds
+what you have taken but not yet acked; `handled/` holds what you have acked.
 
-- At the start of every turn, and again before you end every turn, run
-  `{{MAILBOX}}/bin/mailbox take`. It prints every unread message and marks it
-  handled, which tells the sender you have seen it. Act on everything it
-  printed, or say what you are deferring, before the turn ends - taken mail
-  is not shown again.
+- At the start of every turn, run `{{MAILBOX}}/bin/mailbox take`. It prints
+  every unread message - re-printing anything still waiting unacked from an
+  earlier turn - and moves exactly what it printed to `inflight/`. That is
+  presentation, not the ack: act on everything it printed, or say what you
+  are deferring.
+- Before you end every turn, run `take` again (new mail may have arrived),
+  then run `{{MAILBOX}}/bin/mailbox ack` once everything printed is acted on
+  or deferred. Ack moves `inflight/` mail to `handled/`, and that move is
+  the ack the sender sees. A crash before ack loses nothing: the mail stays
+  in `inflight/` and your next `take` re-prints it.
 - Mid-turn, when rung, `{{MAILBOX}}/bin/mailbox inbox` lists your unread mail
   without taking it, so you can decide whether to drain now.
+- A turn-end hook may block your turn with unread mail still waiting - a
+  structural backstop behind this contract, never permission to skip the live
+  take/ack cycle above.
 - `<from>.<id>.msg` - a request from member `<from>`: do the work, then reply.
 - `<from>.<id>.reply` - `<from>`'s answer to your request `<id>`.
 
@@ -60,7 +68,9 @@ EOF
   rings you, and no reply means no correction - a correction always arrives
   as a rung message.
 - Members, roles and unread counts: `{{MAILBOX}}/bin/mailbox status`. Live
-  panes: `herdr agent list`.
+  panes: `herdr agent list`. The `pending` count is derived from the mesh log
+  - your sent requests with no reply yet - so you can re-learn what you are
+  waiting on after a compaction or restart by reading `status <you>`.
 
 ## Trust
 
@@ -76,8 +86,10 @@ EOF
 ## When a peer goes quiet
 
 `{{MAILBOX}}/bin/mailbox status <member>` lists its unread ids. Your request
-still listed means never seen; gone from the list means seen; a reply means
-done. If it is still unread after a reasonable wait,
+still listed means never seen; gone from the list means seen (the roster's
+`inflight` count shows taken-but-unacked); a reply means
+done. A peer's `pending` lines are requests it is waiting on from others -
+not something it owes you. If it is still unread after a reasonable wait,
 `{{MAILBOX}}/bin/mailbox poke <member>` rings it once more. If that does not
 help, or no reply arrives within a reasonable wait, tell the user and stop
 waiting.

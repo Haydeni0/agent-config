@@ -59,6 +59,10 @@ pre-`take` behavior or its log lacks fields the current helper writes.
   in another worktree or checkout has its own copy; it must use this
   mailbox's absolute path, and its permission rules must allow writing
   there.
+- Claude Code mesh members get a turn-end guard Stop hook (agent-config
+  `hooks/mailbox-guard.mjs`, REQ-HOOKS-07): it blocks a turn end while
+  unread mail waits, one forced follow-up per stop chain. It is a backstop
+  behind the contract, not a substitute for taking mail.
 - The contract (`take` and `inbox` checks, sending, trust, quiet peers
   via `status` and `poke`) lives in `<mailbox>/README.md`, not here. Every wake
   line points at it, so a compacted session re-learns it.
