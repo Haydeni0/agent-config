@@ -47,6 +47,10 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    ~/.config/research-lab/pi-profile.md.` Default staff: one worker per independent
    question stream; one author when there is a page to write. Critics and literature spikes
    are fresh subagents launched by the owner from templates (D17), not members.
+   One-off sessions (a fix, a spike outside the mesh) get a brief that ends with a
+   ring-back: `herdr agent prompt <your pane> "done: <report path>"`.
+   **Teardown as soon as a member's work is accepted**, not only at lab end: `herdr tab
+   close <tab>`, and `wt remove --foreground <branch>` for its merged worktree.
 6. **Heartbeat** (D9, D32). Session cron, 30 min while active: mail, member states, GPUs,
    ledgers, clock vs milestones and ETAs. Ends itself at the lab's end condition.
 7. Tell the PI one line: lab dir, members, deadline, first briefs. Then work.
@@ -82,6 +86,6 @@ you file. Keep `status.md` line 1 current.
 ## 4. Finish
 
 End condition = deadline, or every headline question answered/dropped. Then: page audited
-with `templates/critic-page-audit.md`, all lab files and code committed (gated), members told
-to stop, heartbeat deleted, one report to the PI: page path, findings by claim state,
+with `templates/critic-page-audit.md`, all lab files and code committed (gated), member tabs
+closed and their worktrees removed, heartbeat deleted, one report to the PI: page path, findings by claim state,
 open questions, measures (PI messages received, interrupts, wall clock, budget vs actual).
