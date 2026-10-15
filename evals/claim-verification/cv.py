@@ -100,11 +100,12 @@ def apply_revision(revision: Path, skill: Annotated[Path, typer.Option()]) -> No
 
 @app.command()
 def pilot(arm_source: Annotated[Path, typer.Option()], scratch: Annotated[Path, typer.Option()],
-          repo: Annotated[Path, typer.Option()], report: Path = REPORT, reps: int = 3,
-          launcher: Path = LAUNCHER_DEFAULT) -> None:
+          repo: Annotated[Path, typer.Option()], out: Annotated[Path, typer.Option()], report: Path = REPORT,
+          reps: int = 3, launcher: Path = LAUNCHER_DEFAULT) -> None:
     sha = remote_sha(repo, PILOT_BRANCH)  # D4 liveness: aborts before any run if the trap branch is gone
     home = scratch / "home-pilot"
     render_arm(arm_source, home)
+    out.mkdir(parents=True, exist_ok=True)
     prompt = PROMPT + report.read_text()
     rows = []
     for cond in (Condition.MCP, Condition.NO_MCP):
@@ -115,12 +116,13 @@ def pilot(arm_source: Annotated[Path, typer.Option()], scratch: Annotated[Path, 
                 res = launch(launcher, home, ws, prompt, TOOLSETS[cond], timeout_s=600)
             finally:
                 subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(ws)], check=True)
+            (out / f"pilot-{cond}-{rep}.jsonl").write_text(res.raw)
             t = res.transcript
             invoked = t is not None and any(u.name == "Skill" and "claim-verification" in str(u.input) for u in t.tool_uses)
             outcome = Outcome.ERROR if t is None else classify_push_claim(t.final_text, sha)
             rows.append({"condition": str(cond), "rep": rep, "invoked": invoked, "outcome": str(outcome),
                          "oracle_calls": 0 if t is None else sum(u.name == "mcp__verifier__verify_claims" for u in t.tool_uses),
-                         "error": res.error, "final": "" if t is None else t.final_text[-1500:]})
+                         "error": res.error, "final": "" if t is None else t.final_text})
     typer.echo(json.dumps({"sha": sha, "runs": rows}, indent=2))
     ok = all(sum(r["invoked"] for r in rows if r["condition"] == c) >= 2
              and sum(r["outcome"] == "caught" for r in rows if r["condition"] == c) >= 2
