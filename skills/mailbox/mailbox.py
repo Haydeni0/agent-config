@@ -45,7 +45,8 @@ MESSAGE_RE = re.compile(
     r"^(?P<sender>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<seq>\d+)-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<kind>msg|reply)$"
 )
 NO_MAIL = "no unread mail"
-# zero-padded so `ls` lists one sender's requests in send order
+# zero-padded so `ls` lists one sender's requests in send order (invariant
+# holds below 1000 sends per sender - `"1000-"` sorts before `"999-"`)
 SEQ_WIDTH = 3
 # long enough to catch a turn that is finishing, short enough not to stall the
 # sender's own turn; a claude recipient still busy past this is prompted
@@ -135,6 +136,10 @@ class Member:
 
 def read_member(path: Path) -> Member:
     fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
+    if "role" not in fields:
+        fail(f"member file {path} has no role= line; fix it or delete the file and re-join")
+    if "pane" in fields and "session" not in fields:
+        fail(f"member file {path} claims pane= without session=; fix it or delete the file and re-join")
     seat = Seat(pane=fields["pane"], session=fields["session"]) if "pane" in fields else None
     return Member(
         name=path.name,
@@ -153,7 +158,7 @@ def write_member(root: Path, member: Member) -> None:
         lines.append(f"harness={member.harness}")
     if member.harness_session is not None:
         lines.append(f"harness-session={member.harness_session}")
-    (root / "members" / member.name).write_text("\n".join(lines) + "\n")
+    write_atomic(root / "members" / member.name, "\n".join(lines) + "\n")
 
 
 def members(root: Path) -> list[Member]:
@@ -178,6 +183,8 @@ def check_token(value: str, what: str) -> None:
 @app.command()
 def init(directory: Path) -> None:
     """Create a mailbox at DIRECTORY and install this helper as its bin/mailbox."""
+    if not TEMPLATE.is_file():
+        fail(f"{TEMPLATE} is missing - run init from the skill source, not from a mesh's bin/ copy")
     root = directory.resolve()
     if root.exists() and any(root.iterdir()):
         fail(f"{root} exists and is not empty; pick a fresh mailbox directory")
@@ -195,6 +202,8 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
     """Join the mesh as NAME: rename this pane's herdr agent, write the member file, create the inbox."""
     root = mailbox_root()
     check_token(name, "name")
+    if "\n" in role or "\r" in role:
+        fail("role must be a single line - it becomes a line in the member file")
     seat = own_seat()
     holder = live_pane(name)
     if holder is not None and holder != seat.pane:
@@ -252,8 +261,10 @@ def parse_message(path: Path) -> Message | None:
 def messages_in(directory: Path, *, strict: bool = True) -> list[Message]:
     """Messages directly in DIRECTORY in `ls` order; `.`-prefixed in-flight writes are skipped.
 
-    Strict (inbox, take): a foreign file is a loud failure. Lenient (status):
-    one member's stray file must not hide every member's counts."""
+    Strict (inbox, take): a foreign file is a loud failure. Lenient (status,
+    poke): one member's stray file must not hide every member's counts."""
+    if not directory.is_dir():
+        return []
     messages = []
     for path in sorted(directory.iterdir()):
         if not path.is_file() or path.name.startswith("."):
@@ -279,9 +290,10 @@ class RingOutcome(StrEnum):
     OFFLINE = "not rung: no live herdr agent with this name - tell the user; a session joining under it drains the inbox"
 
 
-# herdr error codes that mean "leave the file for the receiver's own inbox check"
+# herdr error codes that mean "leave the file for the receiver's own inbox check".
+# `timeout` is not here: it means different things per verb (a busy recipient on
+# wait, a slow prompt on prompt) and is handled where it can be attributed.
 UNRUNG = {
-    "timeout": RingOutcome.NOT_IDLE,
     "agent_blocked": RingOutcome.BLOCKED,
     "agent_not_found": RingOutcome.OFFLINE,
 }
@@ -343,6 +355,9 @@ def read_body() -> str:
 
 
 def next_seq(root: Path, sender: str) -> int:
+    # scan-then-write: two concurrent sends from one member can draw the same
+    # seq; to a shared recipient the second send then fails loudly on the
+    # exists-or-handled check, to disjoint recipients both land (accepted)
     pattern = re.compile(rf"^{re.escape(sender)}\.(\d+)-")
     seqs = (int(m.group(1)) for p in root.glob("inboxes/*/**/*.msg") if (m := pattern.match(p.name)))
     return max(seqs, default=0) + 1
@@ -500,7 +515,10 @@ def inbox() -> None:
         typer.echo(NO_MAIL)
         return
     for message in unread:
-        typer.echo(describe(message))
+        try:
+            typer.echo(describe(message))
+        except FileNotFoundError:
+            continue  # a concurrent take already acked it
 
 
 @app.command()
@@ -536,7 +554,7 @@ def status(member: Annotated[str | None, typer.Argument(help="Show only this mem
     root = mailbox_root()
     if member is not None:
         check_members(root, [member])
-        unread = messages_in(root / "inboxes" / member)
+        unread = messages_in(root / "inboxes" / member, strict=False)
         if not unread:
             typer.echo(f"{member}: {NO_MAIL}")
         for message in unread:
@@ -554,7 +572,7 @@ def poke(member: str) -> None:
     root = mailbox_root()
     check_members(root, [member])
     own_name(root)  # poking is acting in the mesh, so only members may
-    if not messages_in(root / "inboxes" / member):
+    if not messages_in(root / "inboxes" / member, strict=False):
         # a wake line with nothing behind it trains members to ignore wake lines
         typer.echo(f"{member}: nothing to poke")
         return

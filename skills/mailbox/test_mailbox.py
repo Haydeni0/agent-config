@@ -11,6 +11,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -180,6 +181,18 @@ def test_init_refuses_a_non_empty_directory(tmp_path: Path, fake_env: FakeHerdr)
     assert not (root / "README.md").exists()
 
 
+def test_init_from_a_mesh_copy_fails_cleanly(mesh: Mesh) -> None:
+    # a mesh's bin/mailbox has no README.template.md beside it - nested init must say so, not traceback
+    nested = mesh.root / "nested"
+
+    result = mesh.run("init", str(nested), pane=PLANNER_PANE)
+
+    assert result.returncode != 0
+    assert "README.template" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not nested.exists()
+
+
 def test_commands_outside_an_initialised_mailbox_are_refused(fake_env: FakeHerdr) -> None:
     result = subprocess.run(
         [sys.executable, str(HELPER), "join", "planner", "--role", "x"],
@@ -260,6 +273,13 @@ def test_join_records_the_harness_type_beside_the_session_id(empty_mesh: Mesh, h
     member = (empty_mesh.root / "members" / "planner").read_text()
     assert f"harness={harness}" in member
     assert "harness-session=sess-planner" in member
+
+
+def test_join_rejects_a_role_containing_a_newline(empty_mesh: Mesh) -> None:
+    result = empty_mesh.run("join", "planner", "--role", "x\nharness-session=evil", pane=PLANNER_PANE)
+
+    assert result.returncode != 0
+    assert list((empty_mesh.root / "members").iterdir()) == []
 
 
 def test_join_clears_its_seat_from_the_member_file_it_rejoined_away_from(mesh: Mesh) -> None:
@@ -491,6 +511,110 @@ def test_take_refuses_a_member_whose_harness_session_changed(mesh: Mesh) -> None
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
+def test_status_of_a_member_skips_stray_files_in_its_inbox(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")
+
+    result = mesh.run("status", "worker", pane="w5:p5")
+
+    assert result.returncode == 0, result.stderr
+    assert "001-x" in result.stdout
+    assert "notes" not in result.stdout
+
+
+def test_poke_rings_real_mail_waiting_behind_a_stray_file(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")
+    mesh.herdr.clear_log()
+
+    result = mesh.run("poke", "worker", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in mesh.herdr.calls()
+
+
+def test_a_member_without_an_inbox_lists_as_empty_not_crash(mesh: Mesh) -> None:
+    shutil.rmtree(mesh.inbox("worker"))
+
+    result = mesh.run("status", pane="w5:p5")
+
+    assert result.returncode == 0, result.stderr
+    assert "worker" in result.stdout
+    second = mesh.run("status", "worker", pane="w5:p5")
+    assert second.returncode == 0, second.stderr
+    assert "no unread mail" in second.stdout
+
+
+def test_a_malformed_member_file_fails_cleanly_naming_it(mesh: Mesh) -> None:
+    # pane= without session= - the exact shape a hand migration (#47) could leave
+    (mesh.root / "members" / "torn").write_text("role=x\npane=w1:p9\n")
+
+    result = mesh.run("status", pane="w5:p5")
+
+    assert result.returncode != 0
+    assert "members/torn" in result.stderr
+    assert "KeyError" not in result.stderr
+
+
+def test_reply_logs_a_trace_line_kind_reply(mesh: Mesh) -> None:
+    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("take", pane=WORKER_PANE)
+
+    result = mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode == 0, result.stderr
+    line = log_lines(mesh)[-1]
+    assert line["event"] == "sent"
+    assert line["kind"] == "reply"
+    assert line["id"] == "001-review-api"
+    assert line["sender"] == "worker"
+
+
+def test_take_refuses_a_sessionless_live_agent_when_the_member_records_one(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
+    mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)
+    mesh.herdr.set("agent_sessions", {})  # the live agent reports no session id
+
+    result = mesh.run("take", pane=WORKER_PANE)
+
+    assert result.returncode != 0
+    assert "sessionless" in result.stderr
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+
+
+def test_inbox_skips_a_message_a_concurrent_take_acked_mid_listing(
+    mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker_has_a_request_and_a_reply(mesh)
+    real_stat = Path.stat
+    stats_seen: set[str] = set()
+
+    def stat_amid_concurrent_take(self: Path, *args: object, **kwargs: object) -> object:
+        # first stat per file is messages_in's is_file check; the second is describe's
+        if self.name == "planner.001-ask.reply":
+            if self.name in stats_seen:
+                self.rename(self.parent / "handled" / self.name)  # a concurrent take acks it mid-listing
+            stats_seen.add(self.name)
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat_amid_concurrent_take)
+    monkeypatch.setenv("HERDR_PANE_ID", WORKER_PANE)
+
+    result = CliRunner().invoke(helper.app, ["inbox"])
+
+    assert result.exit_code == 0, result.output
+    assert "001-review-api" in result.stdout
+    assert "001-ask" not in result.stdout
+
+
+def test_inbox_and_status_never_call_herdr(mesh: Mesh) -> None:
+    mesh.run("inbox", pane=PLANNER_PANE)
+    mesh.run("status", pane="w5:p5")
+
+    assert mesh.herdr.calls() == []
+
+
 def test_status_shows_every_member_role_and_mail_counts_without_a_join(mesh: Mesh) -> None:
     worker_has_a_request_and_a_reply(mesh)
     (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")  # one member's mess must not hide everyone's counts
@@ -709,6 +833,16 @@ def test_unrung_outcomes_are_reported_and_the_message_kept(mesh: Mesh, verb: str
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
     if verb == "wait":
         assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_a_prompt_timeout_is_loud_not_a_false_not_idle(mesh: Mesh) -> None:
+    mesh.herdr.set("prompt", {"worker": "timeout"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
+
+    assert result.returncode != 0
+    assert "not idle" not in result.stdout
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
 def test_ring_prompts_a_busy_claude_recipient_mid_turn(mesh: Mesh) -> None:
