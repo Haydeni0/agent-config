@@ -58,7 +58,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.03"
+MAILBOX_VERSION = "2026-10-15.04"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -161,12 +161,20 @@ class Member:
     harness_session: str | None  # the agent's own session id, when herdr knows it
 
 
+def member_file_problem(fields: dict[str, str]) -> str | None:
+    """Why these member-file fields are unusable, or None; the loud verbs and the update audit share it."""
+    if "role" not in fields:
+        return "has no role= line"
+    if "pane" in fields and "session" not in fields:
+        return "claims pane= without session="
+    return None
+
+
 def read_member(path: Path) -> Member:
     fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
-    if "role" not in fields:
-        fail(f"member file {path} has no role= line; fix it or delete the file and re-join")
-    if "pane" in fields and "session" not in fields:
-        fail(f"member file {path} claims pane= without session=; fix it or delete the file and re-join")
+    problem = member_file_problem(fields)
+    if problem is not None:
+        fail(f"member file {path} {problem}; fix it or delete the file and re-join")
     seat = Seat(pane=fields["pane"], session=fields["session"]) if "pane" in fields else None
     return Member(
         name=path.name,
@@ -622,8 +630,24 @@ def poke(member: str) -> None:
 
 
 def audit_members(root: Path) -> None:
-    """Placeholder until Task 4; kept so update is functional end-to-end."""
-    pass
+    # lenient by design: this is the recovery path for exactly the member files
+    # the loud roster verbs refuse (every verb routes through read_member)
+    flagged = False
+    for path in sorted((root / "members").iterdir()):
+        fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
+        problem = member_file_problem(fields)
+        if problem is None and "pane" not in fields:
+            problem = "no seat lines (pre-seat-line join or a retired name)"
+        if problem is None:
+            continue
+        flagged = True
+        role = fields.get("role") or "<role>"
+        typer.echo(
+            f"{path.name}: {problem} - re-join if alive: run {root / 'bin' / 'mailbox'} join {path.name} "
+            f'--role "{role}"; if retired, delete {path} (the session running update deletes it on your confirmation)'
+        )
+    if not flagged:
+        typer.echo("member audit: every member file carries seat lines and a role")
 
 
 @app.command()

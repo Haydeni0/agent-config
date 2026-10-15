@@ -28,7 +28,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.03"
+SKILL_VERSION = "2026-10-15.04"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1070,3 +1070,30 @@ def test_update_refuses_a_malformed_mesh_version(mesh: Mesh) -> None:
 
     assert result.returncode != 0
     assert "banana" in result.stderr and "MAILBOX_VERSION" in result.stderr
+
+
+def test_update_audits_seat_less_and_malformed_members_without_touching_them(mesh: Mesh) -> None:
+    members = mesh.root / "members"
+    (members / "ghost").write_text("role=retired\n")  # a re-join's de-claim leaves old names seat-less
+    (members / "broken").write_text("role=x\npane=w1:p9\n")  # pane without session
+    (members / "norole").write_text("pane=w1:p9\nsession=s1\n")  # no role line
+    before = {p.name: p.read_text() for p in members.iterdir()}
+
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert "ghost: no seat lines" in result.stdout
+    assert 'join ghost --role "retired"' in result.stdout
+    assert "broken: " in result.stdout and "session" in result.stdout
+    assert "norole: " in result.stdout and 'join norole --role "<role>"' in result.stdout
+    assert "delete" in result.stdout and str(members / "ghost") in result.stdout
+    for seated in ("planner", "worker", "critic"):
+        assert f"{seated}: " not in result.stdout
+    assert {p.name: p.read_text() for p in members.iterdir()} == before
+
+
+def test_update_audits_a_clean_roster_with_one_line(mesh: Mesh) -> None:
+    result = run_update(mesh.root, mesh.herdr)
+
+    assert result.returncode == 0, result.stderr
+    assert "member audit: every member file carries seat lines and a role" in result.stdout
