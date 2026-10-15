@@ -54,7 +54,34 @@ SEQ_WIDTH = 3
 RING_WAIT_MS = 30_000
 TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+# The helper's version. `YYYY-MM-DD.NN`, revision zero-padded; comparison parses
+# (date, revision) tuples, never strings. Bump the revision in the same commit
+# as any behavior change - a forgotten bump makes `update` report a changed
+# helper as current (the accepted residual, D8).
+MAILBOX_VERSION = "2026-10-15.01"
+VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
+Version = tuple[str, int]
+
+
+def parse_version(text: str, path: Path) -> Version:
+    match = VERSION_RE.fullmatch(text)
+    if match is None:
+        fail(f"{path} carries MAILBOX_VERSION {text!r}, which is not `YYYY-MM-DD.NN`; refusing to order it")
+    return match["date"], int(match["rev"])
+
+
+def read_version(script: Path) -> Version | None:
+    """The version a helper copy carries, text-parsed (never imported); None = pre-stamp."""
+    for line in script.read_text().splitlines():
+        if line.startswith("MAILBOX_VERSION ="):
+            return parse_version(line.partition('"')[2].rpartition('"')[0], script)
+    return None
+
+
+def format_version(version: Version) -> str:
+    return f"{version[0]}.{version[1]:02d}"
+
+app = typer.Typer(no_args_is_help=True, add_completion=False, invoke_without_command=True)
 
 
 def fail(message: str) -> NoReturn:
@@ -178,6 +205,16 @@ def mailbox_root() -> Path:
 def check_token(value: str, what: str) -> None:
     if not NAME_RE.fullmatch(value):
         fail(f"{what} {value!r} must be lowercase letters, digits and single hyphens (it becomes part of a filename)")
+
+
+@app.callback()
+def _root(version: Annotated[bool, typer.Option("--version", help="Print this helper's version and exit")] = False) -> None:
+    if version:
+        found = read_version(Path(__file__).resolve())
+        if found is None:
+            fail(f"{Path(__file__).resolve()} carries no MAILBOX_VERSION line; it cannot self-report")
+        typer.echo(format_version(found))
+        raise typer.Exit()
 
 
 @app.command()

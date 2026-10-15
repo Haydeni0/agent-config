@@ -20,6 +20,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import typer  # only for typer.Exit in the version-parse test
 from typer.testing import CliRunner
 
 HELPER = Path(__file__).resolve().parent / "mailbox.py"
@@ -27,6 +28,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
+SKILL_VERSION = "2026-10-15.01"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -133,6 +135,10 @@ def run_init(root: Path, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_skill_helper(*args: str, herdr: FakeHerdr) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, str(HELPER), *args], capture_output=True, text=True, env=herdr.env)
+
+
 @pytest.fixture
 def empty_mesh(tmp_path: Path, fake_env: FakeHerdr) -> Mesh:
     root = (tmp_path / "mailbox").resolve()
@@ -191,6 +197,28 @@ def test_init_from_a_mesh_copy_fails_cleanly(mesh: Mesh) -> None:
     assert "README.template" in result.stderr
     assert "Traceback" not in result.stderr
     assert not nested.exists()
+
+
+def test_version_flag_prints_the_helpers_version(fake_env: FakeHerdr) -> None:
+    result = run_skill_helper("--version", herdr=fake_env)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == SKILL_VERSION
+
+
+def test_version_flag_on_a_constant_less_copy_is_loud_not_a_crash(tmp_path: Path, fake_env: FakeHerdr) -> None:
+    stripped = tmp_path / "mailbox.py"
+    stripped.write_text(HELPER.read_text().replace(f'MAILBOX_VERSION = "{SKILL_VERSION}"\n', ""))
+
+    result = subprocess.run([sys.executable, str(stripped), "--version"], capture_output=True, text=True, env=fake_env.env)
+
+    assert result.returncode != 0
+    assert "MAILBOX_VERSION" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_init_stamps_the_helper_copy_with_its_version(empty_mesh: Mesh) -> None:
+    assert f'MAILBOX_VERSION = "{SKILL_VERSION}"' in (empty_mesh.root / "bin" / "mailbox").read_text()
 
 
 def test_commands_outside_an_initialised_mailbox_are_refused(fake_env: FakeHerdr) -> None:
@@ -408,6 +436,15 @@ def helper(mesh: Mesh, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     return module
+
+
+def test_version_comparison_parses_revisions_not_strings(helper: ModuleType) -> None:
+    assert helper.parse_version("2026-10-15.02", Path("x")) < helper.parse_version("2026-10-15.10", Path("x"))
+
+
+def test_a_version_off_the_scheme_fails_loudly_naming_the_file(helper: ModuleType) -> None:
+    with pytest.raises(typer.Exit):  # typer.Exit subclasses RuntimeError, not SystemExit
+        helper.parse_version("banana", Path("bin/mailbox"))
 
 
 def test_take_skips_a_message_a_concurrent_take_acked_before_it_printed(
