@@ -13,10 +13,10 @@ bench's results.md:
   silently widens (or narrows) it is caught.
 
 The control entry's 4 uncovered number sentences are the original entry's
-owner-waived baseline (the bench's gate.txt); the checker reports them and
-exits non-zero until each is waived or given a check, so "pass" for the
-control means: all checks pass, cross-index clean, exactly that baseline
-uncovered.
+owner-waived baseline (the bench's gate.txt): the control manifest carries
+them as ``WAIVE`` entries, so the control runs the full gate green, while the
+``_gate`` tests below assert the raw coverage scan still reports exactly
+those 4 before waivers.
 """
 
 from __future__ import annotations
@@ -137,11 +137,10 @@ def test_critic_only_faults_pass_the_checker():
         assert len(uncovered) == BASELINE_UNCOVERED, name
 
 
-def _run_main(argv: list[str], monkeypatch, capsys) -> int:
+def _run_main(argv: list[str], monkeypatch, capsys) -> tuple[int, str]:
     monkeypatch.setattr(sys, "argv", ["lab_checker.py", *argv])
     rc = lc.main()
-    capsys.readouterr()
-    return rc
+    return rc, capsys.readouterr().out
 
 
 def test_main_exit_codes(monkeypatch, capsys, tmp_path):
@@ -156,15 +155,42 @@ def test_main_exit_codes(monkeypatch, capsys, tmp_path):
     )
     entry = tmp_path / "e.md"
     entry.write_text("## Brief\n\n## Entry\n\nFinal loss is 0.25 [c-loss].\n")
-    assert _run_main([str(manifest), str(entry)], monkeypatch, capsys) == 0
+    assert _run_main([str(manifest), str(entry)], monkeypatch, capsys)[0] == 0
 
     # dangling citation -> nonzero
     entry.write_text("## Entry\n\nFinal loss is 0.25 [c-loss] [c-typo].\n")
-    assert _run_main([str(manifest), str(entry)], monkeypatch, capsys) == 1
+    assert _run_main([str(manifest), str(entry)], monkeypatch, capsys)[0] == 1
 
     # uncovered number sentence -> nonzero (owner must waive or add a check)
     entry.write_text("## Entry\n\nFinal loss is 0.25 [c-loss]. Early loss was 0.9.\n")
-    assert _run_main([str(manifest), str(entry)], monkeypatch, capsys) == 1
+    assert _run_main([str(manifest), str(entry)], monkeypatch, capsys)[0] == 1
+
+    # a waiver for that exact fragment covers it -> 0, printed as 'waived: <reason>'
+    manifest.write_text(
+        "from lab_checker import Check, Waive\n"
+        "CHECKS = [Check(id='c-loss', quote='loss is 0.25', "
+        f"data={str(data)!r}, expr=\"d['loss']\", kind='value', rounding=2)]\n"
+        "WAIVE = [Waive(fragment='Early loss was 0.9.', reason='transitional value')]\n"
+    )
+    rc, out = _run_main([str(manifest), str(entry)], monkeypatch, capsys)
+    assert rc == 0
+    assert "waived: transitional value" in out
+
+    # stale waiver: the fragment is gone from the Entry -> failure
+    entry.write_text("## Entry\n\nFinal loss is 0.25 [c-loss].\n")
+    rc, out = _run_main([str(manifest), str(entry)], monkeypatch, capsys)
+    assert rc == 1
+    assert "stale waiver" in out
+
+
+def test_control_exits_zero_with_baseline_waivers(monkeypatch, capsys):
+    # the control manifest carries the 4 owner-waived baseline fragments, so a
+    # clean entry runs the full gate green end to end
+    rc, out = _run_main(
+        [str(MANIFEST), str(_entry("control"))], monkeypatch, capsys
+    )
+    assert rc == 0
+    assert out.count("waived:") == BASELINE_UNCOVERED
 
 
 def test_novelty_kind_carried_not_evaluated(tmp_path):

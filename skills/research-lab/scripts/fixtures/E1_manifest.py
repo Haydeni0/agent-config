@@ -15,7 +15,7 @@ here). Data: the canonical (second, post-provenance-fix) run at
 scratch/results/e1/e1_stage_timing.json on the lab branch.
 """
 
-from lab_checker import Check
+from lab_checker import Check, Waive
 
 import pathlib
 DATA = str(pathlib.Path(__file__).resolve().parent / "e1_stage_timing.json")
@@ -321,5 +321,24 @@ CHECKS = [
         status="admitted",
         audit_note="result audit PASS-WITH-FIXES (audit/E1-result-audit.md, all checks reproduced); attack-claims passed (scratch/attack-claims-e1/report.md); admitted at lab D7",
         depends_on=["c-b-share-fp32"],
+    ),
+]
+
+WAIVE = [
+    Waive(
+        fragment="3% of attributed time but over-counts: it includes a host-op row the bucket-exclusion prefixes missed - a duplicate of the aggregation kernel - plus the repeat_interleave out-point expansion kernel; decomposition in attack log C15toC19-w1).",
+        reason="C19 raw-bucket correction note; the corrected 1.1% is checked by c-agg-share",
+    ),
+    Waive(
+        fragment="11 ms on medians 200.75/521.",
+        reason="medians/IQRs restated from the results table; kept for transparency",
+    ),
+    Waive(
+        fragment="17 ms; the neighbour band 300-512 is a physical estimate (assumed ~5-10 m^2 car surface area), not validated against real mesh data - conclusions are stated at the realised count of 400.95 mean neighbours and should be re-checked if the production count differs materially.",
+        reason="design band and realised mean; the mean is checked by c-mean-nbrs",
+    ),
+    Waive(
+        fragment="(3) Design-review fix: the split-fidelity criterion (<= 2% of e2e median) was pre-declared before the reported run.",
+        reason="process note restating the pre-declared criterion; no new quantity",
     ),
 ]

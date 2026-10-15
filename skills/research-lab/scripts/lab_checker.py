@@ -36,12 +36,18 @@ Claim-ledger fields (``status``, ``falsification``, ``forbidden``,
 ``depends_on``, ``audit_note``) are carried, not evaluated here; status changes
 only at the overseer's Decision step.
 
+Waivers: a manifest may define ``WAIVE = [Waive(fragment=..., reason=...)]``
+for uncovered fragments the owner has judged not to need a check. A waived
+fragment counts as covered (printed ``waived: <reason>``); a waiver whose
+fragment is no longer uncovered is stale and fails the run.
+
 Usage:
     uv run --script lab_checker.py <manifest.py> <experiment.md>
 
-Exits non-zero on any check failure, cross-index failure, or uncovered
-number-bearing Entry sentence (each uncovered sentence must be waived with a
-reason or given its own check before the result audit is launched).
+Exits non-zero on any check failure, cross-index failure, stale waiver, or
+uncovered number-bearing Entry sentence (each uncovered sentence must be
+waived with a reason or given its own check before the result audit is
+launched).
 """
 
 from __future__ import annotations
@@ -114,6 +120,20 @@ class Failure:
     check_id: str
     rule: str
     detail: str
+
+
+@dataclass
+class Waive:
+    """An owner waiver of one uncovered number-bearing Entry fragment.
+
+    ``fragment`` is the exact uncovered sentence text (as coverage_scan prints
+    it). A waiver whose fragment is no longer uncovered - the Entry drifted, or
+    a check now covers it - is stale and fails the run, so waivers cannot
+    silently outlive their fragment.
+    """
+
+    fragment: str
+    reason: str
 
 
 def _load(data_path: str) -> Any:
@@ -340,6 +360,23 @@ def cross_index(checks: list[Check], md_path: Path, section: str = "## Entry") -
     return failures
 
 
+def apply_waivers(
+    uncovered: list[str], waivers: list[Waive]
+) -> tuple[list[str], list[tuple[str, str]], list[Waive]]:
+    """Split uncovered fragments into (still uncovered, waived, stale waivers)."""
+    remaining = list(uncovered)
+    waived = []
+    stale = []
+    for w in waivers:
+        try:
+            remaining.remove(w.fragment)
+        except ValueError:
+            stale.append(w)
+        else:
+            waived.append((w.fragment, w.reason))
+    return remaining, waived, stale
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__)
@@ -350,21 +387,30 @@ def main() -> int:
     namespace: dict[str, Any] = {"Check": Check, "CHECKS": [], "__file__": manifest_path}
     exec(Path(manifest_path).read_text(), namespace)  # noqa: S102 - trusted lab code
     checks: list[Check] = namespace.get("CHECKS", [])
+    waivers: list[Waive] = namespace.get("WAIVE", [])
     failures = run_checks(checks)
     md = Path(experiment_path)
     try:
         xfailures = cross_index(checks, md)
-        unregistered = coverage_scan(md, [c.quote for c in checks], section="## Entry")
+        uncovered = coverage_scan(md, [c.quote for c in checks], section="## Entry")
     except ValueError as e:
         print(f"COVERAGE-ERROR: {e}")
         return 1
+    uncovered, waived, stale = apply_waivers(uncovered, waivers)
     print(f"checks: {len(checks) - len(failures)}/{len(checks)} pass")
     for f in xfailures:
         print(f"FAIL {f.check_id} [{f.rule}]: {f.detail}")
-    for s in unregistered:
+    for w in stale:
+        print(
+            f"FAIL waive [stale waiver]: fragment no longer uncovered: "
+            f"{w.fragment[:80]!r} (waived for: {w.reason})"
+        )
+    for _, reason in waived:
+        print(f"waived: {reason}")
+    for s in uncovered:
         print(f"UNCOVERED: {s}")
-    print(f"coverage: {'clean' if not unregistered else f'{len(unregistered)} uncovered sentence(s)'}")
-    return 1 if (failures or xfailures or unregistered) else 0
+    print(f"coverage: {'clean' if not uncovered else f'{len(uncovered)} uncovered sentence(s)'}")
+    return 1 if (failures or xfailures or stale or uncovered) else 0
 
 
 if __name__ == "__main__":

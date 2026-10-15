@@ -39,6 +39,11 @@ Rules:
   typo.
 - `kind="novelty"` (D27): `data` is a literature-spike file; required for "first", "novel",
   "new", "unlike prior work".
+- Uncovered fragments the owner has judged not to need a check are waived explicitly:
+  `WAIVE = [Waive(fragment="<exact uncovered sentence text>", reason="<why no check is
+  needed>")]`. The checker prints each waived fragment as `waived: <reason>`; a waiver
+  whose fragment is no longer uncovered (Entry drifted, or a check now covers it) is
+  stale and fails the run, so waivers cannot outlive their fragment.
 - Only the worker writes checks; only the Decision step changes `status` and `audit_note`.
 - `run_checks` must be all-pass and `coverage_scan` clean (or each uncovered sentence waived
   with a reason) before the result audit is launched.
