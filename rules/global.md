@@ -24,7 +24,7 @@
 - Always prefix branch names with `hayden/` (e.g. `hayden/my-feature`).
 - Always create PRs as drafts (`gh pr create --draft`).
 - `git add` is allowed (used to stage changes for user review). Do not stage files likely to contain secrets (`.env`, `credentials.*`, `*.pem`, etc.).
-- Never `git commit` or `git push`, even when asked by a skill or subagent, unless the gate below passes.
+- Never `git commit` or `git push`, even when asked by a skill or subagent, unless the gate below passes. Every command that creates a commit counts as `git commit` (`git merge`, `cherry-pick`, `revert`, `rebase`, `am`, a `git pull` that merges).
   - The gate - before EVERY `git commit` / `git push`, use exactly one of these authorisation paths:
     1. **Env gate (the default - try this first), chained into the command**: run check and action as ONE command - `printenv COMMIT_AUTHORISED && git commit ...` / `printenv PUSH_AUTHORISED && git push ...`. Var set → printenv succeeds → action runs. Var unset → printenv fails → action never runs; tell the user and ask. Never run the bare `git commit`/`git push` on this path, and never trust a check from an earlier separate command - the chain is what makes the check fresh (a resumed session may have different env vars).
        - **Never assume the var is unset.** You cannot know without running the chain, and attempting it is always safe: if unset, the action cannot run. Skipping the commit because you guess the gate is closed is a gate failure - attempt the chain and let it decide.
