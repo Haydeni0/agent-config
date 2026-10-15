@@ -28,7 +28,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.01"
+SKILL_VERSION = "2026-10-15.02"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -238,6 +238,16 @@ def test_join_renames_herdr_agent_and_creates_member_and_inbox(empty_mesh: Mesh)
     assert (empty_mesh.root / "members" / "planner").read_text() == f"role=plans the work\npane={PLANNER_PANE}\nsession={SESSION}\nharness=claude\n"
     assert (empty_mesh.inbox("planner") / "handled").is_dir()
     assert ["agent", "rename", PLANNER_PANE, "planner"] in empty_mesh.herdr.calls()
+
+
+def test_join_prints_the_contract_pointer_as_its_own_final_line(empty_mesh: Mesh) -> None:
+    result = empty_mesh.run("join", "planner", "--role", "x", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.strip().splitlines()
+    assert lines[-1] == f"contract: {empty_mesh.root / 'README.md'} - read it and follow it for the rest of this session"
+    assert lines[-2] == f"joined as planner; your inbox is {empty_mesh.inbox('planner')}"
+    assert result.stdout.count("README.md") == 1  # one pointer, not two
 
 
 @pytest.mark.parametrize("name", ["Planner", "plan.ner", "plan_ner", "-planner", "planner-"])

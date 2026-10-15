@@ -58,7 +58,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.01"
+MAILBOX_VERSION = "2026-10-15.02"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -262,7 +262,8 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
             harness_session=(record.get("agent_session") or {}).get("value"),
         ),
     )
-    typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}; follow {root / 'README.md'}")
+    typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}")
+    typer.echo(f"contract: {root / 'README.md'} - read it and follow it for the rest of this session")
 
 
 class Kind(StrEnum):
