@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.05"
+SKILL_VERSION = "2026-10-15.06"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -58,6 +58,9 @@ if verb == "rename":
         json.dump(state, f)
     print("{}")
     sys.exit(0)
+if verb != "rename":
+    # herdr agent commands accept pane ids; state and test overrides key by name
+    target = next((n for n, p in agents.items() if p == target), target)
 override = state.get(verb, {}).get(target)
 if override:
     fail(override)
@@ -365,14 +368,15 @@ def test_join_rejects_names_unsafe_in_filenames(empty_mesh: Mesh, name: str) -> 
     assert list((empty_mesh.root / "members").iterdir()) == []
 
 
-def test_join_refuses_a_name_held_by_another_pane(empty_mesh: Mesh) -> None:
+def test_join_leaves_a_herdr_name_held_by_another_pane_alone(empty_mesh: Mesh) -> None:
+    # mesh names are mesh-local; a herdr name held elsewhere blocks no join, only the display rename
     empty_mesh.herdr.set("agents", {"planner": "w9:p9"})
 
     result = empty_mesh.run("join", "planner", "--role", "x", pane=PLANNER_PANE)
 
-    assert result.returncode != 0
-    assert "w9:p9" in result.stderr
-    assert not any(call[1] == "rename" for call in empty_mesh.herdr.calls())
+    assert result.returncode == 0, result.stderr
+    assert not any(call[1] == "rename" for call in empty_mesh.herdr.calls())  # never steal a herdr name
+    assert (empty_mesh.root / "members" / "planner").read_text().startswith("role=x")
 
 
 def test_join_takes_over_a_dead_members_name(empty_mesh: Mesh) -> None:
@@ -442,6 +446,79 @@ def test_join_keeps_a_same_pane_claim_from_another_herdr_session(mesh: Mesh) -> 
 
     assert result.returncode == 0, result.stderr
     assert (mesh.root / "members" / "planner").read_text() == f"role=planner\npane={PLANNER_PANE}\nsession={SESSION}\nharness=claude\n"
+
+
+def test_join_refuses_a_name_held_by_a_live_member_of_this_mesh(mesh: Mesh) -> None:
+    mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
+    assert mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE).returncode == 0
+    # a different live pane joining under the same name must not take it over
+    mesh.herdr.set("agents", {"planner": PLANNER_PANE, "worker": WORKER_PANE, "critic": CRITIC_PANE, "nine": "w1:p9"})
+    mesh.herdr.set("agent_sessions", {"worker": "sess-worker", "nine": "sess-9"})
+
+    result = mesh.run("join", "worker", "--role", "mine", pane="w1:p9")
+
+    assert result.returncode != 0
+    assert "worker" in result.stderr
+    assert "role=mine" not in (mesh.root / "members" / "worker").read_text()
+
+
+def test_join_takes_over_a_name_whose_recorded_claim_went_stale(mesh: Mesh) -> None:
+    mesh.herdr.set("agent_sessions", {"worker": "sess-old"})
+    assert mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE).returncode == 0
+    # the recorded pane now runs a different session: the claim is stale, another pane may take the name
+    mesh.herdr.set("agents", {"planner": PLANNER_PANE, "critic": CRITIC_PANE, "nine": "w1:p9"})
+    mesh.herdr.set("agent_sessions", {"nine": "sess-9"})
+
+    result = mesh.run("join", "worker", "--role", "mine", pane="w1:p9")
+
+    assert result.returncode == 0, result.stderr
+    member = (mesh.root / "members" / "worker").read_text()
+    assert "role=mine" in member and "sess-9" in member
+
+
+def test_one_pane_two_meshes_two_names_unchanged_identity(tmp_path: Path, fake_env: FakeHerdr) -> None:
+    # the bug: join renamed the pane's herdr agent, so mesh B's join broke mesh A's
+    # recorded claim and a ring by name could target another mesh's pane
+    root_a = (tmp_path / "mesh-a").resolve()
+    assert run_init(root_a, fake_env).returncode == 0
+    mesh_a = Mesh(root=root_a, herdr=fake_env)
+    fake_env.set("agent_sessions", {"overseer": "sess-overseer"})
+    assert mesh_a.run("join", "planner", "--role", "planner", pane=PLANNER_PANE).returncode == 0
+    assert mesh_a.run("join", "overseer", "--role", "overseer", pane=WORKER_PANE).returncode == 0
+
+    root_b = (tmp_path / "mesh-b").resolve()
+    assert run_init(root_b, fake_env).returncode == 0
+    mesh_b = Mesh(root=root_b, herdr=fake_env)
+    fake_env.clear_log()
+
+    joined = mesh_b.run("join", "pi", "--role", "pi", pane=WORKER_PANE)
+
+    assert joined.returncode == 0, joined.stderr
+    assert not any(call[1] == "rename" for call in fake_env.calls())  # a named pane keeps its herdr name
+    # a later herdr rename hands 'overseer' to another pane; mesh A must not care
+    fake_env.set("agents", {"planner": PLANNER_PANE, "pi": WORKER_PANE, "overseer": CRITIC_PANE})
+    fake_env.set("agent_sessions", {"pi": "sess-overseer", "overseer": "sess-b"})
+
+    mesh_a.run("send", "x", "overseer", "--no-ring", pane=PLANNER_PANE, stdin="for the overseer\n")
+    taken = mesh_a.run("take", pane=WORKER_PANE)
+
+    assert taken.returncode == 0, taken.stderr
+    assert "for the overseer" in taken.stdout
+
+    fake_env.clear_log()
+    sent = mesh_a.run("send", "y", "overseer", pane=PLANNER_PANE, stdin="ring the seat\n")
+
+    assert sent.returncode == 0, sent.stderr
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh_a, "overseer")] in fake_env.calls()
+    assert not any(call[1] in ("wait", "prompt") and call[2] == "overseer" for call in fake_env.calls())
+
+    # and mesh B works too: the same pane holds 'pi' there, reviewer's pane holds a stolen herdr name
+    assert mesh_b.run("join", "reviewer", "--role", "reviewer", pane=CRITIC_PANE).returncode == 0
+    mesh_b.run("send", "hi", "reviewer", "--no-ring", pane=WORKER_PANE, stdin="from pi\n")
+    got = mesh_b.run("take", pane=CRITIC_PANE)
+
+    assert got.returncode == 0, got.stderr
+    assert "from pi" in got.stdout
 
 
 def test_two_member_files_claiming_one_seat_fail_loudly(mesh: Mesh) -> None:
@@ -647,6 +724,20 @@ def test_take_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
     assert "time" in line
 
 
+def test_join_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
+    mesh.herdr.set("agent_sessions", {"lead": "sess-lead"})
+
+    result = mesh.run("join", "lead", "--role", "leads", pane="w1:p9")
+
+    assert result.returncode == 0, result.stderr
+    line = log_lines(mesh)[-1]
+    assert line["event"] == "join"
+    assert line["member"] == "lead"
+    assert line["pane"] == "w1:p9"
+    assert line["session"] == "sess-lead"
+    assert "time" in line
+
+
 def test_take_refuses_a_member_whose_harness_session_changed(mesh: Mesh) -> None:
     mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("agent_sessions", {"worker": "sess-old"})
@@ -679,7 +770,7 @@ def test_poke_rings_real_mail_waiting_behind_a_stray_file(mesh: Mesh) -> None:
     result = mesh.run("poke", "worker", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in mesh.herdr.calls()
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
 
 
 def test_a_member_without_an_inbox_lists_as_empty_not_crash(mesh: Mesh) -> None:
@@ -802,7 +893,7 @@ def test_poke_rings_a_member_about_mail_already_waiting(mesh: Mesh) -> None:
     result = mesh.run("poke", "worker", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in mesh.herdr.calls()
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
     assert result.stdout.strip() == "worker: rung"
     assert len(list(mesh.inbox("worker").glob("*.msg"))) == 1
 
@@ -960,8 +1051,8 @@ def test_ring_waits_for_idle_then_prompts_a_pointer_to_the_contract(mesh: Mesh) 
 
     assert result.returncode == 0, result.stderr
     calls = mesh.herdr.calls()
-    assert ["agent", "wait", "worker", "--until", "idle", "--until", "done", "--timeout", "30000"] in calls
-    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in calls
+    assert ["agent", "wait", WORKER_PANE, "--until", "idle", "--until", "done", "--timeout", "30000"] in calls
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in calls
     assert result.stdout.strip().endswith("rung")
 
 
@@ -1000,7 +1091,7 @@ def test_ring_prompts_a_busy_claude_recipient_mid_turn(mesh: Mesh) -> None:
     result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
-    assert ["agent", "prompt", "worker", wake_line(mesh, "worker")] in mesh.herdr.calls()
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
     assert "rung while busy" in result.stdout
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
@@ -1024,6 +1115,21 @@ def test_an_unexpected_herdr_error_fails_loudly_after_the_write(mesh: Mesh) -> N
 
     assert result.returncode == 1
     assert "socket_gone" in result.stdout
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+
+
+def test_ring_skips_a_member_whose_recorded_session_went_stale(mesh: Mesh) -> None:
+    # never ring by name: the name may sit at another pane, or this pane may run a new session
+    mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
+    assert mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE).returncode == 0
+    mesh.herdr.set("agent_sessions", {"worker": "sess-new"})  # the pane now runs a different session
+    mesh.herdr.clear_log()
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
+
+    assert result.returncode == 0, result.stderr
+    assert "no live herdr agent" in result.stdout
+    assert not any(call[1] in ("wait", "prompt") for call in mesh.herdr.calls())
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
@@ -1064,13 +1170,15 @@ def test_update_swaps_a_stale_helper_for_the_skill_copy(mesh: Mesh) -> None:
 def test_update_leaves_a_same_version_byte_diff_alone(mesh: Mesh) -> None:
     helper = mesh.root / "bin" / "mailbox"
     helper.write_text(helper.read_text() + "\n# a hand edit the version line does not know about\n")
+    log = mesh.root / "log.jsonl"
+    before = log.read_text()  # the fixture's join events
 
     result = run_update(mesh.root, mesh.herdr)
 
     assert result.returncode == 0, result.stderr
     assert "current" in result.stdout
     assert "# a hand edit the version line does not know about" in helper.read_text()
-    assert not (mesh.root / "log.jsonl").exists()
+    assert log.read_text() == before
 
 
 def test_update_re_renders_a_stale_readme_without_touching_the_helper(mesh: Mesh) -> None:
@@ -1083,8 +1191,8 @@ def test_update_re_renders_a_stale_readme_without_touching_the_helper(mesh: Mesh
     assert result.returncode == 0, result.stderr
     assert "stale hand edit" not in readme.read_text()
     assert (mesh.root / "bin" / "mailbox").read_text() == HELPER.read_text()
-    events = [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
-    assert [e["event"] for e in events] == ["update"]
+    events = [e for e in log_lines(mesh) if e["event"] == "update"]
+    assert len(events) == 1
     assert events[0]["from_version"] == SKILL_VERSION and events[0]["to_version"] == SKILL_VERSION
     assert events[0]["changed"] == ["README.md"]
 
@@ -1092,6 +1200,8 @@ def test_update_re_renders_a_stale_readme_without_touching_the_helper(mesh: Mesh
 def test_update_on_a_current_mesh_writes_nothing(mesh: Mesh) -> None:
     helper_before = (mesh.root / "bin" / "mailbox").read_bytes()
     readme_before = (mesh.root / "README.md").read_bytes()
+    log = mesh.root / "log.jsonl"
+    log_before = log.read_text()
 
     result = run_update(mesh.root, mesh.herdr)
 
@@ -1099,7 +1209,7 @@ def test_update_on_a_current_mesh_writes_nothing(mesh: Mesh) -> None:
     assert "mesh is current" in result.stdout
     assert (mesh.root / "bin" / "mailbox").read_bytes() == helper_before
     assert (mesh.root / "README.md").read_bytes() == readme_before
-    assert not (mesh.root / "log.jsonl").exists()
+    assert log.read_text() == log_before
 
 
 def test_update_preserves_mail_and_handled_files(mesh: Mesh) -> None:
@@ -1140,7 +1250,8 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
     assert result.returncode == 0, result.stderr
     assert f'MAILBOX_VERSION = "{SKILL_VERSION}"' in helper.read_text()
     assert "pre-stamp" in result.stdout
-    events = [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
+    events = [e for e in log_lines(mesh) if e["event"] == "update"]
+    assert len(events) == 1
     assert events[0]["from_version"] is None and events[0]["to_version"] == SKILL_VERSION
     assert events[0]["changed"] == ["helper"]
 
@@ -1148,6 +1259,8 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
 def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
     set_mesh_version(mesh.root, "2026-10-15.10")
     readme_before = (mesh.root / "README.md").read_text()
+    log = mesh.root / "log.jsonl"
+    log_before = log.read_text()
 
     result = run_update(mesh.root, mesh.herdr)
 
@@ -1155,7 +1268,7 @@ def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
     assert "2026-10-15.10" in result.stderr and SKILL_VERSION in result.stderr
     assert 'MAILBOX_VERSION = "2026-10-15.10"' in (mesh.root / "bin" / "mailbox").read_text()
     assert (mesh.root / "README.md").read_text() == readme_before
-    assert not (mesh.root / "log.jsonl").exists()
+    assert log.read_text() == log_before
 
 
 def test_update_refuses_a_malformed_mesh_version(mesh: Mesh) -> None:

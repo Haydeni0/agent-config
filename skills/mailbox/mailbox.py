@@ -9,8 +9,10 @@ Layout under the mailbox root: README.md (the contract), bin/mailbox (this
 script, copied by `init`), members/<name> (`role=`, plus the seat the member
 joined from - `pane=`, `session=`, `harness=`, `harness-session=` - as herdr
 reports them), inboxes/<name>/ (unread files), inboxes/<name>/handled/
-(acted-on files) and log.jsonl (the append-only trace of sends, replies and
-takes). A member's name is its herdr agent name. Requests are
+(acted-on files) and log.jsonl (the append-only trace of joins, sends, replies
+and takes). A member's name is mesh-local, not its herdr agent name: identity
+is the recorded seat pane plus the harness session, so one pane may hold
+different names in different meshes. Requests are
 `<from>.<seq>-<slug>.msg`; a reply reuses the request id as
 `<from>.<id>.reply`.
 """
@@ -59,7 +61,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.05"
+MAILBOX_VERSION = "2026-10-15.06"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -124,6 +126,17 @@ def agent_record(name: str) -> dict[str, Any]:
     """The live herdr agent record for NAME (pane id, harness session id), or {} when no agent has it."""
     try:
         output = herdr("agent", "get", name)
+    except HerdrError as exc:
+        if exc.code == "agent_not_found":
+            return {}
+        raise
+    return json.loads(output)["result"]["agent"]
+
+
+def agent_record_for_pane(pane: str) -> dict[str, Any]:
+    """The live herdr agent record for the agent in PANE (herdr accepts pane ids), or {} when no agent runs there."""
+    try:
+        output = herdr("agent", "get", pane)
     except HerdrError as exc:
         if exc.code == "agent_not_found":
             return {}
@@ -211,6 +224,27 @@ def members(root: Path) -> list[Member]:
     return [read_member(path) for path in sorted((root / "members").iterdir())]
 
 
+def live_claim(member: Member) -> tuple[bool, str | None]:
+    """(claim is live, live harness session) at MEMBER's recorded seat.
+
+    A stale claim - the pane now runs a different session, or the member is
+    seat-less - is (False, None); a live claim whose session herdr cannot
+    report is (True, None)."""
+    if member.seat is None:
+        return False, None
+    if member.harness_session is not None:
+        record = agent_record_for_pane(member.seat.pane)
+        session = (record.get("agent_session") or {}).get("value")
+        return session == member.harness_session, session
+    # legacy member file (joined before harness sessions were recorded): the
+    # join of its day renamed the pane to the member name, so the name is the
+    # only anchor that can still be checked
+    record = agent_record(member.name)
+    if record.get("pane_id") != member.seat.pane:
+        return False, None
+    return True, (record.get("agent_session") or {}).get("value")
+
+
 def mailbox_root() -> Path:
     root = Path(__file__).resolve().parent.parent
     if not (root / "README.md").is_file() or not (root / "members").is_dir():
@@ -255,22 +289,30 @@ def init(directory: Path) -> None:
 
 @app.command()
 def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. planner")]) -> None:
-    """Join the mesh as NAME: rename this pane's herdr agent, write the member file, create the inbox."""
+    """Join the mesh as NAME: write the member file, create the inbox, name this pane's herdr agent when it has none."""
     root = mailbox_root()
     check_token(name, "name")
     if "\n" in role or "\r" in role:
         fail("role must be a single line - it becomes a line in the member file")
     seat = own_seat()
-    holder = live_pane(name)
-    if holder is not None and holder != seat.pane:
-        fail(f"name {name!r} is held by the herdr agent in pane {holder}; pick another name")
-    herdr("agent", "rename", seat.pane, name)
-    record = agent_record(name)
+    record = agent_record_for_pane(seat.pane)
+    for other in members(root):
+        # mesh-local collision: another member of THIS mesh holds the name with a live claim
+        if other.name == name and other.seat is not None and other.seat != seat and live_claim(other)[0]:
+            fail(f"name {name!r} is held by the live member in pane {other.seat.pane}; pick another name")
+    if not record:
+        # display only: herdr names are global to the herdr session, so name an
+        # unnamed pane and never steal or overwrite an existing name
+        holder = live_pane(name)
+        if holder is None or holder == seat.pane:
+            herdr("agent", "rename", seat.pane, name)
+            record = agent_record_for_pane(seat.pane)
     (root / "inboxes" / name / "handled").mkdir(parents=True, exist_ok=True)
     for other in members(root):
         # a re-join under a new name must not leave the old name claiming this seat
         if other.name != name and other.seat == seat:
             write_member(root, replace(other, seat=None))
+    harness_session = (record.get("agent_session") or {}).get("value")
     write_member(
         root,
         Member(
@@ -278,9 +320,10 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
             role=role,
             seat=seat,
             harness=record.get("agent"),
-            harness_session=(record.get("agent_session") or {}).get("value"),
+            harness_session=harness_session,
         ),
     )
+    log_event(root, event="join", member=name, pane=seat.pane, session=harness_session)
     typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}")
     typer.echo(f"contract: {root / 'README.md'} - read it and follow it for the rest of this session")
 
@@ -344,7 +387,7 @@ class RingOutcome(StrEnum):
     BUSY = "rung while busy: recipient was mid-turn; the line queues in its input until it reads it"
     NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s and mid-turn prompting is unverified for its harness; the file waits in its inbox"
     BLOCKED = "not rung: at a permission prompt; the file waits in its inbox"
-    OFFLINE = "not rung: no live herdr agent with this name - tell the user; a session joining under it drains the inbox"
+    OFFLINE = "not rung: no live herdr agent at the member's seat - tell the user; a session joining under it drains the inbox"
 
 
 # herdr error codes that mean "leave the file for the receiver's own inbox check".
@@ -374,25 +417,22 @@ def member_named(root: Path, name: str) -> Member | None:
 
 
 def verified_own_name(root: Path) -> str:
-    """own_name, cross-checked against herdr: pane ids repeat, so a recorded seat can outlive its agent."""
+    """own_name, cross-checked against the live agent in this pane: a recorded seat can outlive its agent."""
     name = own_name(root)
     member = member_named(root, name)
-    record = agent_record(name)
     rejoin = f"re-join with {root / 'bin' / 'mailbox'} join <name> --role <role> before taking mail"
-    live_session = (record.get("agent_session") or {}).get("value")
-    if member is not None and member.harness_session is not None:
-        # the harness session is the durable anchor: a reused pane always runs a new session
-        if live_session != member.harness_session:
+    if member is None or member.seat is None:
+        return name  # own_name already guarantees a seated claim
+    live, live_session = live_claim(member)
+    if not live:
+        if member.harness_session is not None:
             fail(
                 f"member file {name!r} records harness session {member.harness_session}, but the live "
-                f"herdr agent {name!r} is {live_session or 'sessionless'} - a stale claim; {rejoin}"
+                f"agent in pane {member.seat.pane} is {live_session or 'sessionless'} - a stale claim; {rejoin}"
             )
-        return name
-    pane = record.get("pane_id")
-    if pane != own_pane():
         fail(
-            f"member file {name!r} claims pane {own_pane()}, but the live herdr agent {name!r} is in "
-            f"{pane or 'no pane'} - a stale claim; {rejoin}"
+            f"member file {name!r} claims pane {member.seat.pane}, but no live herdr agent matches its "
+            f"claim - a stale claim; {rejoin}"
         )
     return name
 
@@ -450,15 +490,22 @@ def wake_line(root: Path, name: str) -> str:
     return f": mail waiting in {root}/inboxes/{name}/ - contract: ../../README.md"
 
 
-def recipient_harness(name: str) -> str:
-    """Harness of the live herdr agent called `name`, e.g. `claude`."""
-    return json.loads(herdr("agent", "get", name))["result"]["agent"]["agent"]
+def recipient_harness(pane: str) -> str:
+    """Harness of the live herdr agent in PANE, e.g. `claude`."""
+    return agent_record_for_pane(pane).get("agent", "")
 
 
 def ring(root: Path, name: str) -> RingOutcome:
+    # the herdr name is not the member's identity (one pane, several meshes,
+    # several names): ring the member's seat pane, and only while its recorded
+    # claim is live - never a bare name
+    member = member_named(root, name)
+    if member is None or not live_claim(member)[0]:
+        return RingOutcome.OFFLINE
+    pane = member.seat.pane
     busy = False
     try:
-        herdr("agent", "wait", name, "--until", "idle", "--until", "done", "--timeout", str(RING_WAIT_MS))
+        herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(RING_WAIT_MS))
     except HerdrError as exc:
         if exc.code == "timeout":
             # a busy recipient may not end its turn for hours (an orchestrator
@@ -466,7 +513,7 @@ def ring(root: Path, name: str) -> RingOutcome:
             # reliable (#37); a claude agent takes a mid-turn prompt fine - the
             # line queues in its input - so prompt anyway, and herdr still
             # refuses to prompt a blocked agent. Other harnesses are unprobed.
-            if recipient_harness(name) != "claude":
+            if recipient_harness(pane) != "claude":
                 return RingOutcome.NOT_IDLE
             busy = True
         elif exc.code in UNRUNG:
@@ -474,7 +521,7 @@ def ring(root: Path, name: str) -> RingOutcome:
         else:
             raise
     try:
-        herdr("agent", "prompt", name, wake_line(root, name))
+        herdr("agent", "prompt", pane, wake_line(root, name))
     except HerdrError as exc:
         if exc.code in UNRUNG:
             return UNRUNG[exc.code]
