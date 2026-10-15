@@ -84,6 +84,7 @@ into the machine-local, gitignored `.agents/backlog.md`.
 | REQ-EVALS-01 | The claim-verification replay suite's pure parts (scenario generation, transcript parsing, trap scoring, aggregation, sampler pool/condense/judge parsing) are unit-tested; scoring evaluates repeated before caught before other, and attribution alone never flags a false claim. | `evals/claim-verification/test_*.py` via `verify.sh` (CI) |
 | REQ-EVALS-02 | Live suite runs never touch the native Claude home: each arm renders into a throwaway `CLAUDE_CONFIG_DIR`, and the fidelity probe aborts when sync-owned native paths change or the runs leave native traces (a native projects entry or a `~/.claude.json` mention of the scratch root). | `cv.py probe` hard checks `native.unchanged` and `native.isolated` (manual) |
 | REQ-EVALS-03 | Trap values are drawn per run and never appear in the prompt; ground truth is kept outside the workspace except in the scenario's legitimate truth source. | `test_scenarios.py` (CI) |
+| REQ-EVALS-04 | Arm selection is one-sided Fisher exact on pooled repeat counts (default arm kept unless a challenger is significantly better; chosen arm must beat baseline); pilot scoring is deterministic; every live launch strips `COMMIT_AUTHORISED`/`PUSH_AUTHORISED` from the child env; the pilot aborts when its trap branch is gone from origin. | `pytest evals/claim-verification -k "compare or pilot or child_env"` |
 
 ## Hooks - guards and safety
 

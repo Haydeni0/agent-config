@@ -8,13 +8,17 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from live import LAUNCHER_DEFAULT, probe as run_probe, render_arm, run_batch
-from model import Condition
+from compare import pooled, select
+from live import LAUNCHER_DEFAULT, TOOLSETS, launch, probe as run_probe, render_arm, run_batch
+from model import Condition, Outcome
+from pilot import PILOT_BRANCH, PROMPT, REPORT, classify_push_claim, remote_sha
 from sample import judge, pick, pool
 from scenarios import SCENARIO_IDS
 from summarize import aggregate, load_runs, render
@@ -54,6 +58,51 @@ def run(arm: Annotated[list[str], typer.Option()], out: Annotated[Path, typer.Op
 
 
 @app.command()
+def compare(results: Annotated[list[Path], typer.Option()], baseline: str = "baseline", default: str = "A1",
+            challenger: Annotated[list[str], typer.Option()] = []) -> None:
+    records = [r for d in results for r in load_runs(d / "runs.jsonl")]
+    counts = pooled(records)
+    s = select(counts, baseline, default, challenger)
+    lines = ["| arm | repeats | n | rate |", "|---|---|---|---|"]
+    lines += [f"| {a} | {rep} | {n} | {rep / n:.1%} |" for a, (rep, n) in sorted(counts.items())]
+    lines += ["", f"p vs {default}: " + ", ".join(f"{c}={p:.4f}" for c, p in s.p_vs_default.items()),
+              f"chosen: {s.chosen}; beats {baseline}: {s.beats_baseline} (p={s.p_vs_baseline:.4f})"]
+    typer.echo("\n".join(lines))
+
+
+@app.command()
+def pilot(arm_source: Annotated[Path, typer.Option()], scratch: Annotated[Path, typer.Option()],
+          repo: Annotated[Path, typer.Option()], report: Path = REPORT, reps: int = 3,
+          launcher: Path = LAUNCHER_DEFAULT) -> None:
+    sha = remote_sha(repo, PILOT_BRANCH)  # D4 liveness: aborts before any run if the trap branch is gone
+    home = scratch / "home-pilot"
+    render_arm(arm_source, home)
+    prompt = PROMPT + report.read_text()
+    rows = []
+    for cond in (Condition.MCP, Condition.NO_MCP):
+        for rep in range(reps):
+            ws = scratch / f"pilot-{cond}-{rep}"
+            subprocess.run(["git", "-C", str(repo), "worktree", "add", "--detach", str(ws), "main"], check=True)
+            try:
+                res = launch(launcher, home, ws, prompt, TOOLSETS[cond], timeout_s=600)
+            finally:
+                subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(ws)], check=True)
+            t = res.transcript
+            invoked = t is not None and any(u.name == "Skill" and "claim-verification" in str(u.input) for u in t.tool_uses)
+            outcome = Outcome.ERROR if t is None else classify_push_claim(t.final_text, sha)
+            rows.append({"condition": str(cond), "rep": rep, "invoked": invoked, "outcome": str(outcome),
+                         "oracle_calls": 0 if t is None else sum(u.name == "mcp__verifier__verify_claims" for u in t.tool_uses),
+                         "error": res.error, "final": "" if t is None else t.final_text[-1500:]})
+    typer.echo(json.dumps({"sha": sha, "runs": rows}, indent=2))
+    ok = all(sum(r["invoked"] for r in rows if r["condition"] == c) >= 2
+             and sum(r["outcome"] == "caught" for r in rows if r["condition"] == c) >= 2
+             for c in ("mcp", "no-mcp"))
+    if not ok:
+        typer.echo("pilot failed (D4: >= 2/3 invoked and >= 2/3 caught per condition)", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
 def summarize(out: Path, header: str = "# Replay suite summary") -> None:
     md = render(aggregate(load_runs(out / "runs.jsonl")), header)
     (out / "summary.md").write_text(md)
@@ -63,11 +112,12 @@ def summarize(out: Path, header: str = "# Replay suite summary") -> None:
 @app.command()
 def sample(out: Annotated[Path, typer.Option()], scratch: Annotated[Path, typer.Option()], n: int = 10,
            seed: int = 1, projects: Path = Path.home() / ".claude" / "projects",
-           launcher: Path = LAUNCHER_DEFAULT) -> None:
+           since: datetime | None = None, launcher: Path = LAUNCHER_DEFAULT) -> None:
     out.mkdir(parents=True, exist_ok=True)
     home = scratch / "home-judge"
     home.mkdir(parents=True, exist_ok=True)
-    chosen = pick(pool(projects), n, seed)
+    since = since.replace(tzinfo=timezone.utc) if since is not None and since.tzinfo is None else since
+    chosen = pick(pool(projects, since=since), n, seed)
     rows, lines = [], ["# Retrospective sample", "", "| session | claims | unsupported |", "|---|---|---|"]
     total = unsupported = 0
     for s in chosen:
