@@ -8,7 +8,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -21,8 +23,10 @@ from model import Condition, Outcome
 from pilot import PILOT_BRANCH, PROMPT, REPORT, classify_push_claim, remote_sha
 from revise import brief, extract_revision, failing_runs
 from sample import judge, pick, pool
-from scenarios import SCENARIO_IDS
-from summarize import aggregate, load_runs, render
+from scenarios import SCENARIO_IDS, generate
+from score import classify
+from summarize import aggregate, dump_run, load_runs, render
+from transcript import parse_stream
 
 app = typer.Typer(no_args_is_help=True)
 HARD_CHECKS = ("mcp.launch", "no-mcp.launch", "rule", "skill", "mcp.connected", "no-mcp.tool_absent",
@@ -131,6 +135,44 @@ def summarize(out: Path, header: str = "# Replay suite summary") -> None:
     md = render(aggregate(load_runs(out / "runs.jsonl")), header)
     (out / "summary.md").write_text(md)
     typer.echo(md)
+
+
+@app.command()
+def rescore(out: Path) -> None:
+    """Reclassify saved runs with the current scorer (D15). No new runs; error runs and oracle/recheck pass through."""
+    runs, orig = out / "runs.jsonl", out / "runs.orig.jsonl"
+    if not orig.exists():
+        shutil.copy(runs, orig)
+    records = load_runs(orig)
+    tdir = out / "transcripts"
+    lines: list[str] = []
+    flips: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        for r in records:
+            tag = f"{r.arm}-{r.condition}-{r.scenario}-{r.rep}"
+            sc = generate(r.scenario, r.seed, Path(td) / tag)
+            truth = {k: v for k, v in sc.truth.items() if not k.startswith("_")}
+            if truth != r.truth:
+                raise ValueError(f"rescore: {tag} regenerated truth {truth} != recorded {r.truth}")
+            if r.outcome is Outcome.ERROR:
+                lines.append(dump_run(r))
+                continue
+            if sc.artifact is None:
+                jpath = Path(r.transcript_path) if r.transcript_path else tdir / f"{tag}.jsonl"
+                if not jpath.is_file():
+                    raise ValueError(f"rescore: {tag} transcript missing at {jpath}")
+                text = parse_stream(jpath.read_text().splitlines()).final_text
+            else:
+                apath = tdir / f"{tag}.artifact"
+                text = apath.read_text() if apath.is_file() else None
+            original = sc.truth.get("_original_artifact")
+            outcome = classify(sc, text, str(original) if original is not None else None)
+            if outcome is not r.outcome:
+                flips.append(f"{tag}: {r.outcome} -> {outcome}")
+            lines.append(dump_run(dataclasses.replace(r, outcome=outcome)))
+    runs.write_text("".join(line + "\n" for line in lines))
+    typer.echo(f"rescored {len(records)} runs from {orig.name}; {len(flips)} flipped")
+    typer.echo("\n".join(flips))
 
 
 @app.command()
