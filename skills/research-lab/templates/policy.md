@@ -10,7 +10,7 @@ overseer checks every brief against it and asks the PI only above the thresholds
 
 ## Compute
 
-- Allowed: <GPUs / queues / clusters>, conditions: <e.g. free on nvidia-smi immediately
+- Allowed: <GPUs / queues / clusters>, conditions: <e.g. free on the profile's compute check immediately
   before launch; preemptible queues only for resumable jobs>
 - Thread caps: <e.g. OMP_NUM_THREADS 8-16>
 - Ask the PI above: <N GPU-h per experiment> (no fixed default; each brief states its

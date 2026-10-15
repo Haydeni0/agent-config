@@ -24,14 +24,14 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    here). Missing: copy the example, then send the PI one message listing only the lines you
    could not fill. Its Staffing table (role -> launcher, model, effort) is the only way
    members are launched.
-2. **Probe.** `date`, `nvidia-smi` (free GPUs), `df -h` on the work dirs, `printenv
-   COMMIT_AUTHORISED PUSH_AUTHORISED`, the code repo and branch. A code repo needs a
-   worktree: `wt switch -c hayden/lab-<slug> --no-cd`.
+2. **Probe.** `date`, the compute check the profile names, `df -h` on the work dirs,
+   `printenv COMMIT_AUTHORISED PUSH_AUTHORISED`, the code repo and branch. A code repo
+   needs a worktree: `wt switch -c <BRANCH_PREFIX>lab-<slug> --no-cd`.
 3. **Lab dir.** The location the PI names is the lab dir itself (no extra level); default
    `<code repo>/.agents/work/<date>-lab-<slug>/`.
    Lab id = `<slug>` (short, kebab). Create:
    - `policy.md` from `templates/policy.md`: profile rules + probe results + this lab's
-     deltas (deadline, GPU set, caps). Deadline absent = none.
+     deltas (deadline, compute set, caps). Deadline absent = none.
    - `status.md`: line 1 = one-line state for the PI. Then the milestone table (D32):
      `| by | milestone | state |`, back-planned from the deadline, and the experiment table
      `| id | question | tier | state | budget | eta |` with state one of `[ ]` briefed,
@@ -65,7 +65,7 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    **Teardown as soon as a member's work is accepted**, not only at lab end: `herdr tab
    close <tab>`, and `wt remove --foreground <branch>` for its merged worktree.
 6. **Heartbeat** (D9, D32). Session cron, period at most a sixth of the time box (5 min
-   floor, 30 min cap) while active: mail, member states, GPUs,
+   floor, 30 min cap) while active: mail, member states, compute,
    ledgers, clock vs milestones and ETAs; each beat runs `scripts/lab_lint.py <lab dir>`
    (projected timestamps, status.md shape, audit event vocabulary). Ends itself at the
    lab's end condition.
