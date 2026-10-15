@@ -27,8 +27,16 @@ CHECKS = [
 ```
 
 Rules:
+- Run the shipped checker from the skill root:
+  `uv run --script scripts/lab_checker.py <manifest.py> <experiment.md>` - it runs
+  `run_checks`, the `coverage_scan` over the Entry, and the cross-index, and exits
+  non-zero on any failure.
 - Prose numbers that are rounded are checked by **exact rounding** (`rounding=`), not a
   relative tolerance: a 2% tolerance let a mutated value through in the pilot.
+- **Cross-index, both directions** (checker-enforced): every `[c-*]` id cited in the
+  Entry must resolve to a manifest Check id, and every Check `quote` must appear
+  verbatim in the Entry. A dangling citation or a dropped quote is a failure, not a
+  typo.
 - `kind="novelty"` (D27): `data` is a literature-spike file; required for "first", "novel",
   "new", "unlike prior work".
 - Only the worker writes checks; only the Decision step changes `status` and `audit_note`.

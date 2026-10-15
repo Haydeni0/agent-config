@@ -25,14 +25,16 @@ Fixed check inventory - answer every item, with file:line evidence:
 R1 Predictions: does the entry report every pre-registered prediction's outcome, failures
    first?
 R2 Scope: does any quantifier, range or split in the prose exceed what the manifest
-   checks? (F15, F24)
+   checks? Every cited check id must resolve; an unresolvable citation is a block.
+   (F15, F24)
 R3 Coverage: does the script compute anything the entry does not report? (F23)
 R4 Counterfactual: for each interpretive claim, what pattern would the opposite claim
    predict, and does the data show the claimed one? (F12)
 R5 Confounds: could a property of the population, not the system, produce the result?
    Test invariance directly where cheap. (F26)
 R6 Scales and floors: are metric scales labelled and like-for-like; are effects above the
-   noise/quantisation floor; medians beside means? (F5, F6, F7)
+   noise/quantisation floor - a claimed effect smaller than the reported spread (IQR) of
+   the compared quantities is at least warn; medians beside means? (F5, F6, F7)
 R7 Code path: does the recorded code path (flags, hooks, mode) match the entry? (F1-F3)
 R8 Domain pack checklist.
 
