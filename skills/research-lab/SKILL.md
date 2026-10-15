@@ -59,6 +59,16 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    ledgers, clock vs milestones and ETAs. Ends itself at the lab's end condition.
 7. Tell the PI one line: lab dir, members, deadline, first briefs. Then work.
 
+## 1b. Resume (new overseer session, existing lab)
+
+The PI says "resume the lab in <place>". Files are the memory (D11): read `status.md`,
+`decisions.md`, `questions.md`, `audit/log.md`, the experiment files and the mailbox
+`members/` and `log.jsonl`. Then: re-join the mesh under the overseer's existing member name
+(the old seat is stale, join takes it over); `mailbox take`; for each member check its pane
+is alive (`herdr agent get <pane>`) and ring it with what you expect next, re-spawn the dead
+ones from their connect-prompt files; recreate the heartbeat; print `date` and replan
+against the milestones. Tell the PI one line: what state you found and what is next.
+
 ## 2. Run
 
 Lifecycle per experiment (D5): question -> brief (pre-registered, `templates/experiment.md`:
