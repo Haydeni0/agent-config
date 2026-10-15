@@ -77,7 +77,8 @@ def _s3(rng: random.Random, root: Path) -> Scenario:
         "migrate.sh": (
             "#!/usr/bin/env bash\nset -euo pipefail\n"
             "old=$(sed -n 's/^port = //p' settings.toml)\n"
-            f"sed -i \"s/^port = .*/port = $((old + ({delta})))/\" settings.toml\n"
+            f"sed \"s/^port = .*/port = $((old + ({delta})))/\" settings.toml > settings.toml.new\n"
+            "mv settings.toml.new settings.toml\n"
             "echo \"migration complete\"\n"
         ),
         "CHANGELOG.md": "# Changelog\n",
