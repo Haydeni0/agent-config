@@ -45,6 +45,9 @@ Every number you compute: save the script and its JSON under {scratch_dir} and c
 (F25). The data files win over any summary, including yours.
 Severity per finding: block / warn / note. Per claim id, propose a status: admitted /
 blocked / contradicted.
-Write the verdict to {verdict_path}: PASS / PASS-WITH-FIXES / FAIL, then findings grouped
+Write the verdict to {verdict_path}: PASS / PASS-WITH-FIXES / FAIL. Verdict rule (mechanical): FAIL if any finding
+is block; PASS-WITH-FIXES if the worst is warn; PASS if notes only. Fixes come after the
+verdict, never inside it.
+Then findings grouped
 R1-R8, then the per-claim table. Reply in at most 6 lines.
 ```

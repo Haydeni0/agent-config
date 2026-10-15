@@ -32,6 +32,6 @@ D7 Cost: is the estimate plausible, within policy.md, and resumable if long?
 D8 Domain pack checklist: every item in the pack's failure checklist.
 
 Severity per finding: block (result would be invalid) / warn / note.
-Write the verdict to {verdict_path}: PASS / PASS-WITH-FIXES / FAIL, then findings grouped
+Write the verdict to {verdict_path}: PASS / PASS-WITH-FIXES / FAIL (FAIL if any finding is block; PASS-WITH-FIXES if the worst is warn; PASS if notes only), then findings grouped
 D1-D8. Reply in at most 6 lines: verdict + block/warn counts + top finding.
 ```

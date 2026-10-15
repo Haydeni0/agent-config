@@ -24,5 +24,5 @@ P5 Figures: generated from the cited data; legends and axes match the claims (F1
 P6 Corrections lines present for every changed claim since the last publish (D24).
 
 Severity: block / warn / note. Write the verdict to {verdict_path}: PASS /
-PASS-WITH-FIXES / FAIL with findings grouped P1-P6. Reply in at most 6 lines.
+PASS-WITH-FIXES / FAIL (FAIL if any finding is block; PASS-WITH-FIXES if the worst is warn; PASS if notes only) with findings grouped P1-P6. Reply in at most 6 lines.
 ```
