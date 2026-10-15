@@ -27,7 +27,7 @@ overseer checks every brief against it and asks the PI only above the thresholds
 
 ## Permissions
 
-- Commit: yes, on <research branch / repo>; provenance commits use `--no-verify` (D8)
+- Commit: yes, on <research branch / repo>; provenance commits only via `scripts/lab_commit.py` (D8: hooks run on code before the run; the commit holds the bytes that ran)
   and `git add -f` for gitignored result dirs (e.g. `scratch/`)
 - Push: <yes/no>
 - Shared publishing (pages, docs): <who may publish where; PI message required?>

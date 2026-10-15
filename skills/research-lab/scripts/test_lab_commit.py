@@ -93,6 +93,17 @@ NO_RESULTS_HOOK_CONFIG = """repos:
     files: ^results/
 """
 
+# rewrites every .py it is handed, like a formatter would
+REWRITE_HOOK_CONFIG = """repos:
+- repo: local
+  hooks:
+  - id: rewrite-py
+    name: rewrite-py
+    language: system
+    entry: sh -c 'for f; do printf "# formatted\\n" >> "$f"; done' --
+    files: \\.py$
+"""
+
 
 def _env(gate: bool) -> dict[str, str]:
     e = {k: v for k, v in os.environ.items() if k != "COMMIT_AUTHORISED"}
@@ -314,6 +325,19 @@ def test_data_files_exempt_from_hooks(tmp_path):
     p2 = _run_tool(repo, lab, "E1", "--", "results/e1.json")
     assert p2.returncode != 0
     assert "pre-commit hooks failed" in p2.stderr
+
+
+def test_hook_rewrite_refused_and_as_run_bytes_restored(tmp_path):
+    repo, lab, head = _make_single_lab(tmp_path)
+    (repo / ".pre-commit-config.yaml").write_text(REWRITE_HOOK_CONFIG)
+    script = repo / "scratch" / "e1_stage.py"
+    as_run = script.read_bytes()
+    p = _run_tool(repo, lab, "E1", *_e1_cli())
+    assert p.returncode != 0
+    assert "format before running" in p.stderr
+    assert "scratch/e1_stage.py" in p.stderr
+    assert script.read_bytes() == as_run
+    assert _git(repo, "rev-parse", "HEAD").stdout.strip() == head
 
 
 def test_lint_failure_blocks_commit(tmp_path):

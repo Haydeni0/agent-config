@@ -5,8 +5,9 @@
 """Provenance-commit gate for an accepted research-lab experiment (D8).
 
 The only way a lab member turns an accepted experiment into a commit: never a
-hand-run ``git commit`` for this, and never ``--no-verify`` (D8 originally
-allowed skipping hooks; hooks now run on everything except ``--data`` files).
+hand-run ``git commit`` for this, and never ``--no-verify``. D8: the commit
+holds the bytes that ran, so hooks run as a check - code is formatted before the
+run, never at commit time.
 
 Checks, in order - the first failure aborts with nothing committed:
 
@@ -23,6 +24,8 @@ Checks, in order - the first failure aborts with nothing committed:
 3. pre-commit hooks: when the repo has a ``.pre-commit-config.yaml`` they run
    on every path except the ``--data`` ones (frozen, hash-cited files a hook
    would rewrite); data paths are committed too and listed in the commit body.
+   A hook that rewrites a file refuses the commit and the as-run bytes are
+   restored: formatting belongs before the run.
 4. lab lint: ``lab_lint.py`` on the lab dir must be clean (future stamps,
    status shape, audit vocabulary).
 5. gated commit, one chained command so a fresh env check decides:
@@ -196,11 +199,21 @@ def run_hooks(repo: Path, hook_paths: list[str]) -> None:
     if not hook_paths:
         print("every path is a --data file - hooks skipped")
         return
+    as_run = {rel: (repo / rel).read_bytes() for rel in hook_paths if (repo / rel).is_file()}
     pre = shutil.which("pre-commit")
     cmd = [pre] if pre else ["uv", "run", "--no-project", "--with", "pre-commit", "pre-commit"]
     p = subprocess.run(
         cmd + ["run", "--files", *hook_paths], cwd=repo, capture_output=True, text=True
     )
+    rewritten = [rel for rel, data in as_run.items() if (repo / rel).read_bytes() != data]
+    for rel in rewritten:
+        (repo / rel).write_bytes(as_run[rel])
+    if rewritten:
+        _die(
+            "hooks would rewrite as-run files, and the commit must hold the bytes that ran"
+            f" (D8): {', '.join(rewritten)}. Restored them; format before running, re-run,"
+            " then commit."
+        )
     if p.returncode:
         _die(f"pre-commit hooks failed (fix and re-run; never --no-verify):\n{p.stdout}{p.stderr}")
     print(f"pre-commit hooks passed on {len(hook_paths)} path(s)")

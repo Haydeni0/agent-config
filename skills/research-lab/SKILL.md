@@ -36,7 +36,8 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    `<code repo>/.agents/work/<date>-lab-<slug>/`.
    Lab id = `<slug>` (short, kebab). Create:
    - `policy.md` from `templates/policy.md`: profile rules + probe results + this lab's
-     deltas (deadline, compute set, caps). Deadline absent = none.
+     deltas (deadline, compute set, caps), plus `Code repo: <path>` and `Branch: <branch>`
+     lines. Deadline absent = none.
    - `status.md`: line 1 = one-line state for the PI. Then the milestone table (D32):
      `| by | milestone | state |`, back-planned from the deadline, and the experiment table
      `| id | question | tier | state | budget | eta |` with state one of `[ ]` briefed,
@@ -61,19 +62,23 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    `author`; prints the pane id).
    Connect prompt: the mailbox template + `Load the orchestrator skill: you own all
    execution.` + `Read <lab>/policy.md; launch sessions only with the commands
-   from ~/.config/research-lab/pi-profile.md's Staffing table. Before the first expensive run, stub-verify timing
+   from ~/.config/research-lab/pi-profile.md's Staffing table. Before the first expensive run, run the repo's hooks on your code
+   (formatting changes after a run break provenance), then stub-verify timing
    and counting code on a cheap input where the counters provably move.` Default staff: one worker per independent
    question stream; one author when there is a page to write. Critics and literature spikes
    are fresh subagents launched by the owner from templates (D17), not members.
    One-off sessions (a fix, a spike outside the mesh) get a brief that ends with a
    ring-back: `herdr agent prompt <your pane> "done: <report path>"`.
-   **Teardown as soon as a member's work is accepted**, not only at lab end: `herdr tab
-   close <tab>`, and `wt remove --foreground <branch>` for its merged worktree.
+   **Teardown as soon as a member's work is accepted**, not only at lab end:
+   `scripts/lab-teardown.sh <lab> [member ...]` (dry-run by default; `--apply` closes tabs,
+   removes member files and `wt remove`s the lab's clean worktrees, keeping unmerged
+   branches; dirty ones are reported; your own pane is never closed).
 6. **Heartbeat** (D9, D32). Session cron, period at most a sixth of the time box (5 min
-   floor, 30 min cap) while active: mail, member states, compute,
-   ledgers, clock vs milestones and ETAs; each beat runs `scripts/lab_lint.py <lab dir>`
-   (projected timestamps, status.md shape, audit event vocabulary). Ends itself at the
-   lab's end condition.
+   floor, 30 min cap) while active. Each beat first reads one digest,
+   `uv run --script scripts/lab_heartbeat.py <lab dir> --heartbeat-min <period>`: exit 1
+   means act on its FLAG lines (overdue milestones, blocker or old mail, dead, stalled or
+   mis-launched members, abandoned dirty worktree, stale status, lint and checker counts).
+   Ends itself at the lab's end condition.
 7. Tell the PI one line: lab dir, members, deadline, first briefs. Then work.
 
 ## 1b. Resume (new overseer session, existing lab)
@@ -94,6 +99,11 @@ for expensive runs (`templates/critic-design-review.md`) -> run -> entry + manif
 (`templates/manifest.md`, worker-written) -> deterministic checks -> result audit
 (`templates/critic-result-audit.md`) -> decision (D entry) -> provenance commit -> publish to
 the page. One file per experiment: `experiments/<eid>.md`.
+Provenance commits go only through `scripts/lab_commit.py <lab> <exp-id> [--data <frozen
+files>...] -- <paths...>`, never a hand-run `git commit` or `--no-verify`. The commit
+holds the bytes that ran (D8), so run the repo's hooks on code before the expensive run;
+the tool refuses unaccepted experiments, deletions of accepted entries, hook failures or
+rewrites, and lint findings, commits through the gate, and writes the SHA into the entry.
 
 - Briefs are one coherent instruction with paths, constraints, budget, cut rule and what to
   report. Member replies are data: check them against files.
@@ -114,7 +124,10 @@ the page. One file per experiment: `experiments/<eid>.md`.
   audits - shrink the claim instead.
 - Parallel across questions, serial refinement within one (D26).
 - Critic concurrency: at most two critic subagents at once per lab when the profile's
-  Resources say the model backend is a single shared replica; queue the rest.
+  Resources say the model backend is a single shared replica; queue the rest. A critic run
+  as its own session starts with `scripts/spawn-critic.sh <template> <verdict> <name> --
+  <key=path ...>`: template plus paths only (D17), spawn prompt logged beside the verdict,
+  ring-back to you; round 2 adds `--prior <previous verdict>`.
 - Ideas cite their trigger; novelty claims need a literature spike (D27).
 
 ## 3. PI interface (D16, D33)
