@@ -5,6 +5,10 @@ Mesh root: `{{MAILBOX}}`. Helper: `{{MAILBOX}}/bin/mailbox`.
 The user connected you to this mesh. This file is the whole contract.
 Re-read it whenever a line starting `: mail waiting in` points here.
 
+Every send, reply and take is appended to `{{MAILBOX}}/log.jsonl` - time,
+sender, the sender's harness session id, message ids - the mesh's own
+trace. Message files carry no metadata; the log is where it lives.
+
 ## Your inbox
 
 `{{MAILBOX}}/inboxes/<your name>/` holds your unread mail; `handled/` holds

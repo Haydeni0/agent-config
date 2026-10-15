@@ -7,10 +7,12 @@
 
 Layout under the mailbox root: README.md (the contract), bin/mailbox (this
 script, copied by `init`), members/<name> (`role=`, plus the `pane=` and
-`session=` seat the member joined from), inboxes/<name>/ (unread files) and
-inboxes/<name>/handled/ (acted-on files). A member's name is its herdr agent
-name. Requests are `<from>.<seq>-<slug>.msg`; a reply reuses the request id
-as `<from>.<id>.reply`.
+`session=` seat the member joined from, and its `harness-session=` id when
+herdr knows it), inboxes/<name>/ (unread files), inboxes/<name>/handled/
+(acted-on files) and log.jsonl (the append-only trace of sends, replies and
+takes). A member's name is its herdr agent name. Requests are
+`<from>.<seq>-<slug>.msg`; a reply reuses the request id as
+`<from>.<id>.reply`.
 """
 
 import contextlib
@@ -21,9 +23,10 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, Any, NoReturn
 
 import typer
 
@@ -78,15 +81,21 @@ def herdr(*command: str) -> str:
     return proc.stdout
 
 
-def live_pane(name: str) -> str | None:
-    """Pane of the live herdr agent called `name`, or None when no agent has it."""
+def agent_record(name: str) -> dict[str, Any]:
+    """The live herdr agent record for NAME (pane id, harness session id), or {} when no agent has it."""
     try:
         output = herdr("agent", "get", name)
     except HerdrError as exc:
         if exc.code == "agent_not_found":
-            return None
+            return {}
         raise
-    return json.loads(output)["result"]["agent"]["pane_id"]
+    return json.loads(output)["result"]["agent"]
+
+
+def live_pane(name: str) -> str | None:
+    """Pane of the live herdr agent called `name`, or None when no agent has it."""
+    pane = agent_record(name).get("pane_id")
+    return pane if isinstance(pane, str) else None
 
 
 def own_pane() -> str:
@@ -120,18 +129,21 @@ class Member:
     name: str
     role: str
     seat: Seat | None  # None once a later join from the same seat took it over
+    harness_session: str | None  # the agent's own session id, when herdr knows it
 
 
 def read_member(path: Path) -> Member:
     fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
     seat = Seat(pane=fields["pane"], session=fields["session"]) if "pane" in fields else None
-    return Member(name=path.name, role=fields["role"], seat=seat)
+    return Member(name=path.name, role=fields["role"], seat=seat, harness_session=fields.get("harness-session"))
 
 
 def write_member(root: Path, member: Member) -> None:
     lines = [f"role={member.role}"]
     if member.seat is not None:
         lines += [f"pane={member.seat.pane}", f"session={member.seat.session}"]
+    if member.harness_session is not None:
+        lines.append(f"harness-session={member.harness_session}")
     (root / "members" / member.name).write_text("\n".join(lines) + "\n")
 
 
@@ -179,12 +191,13 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
     if holder is not None and holder != seat.pane:
         fail(f"name {name!r} is held by the herdr agent in pane {holder}; pick another name")
     herdr("agent", "rename", seat.pane, name)
+    harness_session = (agent_record(name).get("agent_session") or {}).get("value")
     (root / "inboxes" / name / "handled").mkdir(parents=True, exist_ok=True)
     for other in members(root):
         # a re-join under a new name must not leave the old name claiming this seat
         if other.name != name and other.seat == seat:
             write_member(root, replace(other, seat=None))
-    write_member(root, Member(name=name, role=role, seat=seat))
+    write_member(root, Member(name=name, role=role, seat=seat, harness_session=harness_session))
     typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}; follow {root / 'README.md'}")
 
 
@@ -269,16 +282,30 @@ def own_name(root: Path) -> str:
     return claimants[0]
 
 
+def member_named(root: Path, name: str) -> Member | None:
+    return next((m for m in members(root) if m.name == name), None)
+
+
 def verified_own_name(root: Path) -> str:
-    """own_name, cross-checked against herdr: a herdr restart reuses pane ids, so a seat can outlive its session."""
+    """own_name, cross-checked against herdr: pane ids repeat, so a recorded seat can outlive its agent."""
     name = own_name(root)
-    pane = own_pane()
-    live = live_pane(name)
-    if live != pane:
+    member = member_named(root, name)
+    record = agent_record(name)
+    rejoin = f"re-join with {root / 'bin' / 'mailbox'} join <name> --role <role> before taking mail"
+    live_session = (record.get("agent_session") or {}).get("value")
+    if member is not None and member.harness_session is not None:
+        # the harness session is the durable anchor: a reused pane always runs a new session
+        if live_session != member.harness_session:
+            fail(
+                f"member file {name!r} records harness session {member.harness_session}, but the live "
+                f"herdr agent {name!r} is {live_session or 'sessionless'} - a stale claim; {rejoin}"
+            )
+        return name
+    pane = record.get("pane_id")
+    if pane != own_pane():
         fail(
-            f"member file {name!r} claims pane {pane}, but the live herdr agent {name!r} is in "
-            f"{live or 'no pane'} - a stale claim; re-join with {root / 'bin' / 'mailbox'} join <name> --role <role> "
-            "before taking mail"
+            f"member file {name!r} claims pane {own_pane()}, but the live herdr agent {name!r} is in "
+            f"{pane or 'no pane'} - a stale claim; {rejoin}"
         )
     return name
 
@@ -307,6 +334,13 @@ def write_atomic(path: Path, body: str) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(body)
     os.replace(tmp, path)
+
+
+def log_event(root: Path, **event: object) -> None:
+    """Append one JSON line to the mesh trace; message files stay payload-pure."""
+    line = {"time": datetime.now(timezone.utc).isoformat(timespec="seconds"), **event}
+    with (root / "log.jsonl").open("a") as log:
+        log.write(json.dumps(line) + "\n")
 
 
 def write_messages(root: Path, sender: str, msg_id: str, kind: Kind, body: str, recipients: list[str]) -> dict[str, Path]:
@@ -377,6 +411,9 @@ def report_unrung(paths: dict[str, Path]) -> None:
 
 def deliver(root: Path, sender: str, msg_id: str, kind: Kind, recipients: list[str], ring_now: bool) -> None:
     paths = write_messages(root, sender, msg_id, kind, read_body(), recipients)
+    member = member_named(root, sender)
+    log_event(root, event="sent", sender=sender, session=member.harness_session if member else None,
+              id=msg_id, kind=str(kind), to=recipients)
     if ring_now:
         ring_all(root, paths)
     else:
@@ -450,7 +487,8 @@ def inbox() -> None:
 def take() -> None:
     """Print all unread mail, then mark exactly what was printed handled."""
     root = mailbox_root()
-    box = root / "inboxes" / verified_own_name(root)
+    name = verified_own_name(root)
+    box = root / "inboxes" / name
     printed: list[Message] = []
     for message in messages_in(box):
         try:
@@ -467,6 +505,9 @@ def take() -> None:
     for message in printed:
         with contextlib.suppress(FileNotFoundError):  # a concurrent take already acked it
             message.path.rename(box / "handled" / message.path.name)
+    member = member_named(root, name)
+    log_event(root, event="taken", member=name, session=member.harness_session if member else None,
+              files=[message.path.name for message in printed])
 
 
 @app.command()

@@ -58,7 +58,10 @@ if target not in agents:
     fail("agent_not_found")
 if verb == "get":
     harness = state.get("harness", {}).get(target, "claude")
-    print(json.dumps({"result": {"agent": {"pane_id": agents[target], "agent": harness}}}))
+    agent = {"pane_id": agents[target], "agent": harness}
+    if (session_id := state.get("agent_sessions", {}).get(target)) is not None:
+        agent["agent_session"] = {"kind": "id", "value": session_id}
+    print(json.dumps({"result": {"agent": agent}}))
     sys.exit(0)
 print("{}")
 '''
@@ -158,6 +161,7 @@ def test_init_creates_layout_and_fills_absolute_paths_into_contract(tmp_path: Pa
     readme = (root / "README.md").read_text()
     assert "{{MAILBOX}}" not in readme
     assert f"{root}/bin/mailbox send" in readme
+    assert f"{root}/log.jsonl" in readme
     for verb in ("take", "inbox", "status", "poke"):
         assert f"{root}/bin/mailbox {verb}" in readme
     assert "move it to" not in readme  # the manual-ack instruction is gone
@@ -227,6 +231,22 @@ def test_join_without_a_herdr_pane_is_refused(empty_mesh: Mesh) -> None:
 
     assert result.returncode != 0
     assert "HERDR_PANE_ID" in result.stderr
+
+
+def test_join_records_the_harness_session_id_when_herdr_knows_it(empty_mesh: Mesh) -> None:
+    empty_mesh.herdr.set("agent_sessions", {"planner": "sess-planner"})
+
+    result = empty_mesh.run("join", "planner", "--role", "x", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "harness-session=sess-planner" in (empty_mesh.root / "members" / "planner").read_text()
+
+
+def test_join_omits_the_harness_session_when_herdr_has_none(empty_mesh: Mesh) -> None:
+    result = empty_mesh.run("join", "planner", "--role", "x", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "harness-session" not in (empty_mesh.root / "members" / "planner").read_text()
 
 
 def test_join_clears_its_seat_from_the_member_file_it_rejoined_away_from(mesh: Mesh) -> None:
@@ -405,6 +425,56 @@ def test_take_acks_only_its_snapshot_and_tolerates_a_concurrent_ack(
     handled = {p.name for p in (mesh.inbox("worker") / "handled").iterdir()}
     assert handled == {"planner.001-a.msg", "planner.002-b.msg"}
     assert (mesh.inbox("worker") / "critic.001-late.msg").exists()
+
+
+def log_lines(mesh: Mesh) -> list[dict[str, object]]:
+    return [json.loads(line) for line in (mesh.root / "log.jsonl").read_text().splitlines()]
+
+
+def test_send_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
+    mesh.herdr.set("agent_sessions", {"planner": "sess-planner"})
+    mesh.run("join", "planner", "--role", "planner", pane=PLANNER_PANE)  # re-join records the session id
+
+    result = mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+
+    assert result.returncode == 0, result.stderr
+    line = log_lines(mesh)[-1]
+    assert line["event"] == "sent"
+    assert line["sender"] == "planner"
+    assert line["session"] == "sess-planner"
+    assert line["id"] == "001-review-api"
+    assert line["kind"] == "msg"
+    assert line["to"] == ["worker"]
+    assert "time" in line
+
+
+def test_take_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
+    mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)
+
+    result = mesh.run("take", pane=WORKER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    line = log_lines(mesh)[-1]
+    assert line["event"] == "taken"
+    assert line["member"] == "worker"
+    assert line["session"] == "sess-worker"
+    assert line["files"] == ["planner.001-x.msg"]
+    assert "time" in line
+
+
+def test_take_refuses_a_member_whose_harness_session_changed(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.herdr.set("agent_sessions", {"worker": "sess-old"})
+    mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)
+    mesh.herdr.set("agent_sessions", {"worker": "sess-new"})  # the pane now runs a different session
+
+    result = mesh.run("take", pane=WORKER_PANE)
+
+    assert result.returncode != 0
+    assert "stale claim" in result.stderr
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
 def test_status_shows_every_member_role_and_mail_counts_without_a_join(mesh: Mesh) -> None:
