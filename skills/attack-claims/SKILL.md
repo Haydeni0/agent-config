@@ -208,7 +208,8 @@ that does not reproduce is a failed audit, non-reproduction noted.
 Per wave (attacker-gathered):
 
 - Refuted on either route, audit passed -> `contradicted`, terminal.
-- The claim and its negation both entailed -> `disputed`, terminal; the
+- The claim and its negation both entailed -> `disputed`, terminal; this
+  outranks a negation-route refutation of the same claim. The
   report shows both span sets. When one span entails both, the note says
   so - an ambiguous claim or an inconsistent span.
 - Claim entailed, no refutation -> standing `passed`.
