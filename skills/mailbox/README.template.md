@@ -58,6 +58,9 @@ EOF
 - A busy claude recipient is prompted mid-turn anyway - the wake line sits
   in its input until it reads it. A busy recipient on any other harness is
   left for its next `take`.
+- An idle claude recipient that is mid-typing is not rung - a ring would
+  splice into its draft and send it. The file waits for its next `take`
+  (and the turn-end guard surfaces it).
 - Batch several items into one message - every ring costs the recipient a
   model turn.
 - "not rung" still means delivered: the file is in the recipient's inbox.

@@ -63,7 +63,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.09"
+MAILBOX_VERSION = "2026-10-15.10"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -439,6 +439,11 @@ class RingOutcome(StrEnum):
     NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s and mid-turn prompting is unverified for its harness; the file waits in its inbox"
     BLOCKED = "not rung: at a permission prompt; the file waits in its inbox"
     OFFLINE = "not rung: no live herdr agent at the member's seat - tell the user; a session joining under it drains the inbox"
+    TYPING = "not rung: unsubmitted typing sits in the recipient's composer - the file waits in its inbox"
+    COMPOSER_UNSEEN = (
+        "not rung: the recipient's composer could not be seen (menu, overlay, or herdr without"
+        " `pane read --source detection`) - the file waits in its inbox"
+    )
 
 
 # herdr error codes that mean "leave the file for the receiver's own inbox check".
@@ -549,6 +554,42 @@ def recipient_harness(pane: str) -> str:
     return agent_record_for_pane(pane).get("agent", "")
 
 
+PROMPT_CURSOR = "❯"
+
+
+def is_horizontal_rule(line: str) -> bool:
+    """herdr's own rule semantic (detect/manifest.rs): a bare run of the
+    box-drawing dash is a rule at any length, and a run of three or more still
+    is when text follows it."""
+    trimmed = line.strip()
+    width = len(trimmed) - len(trimmed.lstrip("─"))
+    if width == 0:
+        return False
+    return trimmed[width:].strip() == "" or width >= 3
+
+
+def prompt_box_state(screen: str) -> str | None:
+    """The claude composer as herdr's own detection sees it: "empty", "typing",
+    or None when the box cannot be seen - never a guess.
+
+    The composer is the box whose top border is the second horizontal rule
+    from the bottom of herdr's detection view (the same parse herdr's
+    claude.toml `live_prompt_box` rule runs over); its body runs to the next
+    rule. A body beyond the bare prompt cursor is unsubmitted typing - a human
+    draft, since an agent mid-turn does not leave one on an idle pane."""
+    lines = screen.splitlines()
+    rules = [i for i, line in enumerate(lines) if is_horizontal_rule(line)]
+    if len(rules) < 2:
+        return None
+    for line in lines[rules[-2] + 1:]:
+        if is_horizontal_rule(line):
+            break
+        stripped = line.strip()
+        if stripped and stripped != PROMPT_CURSOR:
+            return "typing"
+    return "empty"
+
+
 def ring(root: Path, name: str) -> RingOutcome:
     # the herdr name is not the member's identity (one pane, several meshes,
     # several names): ring the member's seat pane, and only while its recorded
@@ -574,6 +615,21 @@ def ring(root: Path, name: str) -> RingOutcome:
             return UNRUNG[exc.code]
         else:
             raise
+    if not busy and recipient_harness(pane) == "claude":
+        # an idle claude pane with a draft in its composer means a human is
+        # mid-typing: prompting splices into the draft and Enter sends it. Read
+        # the composer through herdr's own detection view and defer the ring on
+        # anything but a provably empty box - the mail stays in the inbox and
+        # the turn-end guard or a poke surfaces it.
+        try:
+            screen = herdr("pane", "read", "--source", "detection", "--format", "text", pane)
+        except HerdrError:
+            return RingOutcome.COMPOSER_UNSEEN
+        state = prompt_box_state(screen)
+        if state == "typing":
+            return RingOutcome.TYPING
+        if state is None:
+            return RingOutcome.COMPOSER_UNSEEN
     try:
         herdr("agent", "prompt", pane, wake_line(root, name))
     except HerdrError as exc:

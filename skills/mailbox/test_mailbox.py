@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.09"
+SKILL_VERSION = "2026-10-15.10"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -57,6 +57,16 @@ if verb == "rename":
     with open(state_path, "w") as f:
         json.dump(state, f)
     print("{}")
+    sys.exit(0)
+if _group == "pane" and verb == "read":
+    # herdr pane read --source detection --format text <PANE>: the screen herdr's
+    # own agent-state detection runs over. Default: a normal idle claude pane
+    # with an empty composer box; tests override via pane_screens/pane_read_errors.
+    pane = rest[-1] if rest else target
+    if (code := state.get("pane_read_errors", {}).get(pane)):
+        fail(code)
+    default = f"※ transcript\n{'─' * 40}\n❯\n{'─' * 40}\n  Model: glm | footer\n"
+    sys.stdout.write(state.get("pane_screens", {}).get(pane, default))
     sys.exit(0)
 if verb != "rename":
     # herdr agent commands accept pane ids; state and test overrides key by name
@@ -1275,6 +1285,109 @@ def test_ring_waits_for_idle_then_prompts_a_pointer_to_the_contract(mesh: Mesh) 
     assert result.stdout.strip().endswith("rung")
 
 
+def composer_box(body: str) -> str:
+    return f"※ transcript\n{'─' * 40}\n{body}\n{'─' * 40}\n  Model: glm | footer\n"
+
+
+def test_ring_rings_through_an_empty_composer(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert ["pane", "read", "--source", "detection", "--format", "text", WORKER_PANE] in mesh.herdr.calls()
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
+    assert result.stdout.strip().endswith("rung")
+
+
+def test_ring_defers_a_claude_recipient_who_is_typing(mesh: Mesh) -> None:
+    mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ fix the flaky login test")})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: unsubmitted typing" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+
+
+def test_ring_defers_a_claude_recipient_with_a_multiline_draft(mesh: Mesh) -> None:
+    mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ first line of a draft\nwrapped second line")})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: unsubmitted typing" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_defers_when_the_composer_cannot_be_seen(mesh: Mesh) -> None:
+    mesh.herdr.set("pane_screens", {WORKER_PANE: "no rules visible in this view\n"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: the recipient's composer could not be seen" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+    assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
+
+
+def test_ring_defers_when_the_pane_read_fails(mesh: Mesh) -> None:
+    mesh.herdr.set("pane_read_errors", {WORKER_PANE: "socket_gone"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: the recipient's composer could not be seen" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_prompt_box_state_classifies_herdr_shaped_screens(helper: ModuleType) -> None:
+    def box(body: str) -> str:
+        return f"※ transcript\n{'─' * 40}\n{body}\n{'─' * 40}\n  Model: glm | footer\n"
+
+    assert helper.prompt_box_state(box("❯")) == "empty"
+    assert helper.prompt_box_state(box("❯ draft text")) == "typing"
+    assert helper.prompt_box_state(box("❯ wrapped draft\nsecond line")) == "typing"
+    assert helper.prompt_box_state("no rules in this view\n") is None
+
+    # herdr's own rule semantic (detect/manifest.rs): a bare dash run of any
+    # length is a rule, and so is a run of three or more with text after it
+    assert helper.is_horizontal_rule("─" * 2) is True
+    assert helper.is_horizontal_rule("─" * 3 + " agent config stuff ─") is True
+    assert helper.is_horizontal_rule("─ x") is False
+    assert helper.is_horizontal_rule("  plain text  ") is False
+
+
+def test_a_busy_claude_recipient_is_prompted_without_the_composer_check(mesh: Mesh) -> None:
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert not any(call[0] == "pane" for call in mesh.herdr.calls())
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
+
+
+def test_a_non_claude_recipient_skips_the_composer_check(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "codex"})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert not any(call[0] == "pane" for call in mesh.herdr.calls())
+    assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
+
+
+def test_poke_reports_the_typing_outcome(mesh: Mesh) -> None:
+    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ mid-draft")})
+    mesh.herdr.clear_log()
+
+    result = mesh.run("poke", "worker", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: unsubmitted typing" in result.stdout
+
+
 @pytest.mark.parametrize(
     ("verb", "code", "reported"),
     [
@@ -1479,7 +1592,8 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
 
 
 def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
-    set_mesh_version(mesh.root, "2026-10-15.10")
+    newer = "2026-10-15.99"  # any revision above SKILL_VERSION
+    set_mesh_version(mesh.root, newer)
     readme_before = (mesh.root / "README.md").read_text()
     log = mesh.root / "log.jsonl"
     log_before = log.read_text()
@@ -1487,8 +1601,8 @@ def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
     result = run_update(mesh.root, mesh.herdr)
 
     assert result.returncode != 0
-    assert "2026-10-15.10" in result.stderr and SKILL_VERSION in result.stderr
-    assert 'MAILBOX_VERSION = "2026-10-15.10"' in (mesh.root / "bin" / "mailbox").read_text()
+    assert newer in result.stderr and SKILL_VERSION in result.stderr
+    assert f'MAILBOX_VERSION = "{newer}"' in (mesh.root / "bin" / "mailbox").read_text()
     assert (mesh.root / "README.md").read_text() == readme_before
     assert log.read_text() == log_before
 
