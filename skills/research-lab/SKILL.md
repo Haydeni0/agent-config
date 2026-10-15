@@ -26,7 +26,8 @@ a file or a probe answers. The code repo is the current directory unless the PI 
 2. **Probe.** `date`, `nvidia-smi` (free GPUs), `df -h` on the work dirs, `printenv
    COMMIT_AUTHORISED PUSH_AUTHORISED`, the code repo and branch. A code repo needs a
    worktree: `wt switch -c hayden/lab-<slug> --no-cd`.
-3. **Lab dir.** Default `<code repo>/.agents/work/<date>-lab-<slug>/`, unless the PI named one.
+3. **Lab dir.** The location the PI names is the lab dir itself (no extra level); default
+   `<code repo>/.agents/work/<date>-lab-<slug>/`.
    Lab id = `<slug>` (short, kebab). Create:
    - `policy.md` from `templates/policy.md`: profile rules + probe results + this lab's
      deltas (deadline, GPU set, caps). Deadline absent = none.
@@ -118,7 +119,8 @@ lines) and `friction.md`, and propose edits to the templates and pack checklists
 file `<lab>/template-proposals.md` for the PI's design owner. Do not edit shared templates
 from inside a lab.
 
-End condition = deadline, or every headline question answered/dropped. Then: page audited
+End condition = deadline, or every headline question answered/dropped. Then (rewrite
+`status.md` line 1 last, so it states the final state): page audited
 with `templates/critic-page-audit.md`, all lab files and code committed (gated), member tabs
 closed and their worktrees removed, heartbeat deleted, one report to the PI: page path, findings by claim state,
 open questions, measures (PI messages received, interrupts, wall clock, budget vs actual).
