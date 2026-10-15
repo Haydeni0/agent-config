@@ -91,22 +91,34 @@ shopt -u nullglob globstar
 lab_text=$(cat "${lab_files[@]}")
 [[ -n $lab_text ]] || fail "no text under $lab to read worktree names from"
 
-# repos named by paths in the lab's files (~/... expanded)
-repos=$(while IFS= read -r p; do
+# repos named by paths in the lab's files (~/... expanded), de-duplicated by
+# underlying repo: a lab names many paths inside one repo, and each worktree's
+# toplevel is its own path but the same repo - either way wt list runs once
+declare -A repo_seen=() seen_worktree=()
+repos=()
+while IFS= read -r p; do
   p=${p/#\~/$HOME}
   if [[ ! -e $p ]]; then continue; fi
   d=$p; if [[ ! -d $d ]]; then d=${d%/*}; fi
   top=$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)
-  if [[ -n $top ]]; then echo "$top"; fi
-done < <(grep -oE '(~|/)[A-Za-z0-9_./@+-]+' <<<"$lab_text" | sed 's/[.,;:)]*$//' | sort -u))
-[[ -n $repos ]] || say "no git repo named in the lab's files; no worktrees to remove"
+  if [[ -z $top ]]; then continue; fi
+  key=$(git -C "$top" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  if [[ -z $key ]]; then key=$top; fi
+  if [[ -z ${repo_seen[$key]:-} ]]; then
+    repo_seen[$key]=1
+    repos+=("$top")
+  fi
+done < <(grep -oE '(~|/)[A-Za-z0-9_./@+-]+' <<<"$lab_text" | sed 's/[.,;:)]*$//' | sort -u)
+((${#repos[@]} > 0)) || say "no git repo named in the lab's files; no worktrees to remove"
 
 removed=0 kept=0
-for repo in $repos; do
+for repo in "${repos[@]}"; do
   json=$(wt -C "$repo" list --format json 2>/dev/null || true)
   [[ -n $json ]] || { say "wt list failed for $repo; skipped"; continue; }
   while IFS=$'\t' read -r branch path is_main dirty ahead; do
     [[ -n $branch && -n $path ]] || continue
+    if [[ -n ${seen_worktree[$path]:-} ]]; then continue; fi
+    seen_worktree[$path]=1
     if ! grep -qF -- "$branch" <<<"$lab_text" && ! grep -qF -- "$path" <<<"$lab_text"; then
       continue  # worktree not named by this lab
     fi

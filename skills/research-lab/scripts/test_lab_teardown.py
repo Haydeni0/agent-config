@@ -67,6 +67,7 @@ def f(tmp_path: Path, shims) -> SimpleNamespace:
     for mf in (FIXTURE_LAB / "members").iterdir():
         (members / mf.name).write_text(mf.read_text())
     status = (FIXTURE_LAB / "status.template.md").read_text()
+    decisions = (FIXTURE_LAB / "decisions.template.md").read_text()
     for placeholder, value in [
         ("@REPO@", repo),
         ("@WT_MERGED@", worktrees["lab-merged"]),
@@ -74,7 +75,9 @@ def f(tmp_path: Path, shims) -> SimpleNamespace:
         ("@WT_DIRTY@", worktrees["lab-dirty"]),
     ]:
         status = status.replace(placeholder, str(value))
+        decisions = decisions.replace(placeholder, str(value))
     (lab / "status.md").write_text(status)
+    (lab / "decisions.md").write_text(decisions)
     return SimpleNamespace(lab=lab, repo=repo, worktrees=worktrees)
 
 
@@ -125,6 +128,20 @@ def test_dry_run_by_default(f, shims):
     assert "tab close" not in log
     assert "wt remove" not in log
     assert all((members / m).exists() for m in ("worker", "author", "pi", "overseer"))
+
+
+def test_repeated_mentions_decided_once(f, shims):
+    """Two lab files cite the same worktree and paths inside the same repo; each
+    worktree still gets exactly one decision line (T6 bug: 16 duplicate lines)."""
+    result = shims.run(SCRIPT, [str(f.lab)])
+
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert out.count(f"[dry-run] {f.worktrees['lab-prov']}: would remove worktree") == 1
+    assert out.count(f"[dry-run] {f.worktrees['lab-merged']}: would remove worktree") == 1
+    assert out.count(f"{f.worktrees['lab-dirty']}: kept (dirty") == 1
+    assert out.count("main worktree kept") == 1
+    assert "worktrees (dry-run): 2 removable, 2 kept" in out
 
 
 def test_member_subset_skips_worktrees(f, shims):
