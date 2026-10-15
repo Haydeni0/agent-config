@@ -204,3 +204,39 @@ def test_novelty_kind_carried_not_evaluated(tmp_path):
     )
     failures = lc.run_checks([missing], quiet=True)
     assert failures[0].check_id == "c-n" and "not found" in failures[0].detail
+
+
+# T2: a lab-written checker passed vacuously ("not None" tests) - the checker
+# must reject a Check whose expression cannot fail, reported with its id.
+def test_vacuous_checks_fail(tmp_path):
+    data = tmp_path / "d.json"
+    data.write_text('{"loss": 0.25, "losses": [0.2, 0.3]}')
+    vacuous = [
+        # constant expression: never reads the data
+        lc.Check(id="c-const", quote="loss is 0.25", data=str(data), expr="0.25", kind="value", rounding=2),
+        # truth test: evaluates to a bool, cannot fail against the quoted value
+        lc.Check(id="c-truth", quote="loss is 0.25", data=str(data), expr="d['loss'] is not None", kind="value", rounding=2),
+        # comparison returning a bool over an array
+        lc.Check(id="c-allpos", quote="all losses above 0.1", data=str(data), expr="all(x > 0 for x in d['losses'])", kind="quantifier", predicate="ge", bound=0.1),
+        # value kind with no stated value to compare against
+        lc.Check(id="c-novalue", quote="loss converged", data=str(data), expr="d['loss']", kind="value"),
+        # range kind with no stated range
+        lc.Check(id="c-norange", quote="losses vary", data=str(data), expr="d['losses']", kind="range"),
+        # quantifier kind with no stated quantifier or bound
+        lc.Check(id="c-noquant", quote="the model is good", data=str(data), expr="d['losses']", kind="quantifier", predicate="ge", bound=0.1),
+    ]
+    failures = lc.run_checks(vacuous, quiet=True)
+    assert {f.check_id for f in failures} == {c.id for c in vacuous}
+    assert all(f.rule == "vacuous" for f in failures)
+
+
+def test_normal_checks_unchanged_by_vacuity_rule(tmp_path):
+    # the same shapes, with real comparisons, still pass
+    data = tmp_path / "d.json"
+    data.write_text('{"loss": 0.25, "losses": [0.2, 0.3]}')
+    normal = [
+        lc.Check(id="c-value", quote="loss is 0.25", data=str(data), expr="d['loss']", kind="value", rounding=2),
+        lc.Check(id="c-range", quote="losses span 0.2 to 0.3", data=str(data), expr="d['losses']", kind="range"),
+        lc.Check(id="c-quant", quote="all losses at least 0.2", data=str(data), expr="d['losses']", kind="quantifier", predicate="ge", bound=0.2),
+    ]
+    assert lc.run_checks(normal, quiet=True) == []

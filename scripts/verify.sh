@@ -8,6 +8,7 @@ uv run --locked --directory settings-sync pytest ../custom/hooks/test_bash_guard
 uv run --locked --directory settings-sync pytest ../skills/mailbox -q
 uv run --locked --directory settings-sync pytest ../evals/claim-verification -q
 uv run --with pytest --with numpy pytest skills/research-lab/scripts/test_lab_checker.py -q
+uv run --with pytest pytest skills/research-lab/scripts/test_lab_lint.py -q
 uv run --locked --directory settings-sync python ../scripts/check-skills.py
 uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py
 uv run --locked --directory settings-sync python ../scripts/check-packages.py

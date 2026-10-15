@@ -7,6 +7,10 @@ coverage scan, and citation cross-index.
 
 Domain-neutral core rules (pilot F24):
 
+- ``vacuous`` (T2): a Check whose expression cannot fail is itself a failure -
+  an expression that never reads the data, one that evaluates to a truth test
+  (``is not None``, ``len(...) > 0``), or a quote that states no value / range /
+  quantifier to compare against.
 - ``value``: the quote's closest number matches the computed value - sign inside
   capture, exact when ``rounding=`` is set (a relative tolerance let a mutated
   value through in the pilot), relative tolerance ``tol`` otherwise.
@@ -184,7 +188,22 @@ def run_check(check: Check, data: Any) -> Failure | None:
             return Failure(check.id, "novelty", f"data file not found: {check.data}")
         return None
 
+    # T2 vacuity: a Check whose expression cannot fail is itself a failure.
+    if not re.search(r"\bd\b", check.expr):
+        return Failure(
+            check.id, "vacuous", f"expression never reads the data: {check.expr!r}"
+        )
+
     quoted = _extract_quote_numbers(check.quote)
+
+    if core == "value" and not quoted["singles"]:
+        return Failure(check.id, "vacuous", "no stated value in the quote to compare against")
+    if core == "range" and quoted["lo"] is None:
+        return Failure(check.id, "vacuous", "no stated range in the quote to compare against")
+    if core == "quantifier" and not quoted["quantifiers"] and not quoted["singles"]:
+        return Failure(
+            check.id, "vacuous", "no stated quantifier or bound in the quote"
+        )
 
     # R2 split-attribution: quote-named splits must appear in the expr filter.
     for s in quoted["splits"]:
@@ -196,14 +215,16 @@ def run_check(check: Check, data: Any) -> Failure | None:
             )
 
     value = eval(check.expr, {"np": np, "d": data, "_len": len})  # noqa: S307 - trusted lab code
+    if isinstance(value, (bool, np.bool_)):
+        return Failure(
+            check.id, "vacuous", f"expression is a truth test, not a comparison: {check.expr!r}"
+        )
     arr = np.asarray(value, dtype=float).ravel()
 
     if core == "value":
         if arr.size != 1:
             return Failure(check.id, "value", f"expr returned {arr.size} values, expected 1")
         target = _to_percent(check.quote, float(arr[0]))
-        if not quoted["singles"]:
-            return Failure(check.id, "value", "no number found in quote to check against")
         cands = [(abs(float(s) - abs(target)), float(s)) for _, s in quoted["singles"]]
         prose = min(cands)[1]
         if abs(prose) < 1e-12 or abs(target) < 1e-12:
@@ -226,8 +247,6 @@ def run_check(check: Check, data: Any) -> Failure | None:
             return Failure(check.id, "R4 range", "range check needs a multi-value domain")
         lo_c = _to_percent(check.quote, float(arr.min()))
         hi_c = _to_percent(check.quote, float(arr.max()))
-        if quoted["lo"] is None:
-            return Failure(check.id, "R4 range", "no range found in quote")
         if check.rounding is not None:
             if round(lo_c, check.rounding) != round(quoted["lo"], check.rounding) or round(
                 hi_c, check.rounding

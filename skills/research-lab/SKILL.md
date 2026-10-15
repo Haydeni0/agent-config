@@ -56,7 +56,9 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    close <tab>`, and `wt remove --foreground <branch>` for its merged worktree.
 6. **Heartbeat** (D9, D32). Session cron, period at most a sixth of the time box (5 min
    floor, 30 min cap) while active: mail, member states, GPUs,
-   ledgers, clock vs milestones and ETAs. Ends itself at the lab's end condition.
+   ledgers, clock vs milestones and ETAs; each beat runs `scripts/lab_lint.py <lab dir>`
+   (projected timestamps, status.md shape, audit event vocabulary). Ends itself at the
+   lab's end condition.
 7. Tell the PI one line: lab dir, members, deadline, first briefs. Then work.
 
 ## 1b. Resume (new overseer session, existing lab)
