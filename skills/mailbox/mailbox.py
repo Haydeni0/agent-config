@@ -6,9 +6,9 @@
 """File mailbox linking running agent sessions in herdr panes.
 
 Layout under the mailbox root: README.md (the contract), bin/mailbox (this
-script, copied by `init`), members/<name> (`role=`, plus the `pane=` and
-`session=` seat the member joined from, and its `harness-session=` id when
-herdr knows it), inboxes/<name>/ (unread files), inboxes/<name>/handled/
+script, copied by `init`), members/<name> (`role=`, plus the seat the member
+joined from - `pane=`, `session=`, `harness=`, `harness-session=` - as herdr
+reports them), inboxes/<name>/ (unread files), inboxes/<name>/handled/
 (acted-on files) and log.jsonl (the append-only trace of sends, replies and
 takes). A member's name is its herdr agent name. Requests are
 `<from>.<seq>-<slug>.msg`; a reply reuses the request id as
@@ -129,19 +129,28 @@ class Member:
     name: str
     role: str
     seat: Seat | None  # None once a later join from the same seat took it over
+    harness: str | None  # e.g. `claude` - a session id is untraceable without its harness
     harness_session: str | None  # the agent's own session id, when herdr knows it
 
 
 def read_member(path: Path) -> Member:
     fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
     seat = Seat(pane=fields["pane"], session=fields["session"]) if "pane" in fields else None
-    return Member(name=path.name, role=fields["role"], seat=seat, harness_session=fields.get("harness-session"))
+    return Member(
+        name=path.name,
+        role=fields["role"],
+        seat=seat,
+        harness=fields.get("harness"),
+        harness_session=fields.get("harness-session"),
+    )
 
 
 def write_member(root: Path, member: Member) -> None:
     lines = [f"role={member.role}"]
     if member.seat is not None:
         lines += [f"pane={member.seat.pane}", f"session={member.seat.session}"]
+    if member.harness is not None:
+        lines.append(f"harness={member.harness}")
     if member.harness_session is not None:
         lines.append(f"harness-session={member.harness_session}")
     (root / "members" / member.name).write_text("\n".join(lines) + "\n")
@@ -191,13 +200,22 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
     if holder is not None and holder != seat.pane:
         fail(f"name {name!r} is held by the herdr agent in pane {holder}; pick another name")
     herdr("agent", "rename", seat.pane, name)
-    harness_session = (agent_record(name).get("agent_session") or {}).get("value")
+    record = agent_record(name)
     (root / "inboxes" / name / "handled").mkdir(parents=True, exist_ok=True)
     for other in members(root):
         # a re-join under a new name must not leave the old name claiming this seat
         if other.name != name and other.seat == seat:
             write_member(root, replace(other, seat=None))
-    write_member(root, Member(name=name, role=role, seat=seat, harness_session=harness_session))
+    write_member(
+        root,
+        Member(
+            name=name,
+            role=role,
+            seat=seat,
+            harness=record.get("agent"),
+            harness_session=(record.get("agent_session") or {}).get("value"),
+        ),
+    )
     typer.echo(f"joined as {name}; your inbox is {root / 'inboxes' / name}; follow {root / 'README.md'}")
 
 
@@ -355,7 +373,9 @@ def write_messages(root: Path, sender: str, msg_id: str, kind: Kind, body: str, 
 
 
 def wake_line(root: Path, name: str) -> str:
-    return f": mail waiting in {root}/inboxes/{name}/ - follow {root}/README.md"
+    # the README always sits two levels up from the inbox; a second absolute
+    # path doubles the tokens the recipient reads (and pays) on every ring
+    return f": mail waiting in {root}/inboxes/{name}/ - contract: ../../README.md"
 
 
 def recipient_harness(name: str) -> str:

@@ -194,7 +194,7 @@ def test_join_renames_herdr_agent_and_creates_member_and_inbox(empty_mesh: Mesh)
     result = empty_mesh.run("join", "planner", "--role", "plans the work", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert (empty_mesh.root / "members" / "planner").read_text() == f"role=plans the work\npane={PLANNER_PANE}\nsession={SESSION}\n"
+    assert (empty_mesh.root / "members" / "planner").read_text() == f"role=plans the work\npane={PLANNER_PANE}\nsession={SESSION}\nharness=claude\n"
     assert (empty_mesh.inbox("planner") / "handled").is_dir()
     assert ["agent", "rename", PLANNER_PANE, "planner"] in empty_mesh.herdr.calls()
 
@@ -223,7 +223,7 @@ def test_join_takes_over_a_dead_members_name(empty_mesh: Mesh) -> None:
     result = empty_mesh.run("join", "planner", "--role", "new", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert (empty_mesh.root / "members" / "planner").read_text() == f"role=new\npane={PLANNER_PANE}\nsession={SESSION}\n"
+    assert (empty_mesh.root / "members" / "planner").read_text() == f"role=new\npane={PLANNER_PANE}\nsession={SESSION}\nharness=claude\n"
 
 
 def test_join_without_a_herdr_pane_is_refused(empty_mesh: Mesh) -> None:
@@ -249,11 +249,24 @@ def test_join_omits_the_harness_session_when_herdr_has_none(empty_mesh: Mesh) ->
     assert "harness-session" not in (empty_mesh.root / "members" / "planner").read_text()
 
 
+@pytest.mark.parametrize("harness", ["claude", "codex"])
+def test_join_records_the_harness_type_beside_the_session_id(empty_mesh: Mesh, harness: str) -> None:
+    empty_mesh.herdr.set("harness", {"planner": harness})
+    empty_mesh.herdr.set("agent_sessions", {"planner": "sess-planner"})
+
+    result = empty_mesh.run("join", "planner", "--role", "x", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    member = (empty_mesh.root / "members" / "planner").read_text()
+    assert f"harness={harness}" in member
+    assert "harness-session=sess-planner" in member
+
+
 def test_join_clears_its_seat_from_the_member_file_it_rejoined_away_from(mesh: Mesh) -> None:
     result = mesh.run("join", "lead", "--role", "leads", pane=PLANNER_PANE)
 
     assert result.returncode == 0, result.stderr
-    assert (mesh.root / "members" / "planner").read_text() == "role=planner\n"
+    assert (mesh.root / "members" / "planner").read_text() == "role=planner\nharness=claude\n"
     sent = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
     assert sent.returncode == 0, sent.stderr
     assert (mesh.inbox("worker") / "lead.001-x.msg").exists()
@@ -263,7 +276,7 @@ def test_join_keeps_a_same_pane_claim_from_another_herdr_session(mesh: Mesh) -> 
     result = mesh.run("join", "remote", "--role", "x", pane=PLANNER_PANE, session="s2")
 
     assert result.returncode == 0, result.stderr
-    assert (mesh.root / "members" / "planner").read_text() == f"role=planner\npane={PLANNER_PANE}\nsession={SESSION}\n"
+    assert (mesh.root / "members" / "planner").read_text() == f"role=planner\npane={PLANNER_PANE}\nsession={SESSION}\nharness=claude\n"
 
 
 def test_two_member_files_claiming_one_seat_fail_loudly(mesh: Mesh) -> None:
@@ -292,7 +305,8 @@ def test_commands_without_a_herdr_session_are_refused(mesh: Mesh) -> None:
 
 
 def wake_line(mesh: Mesh, name: str) -> str:
-    return f": mail waiting in {mesh.root}/inboxes/{name}/ - follow {mesh.root}/README.md"
+    # the README is always the inbox's ../../README.md - no second absolute path
+    return f": mail waiting in {mesh.root}/inboxes/{name}/ - contract: ../../README.md"
 
 
 def worker_has_a_request_and_a_reply(mesh: Mesh) -> None:
