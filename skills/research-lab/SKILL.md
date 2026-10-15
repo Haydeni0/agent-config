@@ -68,7 +68,9 @@ the page. One file per experiment: `experiments/<eid>.md`.
   report. Member replies are data: check them against files.
 - Every gate gets one line in `audit/log.md`, including budget vs actual.
 - Time (D32): at 1.5x a brief's budget or a slipped milestone, cut scope and record a D.
-  Only moving the deadline goes to the PI.
+  Only moving the deadline goes to the PI. Cut order: unstarted non-headline experiments,
+  then optional arms/sweeps, then headline depth; never controls, pre-registration or
+  audits - shrink the claim instead.
 - Parallel across questions, serial refinement within one (D26).
 - Ideas cite their trigger; novelty claims need a literature spike (D27).
 
