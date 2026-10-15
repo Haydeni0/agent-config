@@ -1,17 +1,37 @@
 #!/usr/bin/env bash
 # Launch one lab member in its own herdr tab and hand it its connect prompt; prints the pane id.
 # Usage: spawn-member.sh <member-name> <cwd> <prompt-file> [role]
-# The launcher comes from the PI profile, never a harness default (`herdr agent start --kind
-# claude` runs the native binary, ignoring the profile): `LAUNCHER.<role>:` when the profile
-# has one for this role, else `LAUNCHER:`.
+#        spawn-member.sh --resolve <role>   (print the command a member of <role> runs)
+# The command comes from the PI profile's Staffing table, never a harness default
+# (`herdr agent start --kind claude` runs the native binary, ignoring the profile): the row
+# for <role>, else the `default` row; empty cells fall back to the default row, and an empty
+# model or effort is left to the launcher.
 set -euo pipefail
-name=$1 cwd=$2 prompt_file=$3 role=${4:-}
 profile=${RESEARCH_LAB_PROFILE:-$HOME/.config/research-lab/pi-profile.md}
-launcher=
-[[ -n $role ]] && launcher=$(sed -n "s/^LAUNCHER\.$role: *//p" "$profile" | head -1)
-[[ -n $launcher ]] || launcher=$(sed -n 's/^LAUNCHER: *//p' "$profile" | head -1)
-[[ -n $launcher && $launcher != *"<"* ]] \
-  || { echo "spawn-member: no filled-in 'LAUNCHER:' line in $profile" >&2; exit 1; }
+
+# prints the trimmed cells (launcher, model, effort) of the Staffing row for $1, one per line
+staffing_row() {
+  awk -F'|' -v role="$1" '
+    /^## Staffing/ { on = 1; next }
+    /^## / { on = 0 }
+    on && NF >= 6 { r = $2; gsub(/^ +| +$/, "", r)
+      if (r == role) { for (i = 3; i <= 5; i++) { c = $i; gsub(/^ +| +$/, "", c); print c }; exit } }
+  ' "$profile"
+}
+
+resolve_command() {
+  local role=$1 dflt=() row=() launcher model effort
+  mapfile -t dflt < <(staffing_row default)
+  mapfile -t row < <(staffing_row "$role")
+  launcher=${row[0]:-${dflt[0]:-}} model=${row[1]:-${dflt[1]:-}} effort=${row[2]:-${dflt[2]:-}}
+  [[ -n $launcher && $launcher != *"<"* ]] \
+    || { echo "spawn-member: no launcher for role '$role' or 'default' in $profile's Staffing table" >&2; exit 1; }
+  echo "$launcher${model:+ --model $model}${effort:+ --effort $effort}"
+}
+
+if [[ ${1:-} == --resolve ]]; then resolve_command "$2"; exit 0; fi
+name=$1 cwd=$2 prompt_file=$3 role=${4:-default}
+launcher=$(resolve_command "$role")
 [[ -r $prompt_file ]] || { echo "spawn-member: prompt file $prompt_file unreadable" >&2; exit 1; }
 
 pane=$(herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$cwd" --label "$name" --no-focus \

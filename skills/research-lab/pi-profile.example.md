@@ -3,14 +3,8 @@
 Standing rules for every lab this PI runs. Labs copy these into policy.md and record only
 deltas. Machine facts (free GPUs, disk, env gates) are probed at startup, not written here.
 
-LAUNCHER: <shell command that starts a member's agent session, e.g. `claude`>
 TRUSTED_ROOTS: <space-separated directories members may be started in>
 
-- LAUNCHER: the default command for every member and spawned session. Override it per role
-  with `LAUNCHER.<role>: <command>` (roles: worker, author), e.g. an author on a
-  vision-capable model. Members run only these launchers, never another binary or a harness
-  default; subagents never set a `model` override. Note here any launcher that costs money,
-  so labs avoid it unless the PI says otherwise.
 - TRUSTED_ROOTS: directories whose folder-trust dialog spawn-member may accept for a
   member; anything else stops for the PI.
 - GPUs: use a GPU only if `nvidia-smi` shows it free immediately before launch. SLURM QoS
@@ -24,6 +18,20 @@ TRUSTED_ROOTS: <space-separated directories members may be started in>
 - Publishing: nothing outward (Notion, Slack, PRs) without a PI message.
 - Interrupts: D16 only. Report at the deadline with the page path. Status lives in files.
 - Style: terse. No em dashes.
+
+## Staffing
+
+| role | launcher | model | effort |
+|---|---|---|---|
+| default | <shell command that starts an agent session, e.g. `claude`> | | |
+| worker | | | |
+| author | | | |
+
+The command each member runs is `<launcher> --model <model> --effort <effort>`
+from its role's row; empty cells fall back to the `default` row, and an empty model or
+effort is left to the launcher. Members run only these commands, never another binary or
+a harness default; subagents never set a `model` override. Note here any launcher that
+costs money, so labs avoid it unless the PI says otherwise.
 
 ## Resources (cross-lab facts)
 
