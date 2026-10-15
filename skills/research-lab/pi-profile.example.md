@@ -22,3 +22,9 @@ TRUSTED_ROOTS: ~/gitrepos/research-lab-pilot ~/worktrees/research-lpm ~/gitrepos
 - Publishing: nothing outward (Notion, Slack, PRs) without a PI message.
 - Interrupts: D16 only. Report at the deadline with the page path. Status lives in files.
 - Style: terse. No em dashes.
+
+## Resources (cross-lab facts)
+
+Known-good facts labs found (data paths, launch recipes, environment quirks), each with how
+it was verified, the lab and the date. The overseer appends at lab finish and corrects wrong
+entries. Labs read this at startup before searching.

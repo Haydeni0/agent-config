@@ -19,7 +19,8 @@ Deps: `work-package`, `mailbox`, `orchestrator` (members), `attack-claims` (crit
 The PI gives a scope in prose, maybe a deadline and a lab location in words. Ask nothing that
 a file or a probe answers. The code repo is the current directory unless the PI names one. Then, in order:
 
-1. **Profile.** Read `~/.config/research-lab/pi-profile.md` (template: `pi-profile.example.md`
+1. **Profile.** Read `~/.config/research-lab/pi-profile.md` (including its Resources
+   section: known data paths and environment facts - use them before searching) (template: `pi-profile.example.md`
    here). Missing: copy the example, then send the PI one message listing only the lines you
    could not fill. Its `LAUNCHER:` line is the only way members are launched.
 2. **Probe.** `date`, `nvidia-smi` (free GPUs), `df -h` on the work dirs, `printenv
@@ -109,3 +110,7 @@ End condition = deadline, or every headline question answered/dropped. Then: pag
 with `templates/critic-page-audit.md`, all lab files and code committed (gated), member tabs
 closed and their worktrees removed, heartbeat deleted, one report to the PI: page path, findings by claim state,
 open questions, measures (PI messages received, interrupts, wall clock, budget vs actual).
+
+Append to the PI profile's Resources section every environment fact the lab verified (data
+paths, recipes, quirks), with how it was verified. Claims about the environment ("X is not
+available") are claims: they list what was searched.
