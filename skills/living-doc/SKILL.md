@@ -2,6 +2,7 @@
 name: living-doc
 description: Use when starting an investigative, debugging, or setup/config task you'll later need to reproduce or hand to future-you, or when asked to "keep a living doc" or "make a reference doc", or to resume or finalise one. Also triggered by /living-doc.
 argument-hint: "[resume <name> | finalise [<name>]]"
+deps: [claim-verification]
 ---
 
 # living-doc
@@ -62,7 +63,7 @@ If `<name>` is omitted, finalise the doc created or resumed this session; if tha
 - **Order** the Steps into the real reproduction sequence (during the task they accrete out of order - fix that now).
 - **Move** dead ends, backtracks, and surprises out of Steps into Gotchas.
 - **Cut redundancy** - merge duplicate points. Be concise, but lose no information needed to reproduce the task or understand a gotcha. Strip the skeleton `<!-- -->` comments.
-- **Re-check every claim is evidence-grounded.** Resolve every `[unverified]` marker: verify it, or delete it. Nothing unverified survives finalise.
+- **Re-check every claim is evidence-grounded.** Run claim-verification on the doc as a terminal message. Resolve every `[unverified]` marker: verify it, or delete it. Nothing unverified survives finalise.
 - **Cross-check the doc against itself.** A Step must not assert what the Findings or Gotchas disprove (e.g. Steps says "`brew install` gives 0.35.0" while Findings show it now ships 0.42.0). Fix the loser; the doc must not contradict itself.
 - **State the outcome honestly.** If success criteria is NOT met, the doc says so on its face - a first line under Goal or a top status line: "INCOMPLETE as of <date>: <what remains>." A finalised doc with unmet criteria that reads like a finished reference is the failure mode: it looks authoritative while describing a half-done investigation. Do not polish an unfinished investigation into something that looks complete.
 - **Retire when stale, not silently.** On RESUME, check the doc's dated empirical claims against current reality (the recorded re-check commands make this cheap). When a claim is disproven, correct it. When the doc's *purpose* is served by something else (the thing it documented shipped, was renamed, or a newer doc supersedes it), retire it explicitly: mark it superseded with a pointer to the successor (or delete it if the user confirms), never leave it silently aging while looking authoritative.

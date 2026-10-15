@@ -107,3 +107,12 @@ def test_rule_answers_empty_when_line_missing() -> None:
 
 def test_rule_answers_collects_yes() -> None:
     assert rule_answers("RULE: YES") == {"YES"}
+
+
+def test_child_env_strips_git_gate_vars(monkeypatch, tmp_path) -> None:
+    from live import child_env
+    monkeypatch.setenv("COMMIT_AUTHORISED", "1")
+    monkeypatch.setenv("PUSH_AUTHORISED", "1")
+    env = child_env(tmp_path)
+    assert "COMMIT_AUTHORISED" not in env and "PUSH_AUTHORISED" not in env
+    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path)

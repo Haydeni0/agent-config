@@ -99,6 +99,15 @@ def rule_answers(text: str) -> set[str]:
     return set(re.findall(r"\bRULE\b\W{0,5}(YES|NO)\b", stripped))
 
 
+GATE_VARS = ("COMMIT_AUTHORISED", "PUSH_AUTHORISED")  # children must never inherit the caller's git gate
+
+
+def child_env(home: Path) -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in GATE_VARS}
+    env["CLAUDE_CONFIG_DIR"] = str(home)
+    return env
+
+
 @dataclass(slots=True, frozen=True)
 class Launch:
     transcript: Transcript | None
@@ -110,7 +119,7 @@ class Launch:
 
 
 def launch(launcher: Path, home: Path, workspace: Path, prompt: str, toolset: Toolset, timeout_s: float) -> Launch:
-    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(home)}
+    env = child_env(home)
     start = time.monotonic()
     try:
         proc = subprocess.run(build_command(launcher, toolset), input=prompt, cwd=workspace, env=env,

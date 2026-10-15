@@ -186,6 +186,7 @@ flowchart LR
     %% caveman_compress[caveman-compress]
     %% caveman_help[caveman-help]
     %% caveman_review[caveman-review]
+    claim_verification[claim-verification]
     code_review[code-review]
     %% codebase_review[codebase-review]
     design_log[design-log]
@@ -246,6 +247,7 @@ flowchart LR
     %% wt_switch_create[wt-switch-create]
     agent_config --> writing_skills
     attack_claims --> work_package
+    attack_claims --> claim_verification
     design_log --> grill_me
     design_log --> test_plan
     design_log --> write_spec
@@ -261,7 +263,10 @@ flowchart LR
     dev_cycle --> work_package
     doc_sweep --> doc_reformat
     executing_plans --> tdd
+    executing_plans --> verification_before_completion
     linear_agent_update --> living_doc
+    linear_agent_update --> claim_verification
+    living_doc --> claim_verification
     m_pair --> marimo_pair
     mailbox --> work_package
     mailbox_overseer --> mailbox
@@ -270,6 +275,7 @@ flowchart LR
     orchestrator --> dev_cycle
     orchestrator --> research_spike
     orchestrator --> work_package
+    orchestrator --> claim_verification
     pr_review --> code_review
     pytest_guidelines --> uv
     reflect --> backlog
@@ -294,6 +300,7 @@ flowchart LR
     test_review_orchestrator --> test_trim
     test_review_orchestrator --> test_add
     test_trim --> test_pr_core
+    verification_before_completion --> claim_verification
     write_spec --> grill_me
     write_spec --> writing_plans
     write_spec --> work_package

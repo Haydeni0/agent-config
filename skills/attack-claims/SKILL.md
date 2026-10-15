@@ -2,7 +2,7 @@
 name: attack-claims
 layer: worker
 description: Use when the user wants a set of claims adversarially verified - "attack these claims", "try to disprove", "adversarially verify", "stress-test the claims in ..." - claims about documents, papers, datasets, code or results. Runs fresh attacker subagents per claim in waves, verdicts from the verify_claims oracle, ledger and survivor report on disk. Not auto-triggered - invoke via /attack-claims or an explicit request.
-deps: [work-package]
+deps: [work-package, claim-verification]
 ---
 
 # attack-claims
@@ -19,8 +19,8 @@ Two modes. `attacker-gathered` (default): attackers gather their own
 evidence - text, computation output, or found artifacts - via
 refutation-seeking search and experiment. `verify-only`: claim sets that
 arrive already span-cited get a single oracle pass, no attackers. The
-oracle - the `verify_claims` MCP, the `verify-claims` CLI, or degraded a
-separate judge subagent - is the sole arbiter; an attacker never self-grades.
+oracle - the `verify_claims` MCP, or degraded a separate judge subagent
+(claim-verification) - is the sole arbiter; an attacker never self-grades.
 The burden is refutation: an inconclusive attack does not kill a claim -
 unrefuted claims survive, labeled. A claim survives only by withstanding
 every wave; one supporting span never ends the attack.
@@ -56,7 +56,7 @@ before the user's go-ahead. Steps in order:
    Setup confirms the workspace filesystem has at least the cap free
    (`df`) and stops with a named shortfall if not.
 6. **Oracle.** Detect the rung (Oracle ladder) and run its smoke call. An
-   `oracle` option (`auto` default; `mcp`, `cli`, `judge`) forces a rung -
+   `oracle` option (`auto` default; `mcp`, `judge`) forces a rung -
    for runs that must not touch the gateway.
 7. **Budgets and deadline.** Set per Budgets and deadline.
 8. **Confirm.** One message shows the claim list (decomposed lists are
@@ -236,19 +236,12 @@ resolves the row as usual.
 The rung is chosen once at setup and recorded in the header:
 
 1. `verify_claims` MCP when present - subagents inherit it.
-2. Else the `verify-claims` CLI via Bash: resolved by
-   `command -v verify-claims`, then the known deploy path
-   `/mnt/data/slurm_llm/bin/verify-claims`; reachable when a one-claim
-   smoke call exits 0 or 1 (exit 2 = call or config error). Invocation:
-   `verify-claims <answer-file> <spans-file>`; exit 0 = passed, 1 =
-   flagged, 2 = error. The answer file holds the claim sentences with
-   `[S#]` citations; the spans file is a JSON list of span objects.
-3. Else a degraded LLM-judge: a separate fresh-context judge subagent -
-   never the attacker - receives only the claim and its spans and emits
-   the same verdict schema; its brief is filled from `judge-brief.md`.
-   The report is stamped `degraded - LLM-judged, not oracle-judged`. In
-   sequential-inline harnesses the judge runs as a separate inline pass,
-   and the stamp also says `same-session judge`.
+2. Else the degraded judge of claim-verification's no-MCP terminal route:
+   a separate fresh-context judge subagent - never the attacker - receives
+   only the claim and its spans and emits the same verdict schema; its
+   brief is filled from claim-verification's `judge-brief.md`. The report
+   carries claim-verification's degraded stamp, including its same-session
+   variant in sequential-inline harnesses.
 
 A rung drops mid-run after 3 failed oracle invocations across the run -
 an invocation that, after its one retry, still returns `internal_error`
@@ -260,8 +253,8 @@ user's request the orchestrating session resets such a row to `pending`
 
 ## Budgets and deadline
 
-Budget unit: one oracle invocation - one `verify_claims` MCP call, one
-CLI run, or one judge pass - whatever its claim count. Attackers report
+Budget unit: one oracle invocation - one `verify_claims` MCP call or one
+judge pass - whatever its claim count. Attackers report
 their invocation count in each reply; the orchestrating session adds it
 to the row's budget and to `calls used` in the header on every return.
 The report also totals the gateway calls from each verdict's
@@ -318,8 +311,8 @@ attacker returns become `unverifiable (time limit)`.
 - Setup failures (workspace filesystem below the storage cap, no writable
   workspace): stop before dispatch, naming the shortfall.
 - Time limit and storage cap: enforcement per Budgets and deadline.
-- No oracle rung available (no MCP, no CLI): the run proceeds degraded
-  and the report header says so; never silently pretend oracle verdicts.
+- No MCP: the run proceeds on the judge rung, degraded, and the report
+  header says so; never silently pretend oracle verdicts.
 
 ## Report and teardown
 

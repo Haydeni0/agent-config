@@ -4,6 +4,7 @@ import json
 import random
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from live import JUDGE_TOOLSET, launch
@@ -53,9 +54,19 @@ def terminal_text(session: Path) -> str:
     return last
 
 
-def pool(projects: Path, min_chars: int = 400, min_tokens: int = 3) -> list[Path]:
+def first_timestamp(session: Path) -> datetime | None:
+    for e in _lines(session):
+        ts = e.get("timestamp")
+        if isinstance(ts, str):
+            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return None
+
+
+def pool(projects: Path, min_chars: int = 400, min_tokens: int = 3, since: datetime | None = None) -> list[Path]:
     out = []
     for session in sorted(projects.glob("*/*.jsonl")):
+        if since is not None and ((t := first_timestamp(session)) is None or t < since):
+            continue
         text = terminal_text(session)
         if len(text) >= min_chars and len(CONCRETE.findall(text)) >= min_tokens:
             out.append(session)

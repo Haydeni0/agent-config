@@ -1,7 +1,7 @@
 ---
 name: linear-agent-update
 description: Use when writing or updating any Linear comment or diff comment via the Linear MCP tools (save_comment, save_diff_comment, or editing an existing comment), or when creating or rewriting a Linear issue (save_issue). Use whenever about to post to a Linear issue, project, initiative, document, milestone, or PR review.
-deps: [living-doc]
+deps: [living-doc, claim-verification]
 ---
 
 # linear-agent-update
@@ -129,7 +129,7 @@ Since there's no hook enforcing structure, this check is the only structural gua
 1. **Right form chosen** - count sentences. ≤2 = short form. >2 = long form.
 2. **Long form matches the template exactly** - starts with `+++ AGENT: `, has a blank line after the title, body content, blank line, closing `+++` as the last line. No text outside the toggle.
 3. **Short form matches** - starts with `**AGENT:** `, no `+++`, no toggle.
-4. **Title is verified** - nothing in the title (or short-form line) is unverified. Unverified claims demoted to body and tagged.
+4. **Title is verified** - claim-verification has run on the draft as a terminal message; nothing in the title (or short-form line) is unverified. Unverified claims demoted to body and tagged.
 5. **No stray text** - the entire `body` is either the toggle or the prefixed line. No leading/trailing commentary.
 
 If any check fails, restructure before sending.

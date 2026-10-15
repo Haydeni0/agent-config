@@ -41,3 +41,17 @@ def test_parse_judge_reads_fenced_json() -> None:
            ' {"claim": "Y in b.py", "supported": false, "evidence": null}]\n```'
     j = parse_judge(text)
     assert [(c.supported, c.evidence) for c in j] == [(True, 0), (False, None)]
+
+
+def test_pool_since_filters_by_first_timestamp(tmp_path) -> None:
+    import json
+    from datetime import datetime, timezone
+    from sample import pool
+    proj = tmp_path / "p"
+    proj.mkdir()
+    text = "Done: `svc/config.py` sets 4200 and `README.md` line 12 was stale; verified by reading both files. " * 6
+    for name, ts in (("old", "2026-10-01T00:00:00Z"), ("new", "2026-10-20T00:00:00Z")):
+        ev = {"type": "assistant", "timestamp": ts, "message": {"content": [{"type": "text", "text": text}]}}
+        (proj / f"{name}.jsonl").write_text(json.dumps(ev) + "\n")
+    got = pool(tmp_path, since=datetime(2026, 10, 15, tzinfo=timezone.utc))
+    assert [p.stem for p in got] == ["new"]

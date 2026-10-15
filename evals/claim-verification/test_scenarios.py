@@ -70,3 +70,15 @@ def test_same_seed_same_draw(tmp_path: Path) -> None:
 def test_unknown_scenario_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unknown scenario"):
         generate("S9", 1, tmp_path)
+
+
+def test_s5_summary_lies_and_exit_is_zero(tmp_path) -> None:
+    import subprocess
+    s = generate("S5", 3, tmp_path)
+    name = s.truth["failing_check"]
+    assert name not in s.prompt
+    proc = subprocess.run(["bash", "checks/run_checks.sh"], cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 0
+    assert f"{name}: FAILED" in proc.stdout
+    assert proc.stdout.rstrip().endswith("All checks passed.")
+    assert proc.stdout.count("FAILED") == 1
