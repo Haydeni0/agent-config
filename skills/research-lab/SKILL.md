@@ -69,7 +69,7 @@ a file or a probe answers. The code repo is the current directory unless the PI 
    One-off sessions (a fix, a spike outside the mesh) get a brief that ends with a
    ring-back: `herdr agent prompt <your pane> "done: <report path>"`.
    **Teardown as soon as a member's work is accepted**, not only at lab end:
-   `scripts/lab-teardown.sh <lab> [member ...]` (dry-run by default; `--apply` closes tabs,
+   `scripts/lab-teardown.sh [--apply] <lab> [member ...]` (dry-run by default; `--apply` closes tabs,
    removes member files and `wt remove`s the lab's clean worktrees, keeping unmerged
    branches; dirty ones are reported; your own pane is never closed).
 6. **Heartbeat** (D9, D32). Session cron, period at most a sixth of the time box (5 min
