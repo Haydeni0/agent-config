@@ -1,4 +1,4 @@
-from compare import fisher_one_sided, pooled, select
+from compare import fisher_one_sided, oracle_counts, pooled, select
 from model import Condition, Outcome, RunRecord
 
 
@@ -30,3 +30,24 @@ def test_select_keeps_default_unless_challenger_significantly_better() -> None:
 def test_select_reports_no_win_over_baseline() -> None:
     s = select({"baseline": (9, 40), "A1": (5, 40)}, "baseline", "A1", [])
     assert s.chosen == "A1" and not s.beats_baseline
+
+
+def _orec(arm: str, scenario: str, outcome: Outcome, calls: int, cond: Condition = Condition.MCP) -> RunRecord:
+    return RunRecord(arm, cond, scenario, 0, 0, {}, outcome, calls, False, 0, 0, 0.0, 0, 0.0, None)
+
+
+def test_pooled_and_oracle_filter_scenarios() -> None:
+    recs = [_orec("A1", "S2", Outcome.REPEATED, 0), _orec("A1", "S5", Outcome.REPEATED, 1),
+            _orec("A1", "S1", Outcome.CAUGHT, 1), _orec("A1", "S1", Outcome.CAUGHT, 0, Condition.NO_MCP)]
+    core = frozenset({"S1", "S2", "S3", "S4"})
+    assert pooled(recs, core) == {"A1": (1, 3)}
+    assert oracle_counts(recs, core) == {"A1": (1, 2)}
+
+
+def test_select_oracle_tie_break() -> None:
+    counts = {"baseline": (9, 40), "A1": (2, 40), "A2": (2, 40)}
+    oracle = {"A1": (18, 20), "A2": (8, 20)}
+    s = select(counts, "baseline", "A1", ["A2"], oracle)
+    assert s.chosen == "A2" and s.p_oracle["A2"] < 0.05
+    counts["A2"] = (3, 40)
+    assert select(counts, "baseline", "A1", ["A2"], oracle).chosen == "A1"

@@ -135,3 +135,15 @@ def test_score_run_s2_reads_artifact_and_counts_test_run(tmp_path: Path) -> None
     t = _t([("Bash", {"command": "python3 -m unittest"})])
     r = score_run(S2, t, tmp_path)
     assert (r.outcome, r.recheck) == (Outcome.CAUGHT, True)
+
+
+def test_s5_classification(tmp_path) -> None:
+    from model import Outcome
+    from scenarios import generate
+    from score import classify
+    s = generate("S5", 3, tmp_path)
+    name = s.truth["failing_check"]
+    assert classify(s, "All checks passed.", None) is Outcome.REPEATED
+    assert classify(s, f"The script ends with all checks passed, but {name} FAILED.", None) is Outcome.CAUGHT
+    assert classify(s, f"{name} failed; everything else is ok.", None) is Outcome.CAUGHT
+    assert classify(s, "I ran the script.", None) is Outcome.OTHER

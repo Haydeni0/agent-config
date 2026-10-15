@@ -15,10 +15,11 @@ from typing import Annotated
 
 import typer
 
-from compare import pooled, select
+from compare import oracle_counts, pooled, select
 from live import LAUNCHER_DEFAULT, TOOLSETS, launch, probe as run_probe, render_arm, run_batch
 from model import Condition, Outcome
 from pilot import PILOT_BRANCH, PROMPT, REPORT, classify_push_claim, remote_sha
+from revise import brief, extract_revision, failing_runs
 from sample import judge, pick, pool
 from scenarios import SCENARIO_IDS
 from summarize import aggregate, load_runs, render
@@ -59,15 +60,38 @@ def run(arm: Annotated[list[str], typer.Option()], out: Annotated[Path, typer.Op
 
 @app.command()
 def compare(results: Annotated[list[Path], typer.Option()], baseline: str = "baseline", default: str = "A1",
-            challenger: Annotated[list[str], typer.Option()] = []) -> None:
+            challenger: Annotated[list[str], typer.Option()] = [],
+            scenario: Annotated[list[str], typer.Option()] = ["S1", "S2", "S3", "S4"],
+            holdout: str = "S5") -> None:
     records = [r for d in results for r in load_runs(d / "runs.jsonl")]
-    counts = pooled(records)
-    s = select(counts, baseline, default, challenger)
+    core = frozenset(scenario)
+    counts = pooled(records, core)
+    s = select(counts, baseline, default, challenger, oracle_counts(records, core))
     lines = ["| arm | repeats | n | rate |", "|---|---|---|---|"]
     lines += [f"| {a} | {rep} | {n} | {rep / n:.1%} |" for a, (rep, n) in sorted(counts.items())]
     lines += ["", f"p vs {default}: " + ", ".join(f"{c}={p:.4f}" for c, p in s.p_vs_default.items()),
               f"chosen: {s.chosen}; beats {baseline}: {s.beats_baseline} (p={s.p_vs_baseline:.4f})"]
+    if s.p_oracle:
+        lines.append(f"p oracle use vs {default}: " + ", ".join(f"{c}={p:.4f}" for c, p in s.p_oracle.items()))
+    h = pooled(records, frozenset({holdout}))
+    gate = s.chosen in h and baseline in h and h[s.chosen][0] <= h[baseline][0]
+    lines += ["", f"holdout {holdout}: " + ", ".join(f"{a}={rep}/{n}" for a, (rep, n) in sorted(h.items())),
+              f"holdout {holdout}: chosen {h.get(s.chosen)} vs {baseline} {h.get(baseline)}; gate ok: {gate}"]
     typer.echo("\n".join(lines))
+
+
+@app.command("revise-brief")
+def revise_brief(results: Annotated[list[Path], typer.Option()], arm: Annotated[str, typer.Option()],
+                 skill: Annotated[Path, typer.Option()], out: Annotated[Path, typer.Option()]) -> None:
+    records = [r for d in results for r in load_runs(d / "runs.jsonl")]
+    out.write_text(brief(records, arm, skill.read_text()))
+    typer.echo(f"wrote {out} ({len(failing_runs(records, arm))} failing runs)")
+
+
+@app.command("apply-revision")
+def apply_revision(revision: Path, skill: Annotated[Path, typer.Option()]) -> None:
+    skill.write_text(extract_revision(revision.read_text(), skill.read_text()))
+    typer.echo(f"revised {skill}")
 
 
 @app.command()
