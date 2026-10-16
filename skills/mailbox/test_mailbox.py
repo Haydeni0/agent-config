@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-15.10"
+SKILL_VERSION = "2026-10-16.11"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1440,6 +1440,57 @@ def test_ring_leaves_a_busy_non_claude_recipient_to_its_own_check(mesh: Mesh) ->
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
+def test_ring_verb_prompts_an_idle_recipient_by_pane_id(mesh: Mesh) -> None:
+    result = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", WORKER_PANE, "done: simplify figure-publish-gate"] in mesh.herdr.calls()
+    assert result.stdout.strip().endswith("rung")
+
+
+def test_ring_verb_accepts_an_agent_name(mesh: Mesh) -> None:
+    result = mesh.run("ring", "worker", "seat line", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", WORKER_PANE, "seat line"] in mesh.herdr.calls()
+
+
+def test_ring_verb_defers_a_typing_composer(mesh: Mesh) -> None:
+    mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ as i was saying the e")})
+
+    result = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: unsubmitted typing" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_verb_needs_no_membership_on_either_side(mesh: Mesh) -> None:
+    mesh.herdr.set("agents", {"planner": PLANNER_PANE, "worker": WORKER_PANE, "critic": CRITIC_PANE, "seat": "w1:p9"})
+
+    result = mesh.run("ring", "w1:p9", "one-off seat line", pane="w1:p8")
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", "w1:p9", "one-off seat line"] in mesh.herdr.calls()
+
+
+def test_ring_verb_refuses_an_unknown_target(mesh: Mesh) -> None:
+    result = mesh.run("ring", "w1:pZ", "line", pane=PLANNER_PANE)
+
+    assert result.returncode != 0
+    assert "no live herdr agent" in result.stderr
+
+
+def test_ring_verb_prompts_a_busy_claude_mid_turn(mesh: Mesh) -> None:
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("ring", "worker", "queue this until your turn ends", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", WORKER_PANE, "queue this until your turn ends"] in mesh.herdr.calls()
+    assert "rung while busy" in result.stdout
+
+
 def test_an_unexpected_herdr_error_fails_loudly_after_the_write(mesh: Mesh) -> None:
     mesh.herdr.set("prompt", {"worker": "socket_gone"})
 
@@ -1592,7 +1643,7 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
 
 
 def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
-    newer = "2026-10-15.99"  # any revision above SKILL_VERSION
+    newer = "2026-10-16.99"  # any revision above SKILL_VERSION
     set_mesh_version(mesh.root, newer)
     readme_before = (mesh.root / "README.md").read_text()
     log = mesh.root / "log.jsonl"

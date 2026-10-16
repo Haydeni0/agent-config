@@ -63,6 +63,11 @@ pre-`take` behavior or its log lacks fields the current helper writes.
   `hooks/mailbox-guard.mjs`, REQ-HOOKS-07): it blocks a turn end while
   unread mail waits, one forced follow-up per stop chain. It is a backstop
   behind the contract, not a substitute for taking mail.
+- Any line submitted to an agent pane goes through the ring guard:
+  `<mailbox>/bin/mailbox ring <pane-or-agent> "<line>"` reaches any live
+  seat (no join, no mail) and defers while the seat's composer holds a
+  draft. A raw `herdr agent prompt` splices into that draft and submits
+  both - never use it on an agent pane.
 - The contract (`take` and `inbox` checks, sending, trust, quiet peers
   via `status` and `poke`) lives in `<mailbox>/README.md`, not here. Every wake
   line points at it, so a compacted session re-learns it.

@@ -63,7 +63,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-15.10"
+MAILBOX_VERSION = "2026-10-16.11"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -590,14 +590,10 @@ def prompt_box_state(screen: str) -> str | None:
     return "empty"
 
 
-def ring(root: Path, name: str) -> RingOutcome:
-    # the herdr name is not the member's identity (one pane, several meshes,
-    # several names): ring the member's seat pane, and only while its recorded
-    # claim is live - never a bare name
-    member = member_named(root, name)
-    if member is None or not live_claim(member)[0]:
-        return RingOutcome.OFFLINE
-    pane = member.seat.pane
+def ring_seat(pane: str, line: str) -> RingOutcome:
+    # the seat-level ring every line to a pane must go through: raw
+    # `herdr agent prompt` types blind, splicing into a draft a human is
+    # mid-typing, and Enter submits both (#70)
     busy = False
     try:
         herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(RING_WAIT_MS))
@@ -631,12 +627,22 @@ def ring(root: Path, name: str) -> RingOutcome:
         if state is None:
             return RingOutcome.COMPOSER_UNSEEN
     try:
-        herdr("agent", "prompt", pane, wake_line(root, name))
+        herdr("agent", "prompt", pane, line)
     except HerdrError as exc:
         if exc.code in UNRUNG:
             return UNRUNG[exc.code]
         raise
     return RingOutcome.BUSY if busy else RingOutcome.RUNG
+
+
+def ring(root: Path, name: str) -> RingOutcome:
+    # the herdr name is not the member's identity (one pane, several meshes,
+    # several names): ring the member's seat pane, and only while its recorded
+    # claim is live - never a bare name
+    member = member_named(root, name)
+    if member is None or not live_claim(member)[0]:
+        return RingOutcome.OFFLINE
+    return ring_seat(member.seat.pane, wake_line(root, name))
 
 
 def ring_all(root: Path, paths: dict[str, Path]) -> None:
@@ -839,6 +845,24 @@ def poke(member: str) -> None:
     except HerdrError as exc:
         fail(f"{member}: ring failed: {exc}")
     typer.echo(f"{member}: {outcome}")
+
+
+@app.command("ring")
+def ring_any(
+    target: Annotated[str, typer.Argument(help="Pane id or herdr agent name of any live agent")],
+    line: Annotated[str, typer.Argument(help="The line to submit; deferred while a draft sits in the seat's composer")],
+) -> None:
+    """Submit LINE to any agent seat with the composer guard. Needs no join; writes no mail."""
+    mailbox_root()
+    record = agent_record_for_pane(target)
+    if not record:
+        fail(f"{target}: no live herdr agent at that seat")
+    pane = record["pane_id"]
+    try:
+        outcome = ring_seat(pane, line)
+    except HerdrError as exc:
+        fail(f"{target}: ring failed: {exc}")
+    typer.echo(f"{pane}: {outcome}")
 
 
 def audit_members(root: Path) -> None:

@@ -97,6 +97,14 @@ not something it owes you. If it is still unread after a reasonable wait,
 help, or no reply arrives within a reasonable wait, tell the user and stop
 waiting.
 
+## Ringing a seat outside the mesh
+
+`{{MAILBOX}}/bin/mailbox ring <pane-or-agent> "<line>"` submits one line to
+any live agent seat - no join on either side, no mail written. It carries the
+same composer guard as mail rings: while the seat's human is mid-typing, the
+line is deferred (`not rung`) instead of splicing into the draft. Use it in
+place of every raw `herdr agent prompt` to an agent pane.
+
 ## Leaving
 
 When the user ends your part, delete `{{MAILBOX}}/members/<your name>`.
