@@ -2,7 +2,7 @@
 name: dev-cycle
 layer: orchestrator
 description: Run the full dev pipeline (grill, test plan, spec, plan, implement, review, fix) for a feature or bugfix. Invoke only via /dev-cycle or an explicit request to run the full pipeline.
-deps: [grill-me, test-plan, write-spec, writing-plans, executing-plans, tdd, code-review, work-package]
+deps: [grill-me, test-plan, write-spec, writing-plans, executing-plans, tdd, code-review, work-package, requirements]
 ---
 
 # dev-cycle
@@ -67,7 +67,7 @@ On implementer return - **BLOCKER** (plan-level): apply the proposed revision to
 
 ## Implementer contract (in the spawn prompt)
 
-You execute the plan file. You NEVER ask the user questions. Git authorization follows the user's global rules - the gate decides whether a commit lands. Plan "Commit" steps are logical per-task commits: if a commit is blocked (gate closed), record "commit deferred at task N - gate closed" in your deviation log and CONTINUE - the run never stops for git authorization. When all tasks complete, append `Implemented` to the plan footer. Blocked comes in three tiers:
+You execute the plan file. You NEVER ask the user questions. Git authorization follows the user's global rules - the gate decides whether a commit lands. Plan "Commit" steps are logical per-task commits: if a commit is blocked (gate closed), record "commit deferred at task N - gate closed" in your deviation log and CONTINUE - the run never stops for git authorization. When the plan's requirements-update task cites a repo requirements contract, write the promised updates in the repo's own format per the requirements rules embedded in your prompt; never invent entries or reformat the contract. When all tasks complete, append `Implemented` to the plan footer. Blocked comes in three tiers:
 - Implementation detail (naming, in-task structure): decide, log deviation + reasoning, continue.
 - Plan-level (task wrong/missing/mis-ordered; in-task approach won't work): STOP. Return BLOCKER: task number, what reality shows, proposed plan revision. Do not fix the plan yourself.
 - Spec-level (reality contradicts the spec or a D entry in the package `decisions.md`): STOP. Return SPEC-CONFLICT: the contradiction, evidence. Do not proceed.
@@ -80,3 +80,57 @@ Three abort triggers, all terminate with a full report - they never pause to ask
 ## Existing project documents
 
 Use the global legacy-document rule before creating or resuming plans/backlogs: canonical `.agents` when present, legacy `.claude` when it is the only copy, reconcile both before resuming, editing, or migrating. Preserve IDs and checkbox progress.
+
+## Contract mode
+
+At the start of every stage - interview and autonomous alike - read the target
+repo's AGENTS.md for a requirements-contract rule. Before the cycle's paths
+are known that is the root file; once known, also the nearest nested AGENTS.md
+governing those paths, nested-wins. Contract mode is on for a scope when its
+AGENTS.md assigns update duties to a canonical requirements document and the
+path is resolvable from the same AGENTS.md - in the rule text, or via a
+definite reference ("the canonical requirements document") resolved by that
+AGENTS.md's Documents map. A requirements-ish file with no rule is not a
+contract. No rule -> off, cycle unchanged. Unresolvable path or multiple
+candidate files in one scope -> off for that stage, one line in
+`decisions.md` `## Contract mode`; never guess. A named file that does not
+exist -> surface it, never invent entries. Detection re-runs each stage; duties
+already recorded in the package stay durable even if the rule later
+disappears - detection gates new filings only. When the topic names a
+subproject, ask at grill which areas it touches and read that nested AGENTS.md
+too - a nested-only rule is otherwise invisible before paths are known.
+
+When on, load the requirements skill (it owns the contract's rules) and hold
+the stage duties:
+
+- Grill: file an R entry for every existing contract entry the topic touches -
+  `Scope: amends <handle>` - extending the usual enumeration; statements
+  verbatim when interpretation matters. Uncovered behavior: R entry
+  `Scope: new`, and the implementing D entry names the contract addition in
+  its Consequences.
+- Test plan: each `amends <handle>` entry's verification pointer maps to at
+  least one scenario; a pointer with no scenario is a recorded gap; a handle
+  the contract lacks is a dangling-citation gap; an unclear pointer becomes
+  a Q entry.
+- Spec: cite the covered handles the spec depends on.
+- Plan: when any R entry amends a handle or a D entry names a contract
+  addition, the plan carries an explicit requirements-update task placed
+  with or before the behavior change - never after it.
+- Implement spawn prompt: embed the resolved contract path, citation
+  convention, and duty checklist; subagents never re-detect on their own. A
+  promised contract update whose plan task is missing is a BLOCKER.
+- Code review spawn prompt: every promised update happened; every covered
+  behavior change in the diff has an R entry or a recorded gap (coverage
+  check); handles unique; each touched entry's verification procedure
+  actually checks the entry.
+- Verify-fix: a cycle with `amends` entries or a promised addition is not
+  complete until each cited verification ran; results recorded in
+  `decisions.md` `## Contract mode`. A failed or unrun verification is a
+  review finding, triaged normally; a manual or planned pointer the
+  autonomous zone cannot run goes to user disposition - at the launch gate
+  when known there, else a review finding - never silently passed.
+
+The launch gate summary includes contract-mode status and the
+requirements-update task among the expected artifacts. All contract-mode
+notes (ambiguity, skipped duties, verification results) go to
+`## Contract mode` in `decisions.md` - the durable home.
