@@ -17,7 +17,7 @@ Reference contract for `.agents/work/<slug>/` packages. This file is the single 
 | `context.md` | inputs gathered (sources, facts, prior art) - not decisions |
 | `scenarios.md` | test scenarios, when a test plan is made |
 | `requirements.md` | R entries |
-| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome`, `## Deviation log` (implement stage's filed copy of the implementer's returned log), `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), and `## Review nits` |
+| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome`, `## Deviation log` (implement stage's filed copy of the implementer's returned log), `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), `## Review nits`, and `## Contract mode` (contract-mode notes when a cycle runs in a repo with a requirements contract) |
 | `<topic>.md` | optional deep-dive notes; forks found there go into `decisions.md` as Q |
 | `spec.md` | the spec produced by a cycle's spec stage; carries `Reviewed:` footer markers |
 | `plan.md` | the checkbox-tracked implementation plan; carries `Reviewed:` footer markers and the `Implemented` footer line |
@@ -83,7 +83,9 @@ transitions are the driving skills' prose.
 ```
 
 - **R** = an observable behaviour or a constraint future choices must respect, worded so it can be
-  verified, and no broader than the source said. Scope is `new` or `amends <global REQ-ID>`.
+  verified, and no broader than the source said. Scope is `new` or `amends <contract
+  handle>` - a repo requirements contract's ID, or that contract's stable handle
+  (heading, name) when it has no IDs.
 - **D** = a choice between alternatives, naming what was rejected. A D the user didn't make
   ends with `Agent-picked`, so the user can see what to review.
 - **X** = reality disagreed with the design; always points to the D or Q it produced.
