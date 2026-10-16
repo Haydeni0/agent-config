@@ -94,7 +94,8 @@ AGENTS.md's Documents map. A requirements-ish file with no rule is not a
 contract. No rule -> off, cycle unchanged. Unresolvable path or multiple
 candidate files in one scope -> off for that stage, one line in
 `decisions.md` `## Contract mode`; never guess. A named file that does not
-exist -> surface it, never invent entries. Detection re-runs each stage; duties
+exist -> surface it (Q entry at grill; at later stages one `## Contract mode`
+line and that stage's duties skip), never invent entries. Detection re-runs each stage; duties
 already recorded in the package stay durable even if the rule later
 disappears - detection gates new filings only. When the topic names a
 subproject, ask at grill which areas it touches and read that nested AGENTS.md

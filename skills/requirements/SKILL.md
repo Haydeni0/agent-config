@@ -48,12 +48,13 @@ verification.
 ## Lint
 
 `lint.py` in this directory checks a contract table: duplicate IDs, and
-citation resolution (every test or script file a Verification cell names
-resolves from the repo root; `manual (...)` and `planned` cells are skipped).
-From the target repo's root:
+citation resolution (every backtick-quoted file path a Verification cell
+names resolves from the repo; `manual (...)` procedure spans and `planned`
+pointers are skipped). Run from the target repo's root:
 
 ```bash
 python <this skill's directory>/lint.py docs/requirements.md
 ```
 
-Exit 0 = clean; nonzero prints each finding with its row ID.
+Exit 0 = clean; findings print one per row ID; exit 2 means no contract rows
+parsed (wrong file or unknown ID scheme).
