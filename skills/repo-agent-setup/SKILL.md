@@ -1,7 +1,7 @@
 ---
 name: repo-agent-setup
 description: Fold the agent-first kit (AGENTS.md, CLAUDE.md, MEMORY.md, backlog) into a repo - set up a repo for AI coding agents, or audit an existing setup. Trigger on "make this repo agent-friendly", "set up agent files for this repo", "repo agent setup", or an explicit /repo-agent-setup.
-deps: [grill-me, backlog]
+deps: [grill-me, backlog, requirements]
 ---
 
 # repo-agent-setup
@@ -167,11 +167,11 @@ correct in passing if wrong, don't ask):
 - Requirements contract: only after the grill accepted it. Use the
   canonical requirements/spec file; if absent, create
   `docs/requirements.md` only with at least one concrete durable
-  requirement. Each entry has:
-  1. a stable ID such as `REQ-AREA-01`
-  2. one observable `Statement` of user-visible behavior
-  3. a `Verification` pointer - prefer an automated test; when that is
-     impossible, record the exact manual or visual procedure
+  requirement. Entry format, the promotion filter, and the lint live in the
+  requirements skill - load it before writing contract entries. In short:
+  stable ID, one observable user-visible `Statement` per entry, and a
+  `Verification` pointer (automated test preferred, else the exact manual
+  or visual procedure written given/when/then).
 
   Add the corresponding Working rules from the `AGENTS.md` template:
   update the requirements document with or before behavior changes;

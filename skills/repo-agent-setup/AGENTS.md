@@ -54,6 +54,8 @@ repo-agent-setup. If not chosen, cut this block:]
   statement verbatim when interpretation is disputed.
 - Every requirement has a `Verification` pointer. Prefer an automated
   test; when impossible, record the exact manual or visual procedure.
+- Only observable, durable, user-visible behavior becomes a requirement;
+  implementation detail and internal refactors never get entries.
 
 ## Documents
 
