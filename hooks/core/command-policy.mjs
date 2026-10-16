@@ -72,7 +72,7 @@ function gitGateReason(env, sub, kind) {
 
 // The precheck operates on normalized text so continuations cannot hide a
 // guarded command.
-const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\b.*\b(push|api|commit|merge|cherry-pick|revert|rebase|am|pull)\b|\bgh\s+(api|pr)\b|\bkubectl\b|\bk\b/
+const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\b.*\b(push|api|commit|merge|cherry-pick|revert|rebase|am|pull)\b|\bgh\b.*\b(api|pr)\b|\bkubectl\b|\bk\b/
 
 // S3 guard: flatten separators + quote/subshell/backslash chars so wrapped/compound
 // forms (bash -c "...", $(...), a && b, \rm) tokenize to bare tokens.
@@ -243,34 +243,46 @@ export function decide(command, env = process.env) {
       }
     }
 
-    // gh pr merge: creates a merge commit and updates the remote, so it
-    // needs BOTH authorizations. Own token scan - no git token involved.
-    for (let si = 0; si + 2 < sn; si++) {
-      if (s[si] !== "gh" || s[si + 1] !== "pr" || s[si + 2] !== "merge") continue
-      const commitGate = gitGateReason(env, "gh pr merge", "commit")
-      if (commitGate) return { deny: true, reason: commitGate }
-      const pushGate = gitGateReason(env, "gh pr merge", "push")
-      if (pushGate) return { deny: true, reason: pushGate }
-    }
-
-    // gh api write methods: deny DELETE/POST/PATCH/PUT (via -X/--method, incl.
-    // attached forms -XDELETE/-X=DELETE/--method=DELETE), --input (sends a
-    // request body, incl. --input=file), and request fields -f/-F/--raw-field/
-    // --field (gh auto-switches the method to POST when fields are present,
-    // incl. attached -fkey=value and shorthand clusters like -if). An explicit
-    // GET method keeps fields allowed (gh's read pattern:
-    // `gh api -X GET search/issues -f q=x`). Value tokens of value-taking
-    // flags are skipped in both passes so a quoted value like
-    // `--jq "-X GET"` can't fake an explicit GET. Bounded to this segment so
-    // a `curl -X POST` or `--input` elsewhere in a && chain can't
-    // false-trigger.
+    // gh: find the subcommand token, skipping global flags and the value
+    // token of value-taking flags (gh accepts -R/--repo/--hostname before
+    // the subcommand: `gh -R o/r pr merge 5`, `gh --hostname x api ...`).
+    const GH_GLOBAL_VALUE_FLAGS = new Set(["-R", "--repo", "--hostname"])
     const GH_VALUE_FLAGS = new Set(["-H", "-t", "-q", "-p", "--hostname", "--cache", "--template", "--jq", "--preview", "--input", "--raw-field", "--field"])
     const isFieldToken = (t) => t.startsWith("-") && !t.startsWith("--") && /[fF]/.test(t)
-    for (let si = 0; si + 1 < sn; si++) {
-      if (s[si] !== "gh" || s[si + 1] !== "api") continue
+    for (let si = 0; si < sn; si++) {
+      if (s[si] !== "gh") continue
+      let gj = si + 1
+      while (gj < sn) {
+        const t = s[gj]
+        if (GH_GLOBAL_VALUE_FLAGS.has(t)) { gj += 2; continue }
+        if (t.startsWith("-")) { gj++; continue }
+        break
+      }
+      if (gj >= sn) continue
+      const ghSub = s[gj]
+      if (ghSub === "pr" && gj + 1 < sn && s[gj + 1] === "merge") {
+        // gh pr merge: creates a merge commit and updates the remote, so
+        // it needs BOTH authorizations.
+        const commitGate = gitGateReason(env, "gh pr merge", "commit")
+        if (commitGate) return { deny: true, reason: commitGate }
+        const pushGate = gitGateReason(env, "gh pr merge", "push")
+        if (pushGate) return { deny: true, reason: pushGate }
+      }
+      if (ghSub !== "api") continue
+      // gh api write methods: deny DELETE/POST/PATCH/PUT (via -X/--method,
+      // incl. attached forms -XDELETE/-X=DELETE/--method=DELETE), --input
+      // (sends a request body, incl. --input=file), and request fields
+      // -f/-F/--raw-field/--field (gh auto-switches the method to POST when
+      // fields are present, incl. attached -fkey=value and shorthand
+      // clusters like -if). An explicit GET method keeps fields allowed
+      // (gh's read pattern: `gh api -X GET search/issues -f q=x`). Value
+      // tokens of value-taking flags are skipped in both passes so a quoted
+      // value like `--jq "-X GET"` can't fake an explicit GET. Bounded to
+      // this segment so a `curl -X POST` or `--input` elsewhere in a &&
+      // chain can't false-trigger.
       // first pass: is an explicit GET method present?
       let hasGet = false
-      for (let sj = si + 2; sj < sn; sj++) {
+      for (let sj = gj + 1; sj < sn; sj++) {
         const t = s[sj]
         if (t === "-X" || t === "--method") {
           if (s[sj + 1] === "GET") hasGet = true
@@ -287,7 +299,7 @@ export function decide(command, env = process.env) {
         }
       }
       // second pass: write signals
-      for (let sj = si + 2; sj < sn; sj++) {
+      for (let sj = gj + 1; sj < sn; sj++) {
         const t = s[sj]
         if (t === "-X" || t === "--method") {
           const method = s[sj + 1]

@@ -424,7 +424,9 @@
       "commands": [
         "gh pr merge 5",
         "gh pr merge 5 --squash",
-        "gh pr merge --dry-run 5"
+        "gh pr merge --dry-run 5",
+        "gh -R owner/repo pr merge 5",
+        "gh --repo owner/repo pr merge 5"
       ]
     },
     {
@@ -477,6 +479,8 @@
         "gh api -X POST /repos/x/y",
         "gh api -X PATCH /repos/x/y",
         "gh api -X PUT /repos/x/y",
+        "gh -R owner/repo api -X POST /repos/x/y",
+        "gh --hostname example.com api --input payload.json",
         "gh api --method DELETE /repos/x/y",
         "gh api --method=POST /repos/x/y",
         "gh api --input payload.json /repos/x/y",
@@ -510,6 +514,7 @@
       "expect": "allow",
       "commands": [
         "gh api /repos/x/y",
+        "gh -R owner/repo api /repos/x/y",
         "gh api repos/x/y/issues",
         "gh api --method GET /repos/x/y",
         "gh api -X GET /repos/x/y",
