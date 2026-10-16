@@ -63,7 +63,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-16.12"
+MAILBOX_VERSION = "2026-10-16.13"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -590,13 +590,13 @@ def prompt_box_state(screen: str) -> str | None:
     return "empty"
 
 
-def ring_seat(pane: str, line: str) -> RingOutcome:
+def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> RingOutcome:
     # the seat-level ring every line to a pane must go through: raw
     # `herdr agent prompt` types blind, splicing into a draft a human is
     # mid-typing, and Enter submits both (#70)
     busy = False
     try:
-        herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(RING_WAIT_MS))
+        herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(wait_ms))
     except HerdrError as exc:
         if exc.code == "timeout":
             # a busy recipient may not end its turn for hours (an orchestrator
@@ -866,20 +866,21 @@ SEAT_DEFERRED = {
 def ring_any(
     target: Annotated[str, typer.Argument(help="Pane id or herdr agent name of any live agent")],
     line: Annotated[str, typer.Argument(help="The line to submit; deferred while a draft sits in the seat's composer")],
+    wait_ms: Annotated[int, typer.Option("--wait-ms", help="Idle wait before the mid-turn fallback; 0 = check and fall through at once")] = RING_WAIT_MS,
 ) -> None:
-    """Submit LINE to any agent seat with the composer guard. Needs no join; writes no mail."""
-    mailbox_root()
+    """Submit LINE to any agent seat with the composer guard. Needs no join or mesh; writes no mail. Exit 3 when not submitted."""
     record = agent_record_for_pane(target)
     if not record:
         fail(f"{target}: no live herdr agent at that seat")
     pane = record["pane_id"]
     try:
-        outcome = ring_seat(pane, line)
+        outcome = ring_seat(pane, line, wait_ms)
     except HerdrError as exc:
         fail(f"{target}: ring failed: {exc}")
     typer.echo(f"{pane}: {SEAT_DEFERRED.get(outcome, outcome)}")
     if outcome in SEAT_DEFERRED:
         typer.echo("mailbox ring writes no mail - nothing waits anywhere; the caller resends")
+        raise typer.Exit(3)
 
 
 def audit_members(root: Path) -> None:

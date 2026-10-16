@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-16.12"
+SKILL_VERSION = "2026-10-16.13"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1485,7 +1485,7 @@ def test_ring_verb_defers_a_typing_composer(mesh: Mesh) -> None:
 
     result = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 3, result.stderr
     assert "not rung: unsubmitted typing" in result.stdout
     assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
 
@@ -1522,7 +1522,7 @@ def test_ring_verb_defers_a_busy_seat_with_a_typing_composer(mesh: Mesh) -> None
 
     result = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 3, result.stderr
     assert "not rung: unsubmitted typing" in result.stdout
     assert "writes no mail" in result.stdout
     assert "the file waits in its inbox" not in result.stdout
@@ -1535,10 +1535,47 @@ def test_ring_verb_defers_a_busy_seat_whose_composer_cannot_be_seen(mesh: Mesh) 
 
     result = mesh.run("ring", WORKER_PANE, "line", pane=PLANNER_PANE)
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 3, result.stderr
     assert "could not be seen" in result.stdout
     assert "writes no mail" in result.stdout
     assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_verb_exits_0_only_when_the_line_was_submitted(mesh: Mesh) -> None:
+    assert mesh.run("ring", WORKER_PANE, "line", pane=PLANNER_PANE).returncode == 0
+
+    mesh.herdr.set("harness", {"worker": "codex"})
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("ring", WORKER_PANE, "line", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stderr
+    assert "not rung" in result.stdout
+
+
+def test_ring_verb_runs_from_the_skill_source_with_no_mesh(fake_env: FakeHerdr) -> None:
+    fake_env.set("agents", {"worker": WORKER_PANE})
+
+    result = run_skill_helper("ring", WORKER_PANE, "line", herdr=fake_env)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", WORKER_PANE, "line"] in fake_env.calls()
+
+
+def test_ring_verb_wait_ms_is_passed_to_the_wait_call(mesh: Mesh) -> None:
+    result = mesh.run("ring", WORKER_PANE, "line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "wait", WORKER_PANE, "--until", "idle", "--until", "done", "--timeout", "0"] in mesh.herdr.calls()
+
+
+def test_ring_verb_passes_a_multiline_payload_through_verbatim(mesh: Mesh) -> None:
+    payload = "first line\nsecond line"
+
+    result = mesh.run("ring", WORKER_PANE, payload, pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", WORKER_PANE, payload] in mesh.herdr.calls()
 
 
 def test_an_unexpected_herdr_error_fails_loudly_after_the_write(mesh: Mesh) -> None:

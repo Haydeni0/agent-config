@@ -101,10 +101,19 @@ waiting.
 ## Ringing a seat outside the mesh
 
 `{{MAILBOX}}/bin/mailbox ring <pane-or-agent> "<line>"` submits one line to
-any live agent seat - no join on either side, no mail written. It carries the
-same composer guard as mail rings: while the seat's human is mid-typing, the
-line is deferred (`not rung`) instead of splicing into the draft. Use it in
-place of every raw `herdr agent prompt` to an agent pane.
+any live agent seat - no join on either side, no mail written, and it runs
+straight from the skill's `mailbox.py` too, so a caller with no mesh at all
+can still use it (a multi-line payload passes through verbatim). It carries
+the same composer guard as mail rings: while the seat's human is mid-typing,
+idle or mid-turn, the line is deferred (`not rung`) instead of splicing into
+the draft. Use it in place of every raw `herdr agent prompt` to an agent
+pane. Exit 0 means submitted (`rung`, or `rung while busy` - the line queues
+in the seat's input); exit 3 means not submitted - nothing waits anywhere,
+the caller resends (a heartbeat's next beat is a natural retry).
+`--wait-ms <ms>` bounds the idle wait before the mid-turn fallback;
+`--wait-ms 0` checks and falls through at once. The composer guard is
+claude-shaped: a busy seat on another harness is left alone and an idle one
+is prompted without the draft check.
 
 ## Leaving
 
