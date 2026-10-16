@@ -223,6 +223,7 @@ flowchart LR
     %% python_notebook[python-notebook]
     reflect[reflect]
     repo_agent_setup[repo-agent-setup]
+    requirements[requirements]
     research_spike[research-spike]
     %% stack_pr[stack-pr]
     systematic_debugging[systematic-debugging]
@@ -261,6 +262,7 @@ flowchart LR
     dev_cycle --> tdd
     dev_cycle --> code_review
     dev_cycle --> work_package
+    dev_cycle --> requirements
     doc_sweep --> doc_reformat
     executing_plans --> tdd
     executing_plans --> verification_before_completion
@@ -283,6 +285,7 @@ flowchart LR
     reflect --> writing_skills
     repo_agent_setup --> grill_me
     repo_agent_setup --> backlog
+    repo_agent_setup --> requirements
     research_spike --> librarian
     research_spike --> living_doc
     research_spike --> work_package
