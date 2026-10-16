@@ -305,7 +305,6 @@ flowchart LR
     test_review_orchestrator --> test_add
     test_trim --> test_pr_core
     verification_before_completion --> claim_verification
-    work_package --> requirements
     write_spec --> grill_me
     write_spec --> writing_plans
     write_spec --> work_package

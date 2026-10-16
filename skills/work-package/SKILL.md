@@ -2,7 +2,6 @@
 name: work-package
 layer: worker
 description: Use when reading, writing, or resuming work in a `.agents/work/<slug>/` package, or when another skill cites this contract. Holds the on-disk contract - package layout, slug convention, file roles, entry formats, ID rules, marker formats, the state line, and the legacy conversion recipe. Load it before reading or writing package files.
-deps: [requirements]
 ---
 
 # work-package
@@ -86,8 +85,7 @@ transitions are the driving skills' prose.
 - **R** = an observable behaviour or a constraint future choices must respect, worded so it can be
   verified, and no broader than the source said. Scope is `new` or `amends <contract
   handle>` - a repo requirements contract's ID, or that contract's stable handle
-  (heading, name) when it has no IDs. An `amends` scope cites that contract -
-  load the requirements skill for its citation and format rules.
+  (heading, name) when it has no IDs.
 - **D** = a choice between alternatives, naming what was rejected. A D the user didn't make
   ends with `Agent-picked`, so the user can see what to review.
 - **X** = reality disagreed with the design; always points to the D or Q it produced.
