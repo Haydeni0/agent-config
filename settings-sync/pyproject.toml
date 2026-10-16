@@ -17,6 +17,7 @@ agent-config = "settings_sync.cli:agent_config_main"
 dev = [
     "pytest>=8.0",
     "pytest-mock>=3.12",
+    "pytest-xdist>=3.6",
 ]
 
 [tool.hatch.build.targets.wheel]
