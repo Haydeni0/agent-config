@@ -7,6 +7,7 @@ Payload edge cases exercise the compatibility entry point's JSON handling.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 HOOK = Path(__file__).resolve().parent / "check-bash-guard.sh"
 CASES = json.loads((Path(__file__).resolve().parents[2] / "hooks/tests/fixtures/command-cases.json").read_text())
 GROUPS = {g["name"]: g for g in CASES["groups"]}
+GATE_VARS = ("COMMIT_AUTHORISED", "PUSH_AUTHORISED", "COMMIT_UNAUTHORISED", "PUSH_UNAUTHORISED")
 
 
 def _bash() -> str:
@@ -31,17 +33,23 @@ def _require_jq() -> None:
         pytest.skip("jq is required")
 
 
-def _run(command: str) -> subprocess.CompletedProcess[str]:
+def _run(command: str, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     _require_jq()
     payload = json.dumps({"tool_input": {"command": command}})
     # No check=True: a non-zero exit (e.g. bug under set -euo pipefail) should
     # surface as an assertion failure, not a swallowed CalledProcessError.
+    # Strip the runner's gate vars so corpus results never depend on who
+    # runs the tests; the group's env is merged on top.
+    env = {k: v for k, v in os.environ.items() if k not in GATE_VARS}
+    if extra_env:
+        env.update(extra_env)
     result = subprocess.run(
         [_bash(), str(HOOK)],
         input=payload,
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     assert result.returncode == 0, (
         f"hook exited {result.returncode}; stderr={result.stderr!r}, "
@@ -86,20 +94,21 @@ for _g in CASES["groups"]:
     _expect = _g["expect"]
     _name = _g["name"]
     _needle_val = _g.get("needle", "")
+    _env = _g.get("env")
     if _expect == "deny":
-        def _make_denier(group_name, group_needle):
+        def _make_denier(group_name, group_needle, group_env):
             def _test(command):
-                _assert_denied(_run(command), group_needle)
+                _assert_denied(_run(command, group_env), group_needle)
             _test.__name__ = f"test_{group_name}"
             return pytest.mark.parametrize("command", GROUPS[group_name]["commands"])(_test)
-        globals()[f"test_{_name}"] = _make_denier(_name, _needle_val)
+        globals()[f"test_{_name}"] = _make_denier(_name, _needle_val, _env)
     else:
-        def _make_allower(group_name):
+        def _make_allower(group_name, group_env):
             def _test(command):
-                _assert_allowed(_run(command))
+                _assert_allowed(_run(command, group_env))
             _test.__name__ = f"test_{group_name}"
             return pytest.mark.parametrize("command", GROUPS[group_name]["commands"])(_test)
-        globals()[f"test_{_name}"] = _make_allower(_name)
+        globals()[f"test_{_name}"] = _make_allower(_name, _env)
 
 
 # -- payload edge cases (harness-specific: tests jq/JSON parsing) ----------

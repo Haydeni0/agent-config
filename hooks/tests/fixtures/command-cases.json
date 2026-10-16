@@ -111,6 +111,7 @@
       "label": "/mnt/data quoted-message denied (safe)",
       "expect": "deny",
       "needle": "/mnt/data",
+      "env": { "COMMIT_AUTHORISED": "1" },
       "commands": [
         "git commit -m \"rm the /mnt/data scratch dir\"",
         "echo \"rm -rf /mnt/data is blocked\" >> notes.md"
@@ -277,9 +278,180 @@
       ]
     },
     {
+      "name": "commit_gate_blocked",
+      "label": "Commit-family command blocked without COMMIT_AUTHORISED",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "commands": [
+        "git commit -m wip",
+        "git -C /repo commit -am wip",
+        "git commit --amend --no-edit",
+        "git merge feature",
+        "git merge --abort",
+        "git cherry-pick abc123",
+        "git revert HEAD",
+        "git rebase main",
+        "git rebase --continue",
+        "git am patch.mbox",
+        "git pull",
+        "git pull origin main",
+        "git -C /repo pull",
+        "git pull --ff",
+        "bash -c \"git commit -m x\"",
+        "FOO=1 git commit -m x",
+        "git commit -m x \\\n--amend"
+      ]
+    },
+    {
+      "name": "commit_gate_allowed",
+      "label": "Commit-family command allowed with COMMIT_AUTHORISED",
+      "expect": "allow",
+      "env": { "COMMIT_AUTHORISED": "1" },
+      "commands": [
+        "git commit -m wip",
+        "git -C /repo commit -am wip",
+        "git commit --amend --no-edit",
+        "git commit -C /repo",
+        "git merge feature",
+        "git merge --abort",
+        "git cherry-pick abc123",
+        "git revert HEAD",
+        "git rebase main",
+        "git rebase --continue",
+        "git am patch.mbox",
+        "git pull --ff-only",
+        "git pull --ff-only origin main",
+        "git -C /repo pull --ff-only",
+        "bash -c \"git commit -m x\"",
+        "FOO=1 git commit -m x",
+        "git commit -m x \\\n--amend"
+      ]
+    },
+    {
+      "name": "pull_ff_only_allowed",
+      "label": "git pull --ff-only allowed with no authorization",
+      "expect": "allow",
+      "commands": [
+        "git pull --ff-only",
+        "git pull --ff-only origin main",
+        "git -C /repo pull --ff-only"
+      ]
+    },
+    {
+      "name": "push_gate_blocked",
+      "label": "git push blocked without PUSH_AUTHORISED",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git push",
+        "git push origin main",
+        "git push -q",
+        "git -C /repo push",
+        "bash -c \"git push -q\""
+      ]
+    },
+    {
+      "name": "push_gate_allowed",
+      "label": "git push allowed with PUSH_AUTHORISED",
+      "expect": "allow",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git push",
+        "git push origin main",
+        "git push -q origin main"
+      ]
+    },
+    {
+      "name": "push_force_still_blocked",
+      "label": "force push still blocked with PUSH_AUTHORISED",
+      "expect": "deny",
+      "needle": "force",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git push --force origin main",
+        "git push -f origin main",
+        "git push origin +main:main"
+      ]
+    },
+    {
+      "name": "commit_wrong_var_blocked",
+      "label": "PUSH_AUTHORISED does not authorize a commit",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git commit -m wip",
+        "git merge feature"
+      ]
+    },
+    {
+      "name": "push_wrong_var_blocked",
+      "label": "COMMIT_AUTHORISED does not authorize a push",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "env": { "COMMIT_AUTHORISED": "1" },
+      "commands": [
+        "git push origin main",
+        "git commit -m \"reminder: git push after review\""
+      ]
+    },
+    {
+      "name": "commit_revoke_blocked",
+      "label": "COMMIT_UNAUTHORISED denies despite COMMIT_AUTHORISED",
+      "expect": "deny",
+      "needle": "UNAUTHORISED",
+      "env": { "COMMIT_AUTHORISED": "1", "COMMIT_UNAUTHORISED": "1" },
+      "commands": [
+        "git commit -m wip",
+        "git pull origin main"
+      ]
+    },
+    {
+      "name": "push_revoke_blocked",
+      "label": "PUSH_UNAUTHORISED denies despite PUSH_AUTHORISED",
+      "expect": "deny",
+      "needle": "UNAUTHORISED",
+      "env": { "PUSH_AUTHORISED": "1", "PUSH_UNAUTHORISED": "1" },
+      "commands": [
+        "git push"
+      ]
+    },
+    {
+      "name": "pr_merge_gate_blocked",
+      "label": "gh pr merge blocked without both vars",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "commands": [
+        "gh pr merge 5",
+        "gh pr merge 5 --squash",
+        "gh pr merge --dry-run 5"
+      ]
+    },
+    {
+      "name": "pr_merge_one_var_blocked",
+      "label": "gh pr merge blocked with only COMMIT_AUTHORISED",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "env": { "COMMIT_AUTHORISED": "1" },
+      "commands": [
+        "gh pr merge 5"
+      ]
+    },
+    {
+      "name": "pr_merge_allowed",
+      "label": "gh pr merge allowed with both vars",
+      "expect": "allow",
+      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "gh pr merge 5",
+        "gh pr merge 5 --squash"
+      ]
+    },
+    {
       "name": "git_plain_push_allowed",
       "label": "plain git push allowed (no force flags in push's own segment)",
       "expect": "allow",
+      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
       "commands": [
         "git push",
         "git push -q",
@@ -358,6 +530,7 @@
       "name": "benign_allowed",
       "label": "benign command allowed",
       "expect": "allow",
+      "env": { "PUSH_AUTHORISED": "1" },
       "commands": [
         "",
         "ls -la",

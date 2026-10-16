@@ -87,7 +87,7 @@ test("the shared core preserves the existing command corpus", async () => {
   const { decide } = await import("../core/command-policy.mjs");
   for (const group of cases.groups)
     for (const command of group.commands) {
-      const result = decide(command);
+      const result = decide(command, group.env ?? {});
       assert.equal(
         result.deny,
         group.expect === "deny",

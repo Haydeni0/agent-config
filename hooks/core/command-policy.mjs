@@ -5,6 +5,10 @@
 //             read ops (ls, cp download, sync download, list-*/get-*) allowed.
 //   sudo/dd/mkfs, chmod 777, forced git push, gh api writes and kubectl
 //   mutations are blocked by the command checks below.
+//   Git gate: commit-creating subcommands (commit, merge, cherry-pick,
+//   revert, rebase, am, pull without --ff-only) need COMMIT_AUTHORISED,
+//   push and gh pr merge need PUSH_AUTHORISED (pr merge needs both);
+//   COMMIT_UNAUTHORISED/PUSH_UNAUTHORISED deny despite a set authorise var.
 //   /mnt/data: ALL deletes blocked (rm, rmdir, shred, unlink, trash,
 //             find -delete, find -exec rm). Reads/writes allowed.
 //
@@ -22,7 +26,9 @@
 // Known limitation: a delete verb
 // nested in a quoted flag VALUE (git commit -m "rm ... /mnt/data ...") is
 // indistinguishable from a quoted wrapper that EXECUTES (bash -c "rm ...").
-// Both are denied; the user rewords if hit.
+// Both are denied; the user rewords if hit. The same limitation covers a
+// git gate verb nested in a quoted flag value (git commit -m "then git
+// push") - denied on the safe side.
 
 const S3_REASON =
   "S3 deletes are not permitted for the agent - run them yourself outside the agent. (policy: command)"
@@ -46,10 +52,27 @@ const GH_API_REASON =
   "gh api write methods are not permitted for the agent - run them yourself outside the agent. (policy: command)"
 const KUBECTL_REASON =
   "kubectl mutation verbs are not permitted for the agent - run them yourself outside the agent. (policy: command)"
+const GIT_GATE_TAIL =
+  "The user sets it in their session - run it yourself outside the agent if it must happen now. (policy: command)"
+const COMMIT_SUBCOMMANDS = new Set(["commit", "merge", "cherry-pick", "revert", "rebase", "am"])
+
+// Returns a deny reason when the gate blocks, null when authorized. A set
+// revoke var denies even when the authorise var is set.
+function gitGateReason(env, sub, kind) {
+  const authVar = kind === "commit" ? "COMMIT_AUTHORISED" : "PUSH_AUTHORISED"
+  const revokeVar = kind === "commit" ? "COMMIT_UNAUTHORISED" : "PUSH_UNAUTHORISED"
+  if (env?.[revokeVar]) {
+    return `Blocked: ${sub} is revoked - ${revokeVar} is set in this session. The user clears it in their session. (policy: command)`
+  }
+  if (!env?.[authVar]) {
+    return `Blocked: ${sub} needs ${authVar}, which is not set. ${GIT_GATE_TAIL}`
+  }
+  return null
+}
 
 // The precheck operates on normalized text so continuations cannot hide a
 // guarded command.
-const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\b.*\b(push|api)\b|\bgh\s+api\b|\bkubectl\b|\bk\b/
+const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\b.*\b(push|api|commit|merge|cherry-pick|revert|rebase|am|pull)\b|\bgh\s+(api|pr)\b|\bkubectl\b|\bk\b/
 
 // S3 guard: flatten separators + quote/subshell/backslash chars so wrapped/compound
 // forms (bash -c "...", $(...), a && b, \rm) tokenize to bare tokens.
@@ -70,7 +93,7 @@ function normalizePath(p) {
   return p.replace(/\/+/g, "/").replace(/\/\.\//g, "/").replace(/\/\.$/, "")
 }
 
-export function decide(command) {
+export function decide(command, env = process.env) {
   const allow = { deny: false }
   if (typeof command !== "string" || command === "") return allow
 
@@ -185,6 +208,7 @@ export function decide(command) {
     // subcommand (-C <path>, -c <kv>, --git-dir=...) are skipped so
     // `git -C /repo push -f` is still recognized as a push. Bounded to this
     // segment so a `rm -f` later in a && chain can't false-trigger.
+    // After the force check, the push/commit gate denies unauthorized actions (env vars; --ff-only pull is exempt).
     const GIT_VALUE_FLAGS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"])
     for (let si = 0; si < sn; si++) {
       if (s[si] !== "git") continue
@@ -197,16 +221,36 @@ export function decide(command) {
         if (t.startsWith("-")) { sj++; continue }
         break
       }
-      if (sj < sn && s[sj] === "push") {
+      if (sj >= sn) continue
+      const sub = s[sj]
+      if (sub === "push") {
+        // --force exact; short-flag clusters containing f (-f, -fq, -qf);
+        // +refspec (+main:main = unconditional force)
         for (let sk = sj + 1; sk < sn; sk++) {
           const t = s[sk]
-          // --force exact; short-flag clusters containing f (-f, -fq, -qf);
-          // +refspec (+main:main = unconditional force)
           if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
             return { deny: true, reason: `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}` }
           }
         }
+        const gate = gitGateReason(env, "git push", "push")
+        if (gate) return { deny: true, reason: gate }
+      } else if (COMMIT_SUBCOMMANDS.has(sub)) {
+        const gate = gitGateReason(env, `git ${sub}`, "commit")
+        if (gate) return { deny: true, reason: gate }
+      } else if (sub === "pull" && !s.slice(sj + 1).includes("--ff-only")) {
+        const gate = gitGateReason(env, "git pull", "commit")
+        if (gate) return { deny: true, reason: gate }
       }
+    }
+
+    // gh pr merge: creates a merge commit and updates the remote, so it
+    // needs BOTH authorizations. Own token scan - no git token involved.
+    for (let si = 0; si + 2 < sn; si++) {
+      if (s[si] !== "gh" || s[si + 1] !== "pr" || s[si + 2] !== "merge") continue
+      const commitGate = gitGateReason(env, "gh pr merge", "commit")
+      if (commitGate) return { deny: true, reason: commitGate }
+      const pushGate = gitGateReason(env, "gh pr merge", "push")
+      if (pushGate) return { deny: true, reason: pushGate }
     }
 
     // gh api write methods: deny DELETE/POST/PATCH/PUT (via -X/--method, incl.

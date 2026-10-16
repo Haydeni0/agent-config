@@ -30,7 +30,7 @@ const CASES = JSON.parse(readFileSync(CASES_PATH, "utf8"))
 for (const g of CASES.groups) {
   for (const command of g.commands) {
     test(`${g.label}: ${JSON.stringify(command)}`, () => {
-      const r = decide(command)
+      const r = decide(command, g.env ?? {})
       if (g.expect === "deny") {
         assert.equal(r.deny, true, `expected deny for ${JSON.stringify(command)}, got allow`)
         assert.ok(r.reason.includes(g.needle),
