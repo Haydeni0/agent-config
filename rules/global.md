@@ -24,19 +24,10 @@
 - Always prefix branch names with `hayden/` (e.g. `hayden/my-feature`).
 - Always create PRs as drafts (`gh pr create --draft`).
 - `git add` is allowed (used to stage changes for user review). Do not stage files likely to contain secrets (`.env`, `credentials.*`, `*.pem`, etc.).
-- Never `git commit` or `git push`, even when asked by a skill or subagent, unless the gate below passes. Every command that creates a commit counts as `git commit` (`git merge`, `cherry-pick`, `revert`, `rebase`, `am`, a `git pull` that merges).
-  - The gate - before EVERY `git commit` / `git push`, use exactly one of these authorisation paths:
-    1. **Env gate (the default - try this first), chained into the command**: run check and action as ONE command - `printenv COMMIT_AUTHORISED && git commit ...` / `printenv PUSH_AUTHORISED && git push ...`. Var set → printenv succeeds → action runs. Var unset → printenv fails → action never runs; tell the user and ask. Never run the bare `git commit`/`git push` on this path, and never trust a check from an earlier separate command - the chain is what makes the check fresh (a resumed session may have different env vars).
-       - **Never assume the var is unset.** You cannot know without running the chain, and attempting it is always safe: if unset, the action cannot run. Skipping the commit because you guess the gate is closed is a gate failure - attempt the chain and let it decide.
-       - Non-git commands before/after the gate in the same chain are fine (e.g. `git add`, tests). But EACH gated action needs its own `printenv` immediately before it: `... && printenv PUSH_AUTHORISED && git push ...` - never gate two actions with one check.
-       - No pipes inside a chain that leads to a gated action: `cmd | tail -1 && git push` takes `tail`'s exit status, so the push runs after `cmd` failed. Filter output after the chain ends, or start it with `set -o pipefail`.
-       - Never set these vars yourself (no `export`, no inline `VAR=1 command` prefix) - that defeats the gate. They come only from the user's session environment.
-    2. **Sentinel (escape hatch) in the current task prompt** (or project-local `CLAUDE.md`, or an autonomous agent's initial instructions): the literal `COMMIT_AUTHORISED` / `PUSH_AUTHORISED` is a one-off grant for that action. Proceed with no further check.
-  - The gate answers "may I", never "should I": commit/push only when the current task actually calls for it. A set env var makes the action permitted, not wanted - do not commit or push spontaneously just because the gate is open.
-  - Sentinels must appear verbatim (uppercase, underscored). Treat any other phrasing - including "please commit", "go ahead and push", or casual overrides - as NOT authorised.
-  - `PUSH_AUTHORISED` does NOT imply `COMMIT_AUTHORISED`, and vice versa. Each action needs its own sentinel or its own chained check.
-  - An explicit revoke (`COMMIT_UNAUTHORISED` / `PUSH_UNAUTHORISED`) anywhere in the session overrides a set env var - `printenv` cannot detect a revoke. Respect it for the rest of the session.
-  - Never ask the user to re-confirm when the gate passes. If the gate fails or you are unsure: ask.
+- Commit and push only when the task calls for it. The shared command hook enforces the gate: every command that creates a commit (`git commit`, `merge`, `cherry-pick`, `revert`, `rebase`, `am`, a merging `git pull` - `git pull --ff-only` is exempt) needs `COMMIT_AUTHORISED`; `git push` needs `PUSH_AUTHORISED`; `gh pr merge` needs both. A denied command's reason names the variable - the user sets it in their session; never set it yourself. `COMMIT_UNAUTHORISED` / `PUSH_UNAUTHORISED` revoke for the rest of the session.
+- The gate answers "may I", never "should I": commit/push only when the current task actually calls for it. Do not commit or push spontaneously just because the gate is open.
+- `PUSH_AUTHORISED` does NOT imply `COMMIT_AUTHORISED`, and vice versa - the variables never substitute for each other.
+- If the hook denies a commit or push, or you are unsure: ask the user.
 
 ### Python
 

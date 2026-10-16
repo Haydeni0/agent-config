@@ -107,10 +107,10 @@ Apply the user's commit/push authorization gate to **every** such action,
 including repair and CI retriggers. Rewriting a stack does not authorize merging.
 
 Use an explicit lease against the remote SHA captured and reviewed in preflight.
-For the environment-gate authorization path:
+The command hook checks the session's authorization variables; the push itself needs only the lease:
 
 ```bash
-printenv PUSH_AUTHORISED && git push \
+git push \
   --force-with-lease="refs/heads/$branch:$expected_remote_sha" \
   "$remote" "$new_head:refs/heads/$branch"
 ```

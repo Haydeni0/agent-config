@@ -9,6 +9,19 @@ Config-write heuristics live in `core/config-policy.mjs`; Opencode and Pi keep
 their existing protected-directory sets. These command-string heuristics cover
 the existing policy, not arbitrary program behavior or a filesystem sandbox.
 
+The command hook also enforces the commit/push gate: commit-creating git
+subcommands (`commit`, `merge`, `cherry-pick`, `revert`, `rebase`, `am`, and
+`pull` without `--ff-only`) are denied without `COMMIT_AUTHORISED`, `git
+push` without `PUSH_AUTHORISED` (force pushes unconditionally), and `gh pr
+merge` without both - all read from the hook process environment, with
+`COMMIT_UNAUTHORISED` / `PUSH_UNAUTHORISED` denying despite a set authorise
+var. Native gate probes (`gate-deny` / `gate-allow`) prove each
+CLI-available harness passes its session environment into the hook.
+Limits, stated not fixed: git run inside scripts or tools is invisible to
+the hook; a git gate verb nested in a quoted flag value
+(`git commit -m "then git push"`) is denied on the safe side; `gh pr merge`
+completes server-side once the local deny is passed.
+
 The mailbox turn-end guard (`mailbox-guard.mjs` + `core/mailbox-guard-policy.mjs`)
 is a different breed: a Stop hook that blocks a Claude Code turn end while
 unread mesh mail waits. Unlike the guards above it fails open, silently - a
@@ -19,11 +32,11 @@ exposes a turn-end event yet.
 
 | Harness | Command registration | Verification |
 |---|---|---|
-| Claude Code | Existing Bash hook, thin Bash/Node entry point | CLI 2.1.282: allow, deny, broken entry point, timeout |
-| Codex | `hooks.json`, `PreToolUse` Bash mapping | CLI 0.157.0: allow, deny, broken entry point, timeout, untrusted hook |
-| Opencode | `tool.execute.before` plugin | CLI 1.18.29: allow and deny |
-| Pi | `tool_call` extension | CLI 0.80.6: allow and deny |
-| Goose | `~/.agents/plugins/agent-config-goose/` | CLI 1.44.0: allow, deny, broken entry point, timeout |
+| Claude Code | Existing Bash hook, thin Bash/Node entry point | CLI 2.1.301: allow, deny, broken entry point, timeout, gate env |
+| Codex | `hooks.json`, `PreToolUse` Bash mapping | CLI 0.162.1: allow, deny, broken entry point, timeout, untrusted hook, gate env |
+| Opencode | `tool.execute.before` plugin | CLI 1.18.29: allow, deny, gate env |
+| Pi | `tool_call` extension | CLI 0.80.6: allow, deny, gate env |
+| Goose | `~/.agents/plugins/agent-config-goose/` | CLI 1.44.0: allow, deny, broken entry point, timeout, gate env |
 | Antigravity | Named `agent-config` entry in native `hooks.json` | Adapter and sync tests only; CLI unavailable |
 | no-mistakes | Selected child harness | Source inspection only; CLI unavailable |
 
