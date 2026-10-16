@@ -2,7 +2,7 @@
 name: design-log
 layer: orchestrator
 description: Use when designing or planning a feature or new body of work across turns or sessions - a design grill, writing a spec or plan from a design, implementation that diverges from the agreed design, or "wrap up / finalise the design docs".
-deps: [grill-me, test-plan, write-spec, writing-plans, work-package]
+deps: [grill-me, test-plan, write-spec, writing-plans, work-package, requirements]
 ---
 
 # Design log
@@ -57,8 +57,9 @@ Only when the user says the design is done / finalised / wrap it up.
    Ds (no R for it), draft the Rs with `Source: D<n> (draft)`, show them, and promote only after
    the user confirms the wording.
 2. A requirements document is listed: add each R that describes user-visible behaviour, in that
-   document's format and ID scheme (e.g. `REQ-AREA-NN`, Statement, Verification - mark a planned
-   test as planned). Implementation choices stay D; they never become REQs.
+   document's format - the requirements skill owns the entry rules (format, promotion filter,
+   planned pointers); load it before writing entries. Implementation choices stay D; they never
+   become REQs.
 3. A decisions/design log is listed: append the settled Ds in its format.
 4. Nothing listed: skip steps 2-3; the package is the record.
 5. Add a header to `decisions.md`: `Promoted <date>: R1 -> REQ-RATE-01, ...`.

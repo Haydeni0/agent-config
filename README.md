@@ -254,6 +254,7 @@ flowchart LR
     design_log --> write_spec
     design_log --> writing_plans
     design_log --> work_package
+    design_log --> requirements
     dev_cycle --> grill_me
     dev_cycle --> test_plan
     dev_cycle --> write_spec
@@ -304,6 +305,7 @@ flowchart LR
     test_review_orchestrator --> test_add
     test_trim --> test_pr_core
     verification_before_completion --> claim_verification
+    work_package --> requirements
     write_spec --> grill_me
     write_spec --> writing_plans
     write_spec --> work_package
