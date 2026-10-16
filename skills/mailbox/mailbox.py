@@ -63,7 +63,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-16.11"
+MAILBOX_VERSION = "2026-10-16.12"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -601,9 +601,10 @@ def ring_seat(pane: str, line: str) -> RingOutcome:
         if exc.code == "timeout":
             # a busy recipient may not end its turn for hours (an orchestrator
             # waiting on subagents), and its turn-end inbox check is not
-            # reliable (#37); a claude agent takes a mid-turn prompt fine - the
-            # line queues in its input - so prompt anyway, and herdr still
-            # refuses to prompt a blocked agent. Other harnesses are unprobed.
+            # reliable (#37); a claude agent takes a mid-turn prompt fine once
+            # its composer is seen empty - the line queues in its input - and
+            # herdr still refuses to prompt a blocked agent. Other harnesses
+            # are unprobed.
             if recipient_harness(pane) != "claude":
                 return RingOutcome.NOT_IDLE
             busy = True
@@ -611,12 +612,13 @@ def ring_seat(pane: str, line: str) -> RingOutcome:
             return UNRUNG[exc.code]
         else:
             raise
-    if not busy and recipient_harness(pane) == "claude":
-        # an idle claude pane with a draft in its composer means a human is
-        # mid-typing: prompting splices into the draft and Enter sends it. Read
-        # the composer through herdr's own detection view and defer the ring on
-        # anything but a provably empty box - the mail stays in the inbox and
-        # the turn-end guard or a poke surfaces it.
+    if recipient_harness(pane) == "claude":
+        # a draft in a claude pane's composer means a human is mid-typing,
+        # idle or mid-turn alike: prompting splices into the draft and Enter
+        # submits both (#70's busy arm - the human types while the agent
+        # works). Read the composer through herdr's own detection view and
+        # defer the ring on anything but a provably empty box - the mail stays
+        # in the inbox and the turn-end guard or a poke surfaces it.
         try:
             screen = herdr("pane", "read", "--source", "detection", "--format", "text", pane)
         except HerdrError:
@@ -847,6 +849,19 @@ def poke(member: str) -> None:
     typer.echo(f"{member}: {outcome}")
 
 
+# the ring verb writes no mail, so the deferral outcomes' "waits in its
+# inbox" remedy is false for it - its deferrals get their own wording
+SEAT_DEFERRED = {
+    RingOutcome.TYPING: "not rung: unsubmitted typing sits in the seat's composer - the line was not submitted; resend it once the composer is clear",
+    RingOutcome.COMPOSER_UNSEEN: (
+        "not rung: the seat's composer could not be seen (menu, overlay, or herdr without"
+        " `pane read --source detection`) - the line was not submitted; resend when the view is clear"
+    ),
+    RingOutcome.BLOCKED: "not rung: the seat is at a permission prompt - the line was not submitted; resend once it is unblocked",
+    RingOutcome.NOT_IDLE: "not rung: the seat stayed busy and mid-turn prompting is unverified for its harness - the line was not submitted; resend later",
+}
+
+
 @app.command("ring")
 def ring_any(
     target: Annotated[str, typer.Argument(help="Pane id or herdr agent name of any live agent")],
@@ -862,7 +877,9 @@ def ring_any(
         outcome = ring_seat(pane, line)
     except HerdrError as exc:
         fail(f"{target}: ring failed: {exc}")
-    typer.echo(f"{pane}: {outcome}")
+    typer.echo(f"{pane}: {SEAT_DEFERRED.get(outcome, outcome)}")
+    if outcome in SEAT_DEFERRED:
+        typer.echo("mailbox ring writes no mail - nothing waits anywhere; the caller resends")
 
 
 def audit_members(root: Path) -> None:

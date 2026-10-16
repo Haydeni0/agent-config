@@ -55,9 +55,10 @@ EOF
   the requester is waiting on - and anything the recipient must act on now.
   Add `--no-ring` for broadcasts and FYI mail; the recipient picks it up at
   its next `take`.
-- A busy claude recipient is prompted mid-turn anyway - the wake line sits
-  in its input until it reads it. A busy recipient on any other harness is
-  left for its next `take`.
+- A busy claude recipient is prompted mid-turn anyway once its composer is
+  seen empty - the wake line sits in its input until it reads it; a draft in
+  its composer means a human is mid-typing, idle or mid-turn, and it is not
+  rung. A busy recipient on any other harness is left for its next `take`.
 - An idle claude recipient that is mid-typing is not rung - a ring would
   splice into its draft and send it. The file waits for its next `take`
   (and the turn-end guard surfaces it).
