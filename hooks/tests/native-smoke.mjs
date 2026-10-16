@@ -25,7 +25,7 @@ const repo = fileURLToPath(new URL("../..", import.meta.url));
 const quote = (s) => "'" + s.replaceAll("'", "'\\''") + "'";
 const PROBE_TIMEOUT_MS = 45000;
 for (const scenario of ["pi", "opencode"].includes(host)
-  ? ["allow", "deny", "unicode-field"]
+  ? ["allow", "deny", "unicode-field", "gate-deny", "gate-allow"]
   : [
       "allow",
       "deny",
@@ -33,6 +33,8 @@ for (const scenario of ["pi", "opencode"].includes(host)
       "broken",
       "timeout",
       ...(host === "codex" ? ["untrusted"] : []),
+      "gate-deny",
+      "gate-allow",
     ]) {
   const home = mkdtempSync(join(tmpdir(), `native-${host}-`));
   let server;
@@ -45,7 +47,9 @@ for (const scenario of ["pi", "opencode"].includes(host)
     // The local gh function records shell arguments without making API requests.
     const command = scenario === "unicode-field"
       ? `gh() { printf '%s\\n' "$@" > ${quote(marker)}; }\ngh api repos/OWNER/REPO/issues -f title=x\u00a0-X\u00a0GET`
-      : `printf ${scenario === "allow" || scenario === "broken" ? "allowed" : "sudo"} > ${quote(marker)}`;
+      : scenario === "gate-deny" || scenario === "gate-allow"
+        ? `git commit -h > ${quote(marker)}`
+        : `printf ${scenario === "allow" || scenario === "broken" ? "allowed" : "sudo"} > ${quote(marker)}`;
     const calls = [];
     server = createServer(async (req, res) => {
       let data = "";
@@ -269,6 +273,7 @@ for (const scenario of ["pi", "opencode"].includes(host)
       GOOSE_MODE: "auto",
       ANTHROPIC_API_KEY: "local-probe-key",
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      ...(scenario === "gate-allow" ? { COMMIT_AUTHORISED: "1" } : {}),
     };
     const args =
       host === "goose"
@@ -399,11 +404,14 @@ for (const scenario of ["pi", "opencode"].includes(host)
       existsSync(marker),
       scenario === "allow" ||
         scenario === "untrusted" ||
-        scenario === "timeout",
+        scenario === "timeout" ||
+        scenario === "gate-allow",
       JSON.stringify(evidence),
     );
     if (scenario === "deny")
       assert.match(JSON.stringify(results), /sudo is not permitted/i);
+    if (scenario === "gate-deny")
+      assert.match(JSON.stringify(results), /COMMIT_AUTHORISED/);
     if (scenario === "unicode-field")
       assert.match(JSON.stringify(results), /gh api write methods are not permitted/i);
     console.log(
