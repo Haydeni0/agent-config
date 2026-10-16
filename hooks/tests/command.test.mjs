@@ -34,10 +34,11 @@ const payloads = {
     },
   }),
 };
-function invoke(host, payload) {
+function invoke(host, payload, env) {
   return spawnSync(process.execPath, [entry, host], {
     input: JSON.stringify(payload),
     encoding: "utf8",
+    ...(env ? { env } : {}),
   });
 }
 for (const [host, payload] of Object.entries(payloads)) {
@@ -61,6 +62,56 @@ for (const [host, payload] of Object.entries(payloads)) {
     assert.match(result.stderr, /command/i);
   });
 }
+test("claude entry denies a gated commit without the session var", () => {
+  const result = invoke("claude", payloads.claude("git commit -m wip"), {
+    PATH: process.env.PATH,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(
+    output.hookSpecificOutput.permissionDecisionReason,
+    /COMMIT_AUTHORISED/,
+  );
+});
+test("claude entry passes a gated commit with the session var", () => {
+  const result = invoke("claude", payloads.claude("git commit -m wip"), {
+    PATH: process.env.PATH,
+    COMMIT_AUTHORISED: "1",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
+test("agy entry denies a gated push without the session var", () => {
+  const result = invoke("agy", payloads.agy("git push origin main"), {
+    PATH: process.env.PATH,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.decision, "deny");
+  assert.match(output.reason, /PUSH_AUTHORISED/);
+});
+test("codex entry denies a gated commit without the session var", () => {
+  const result = invoke("codex", payloads.codex("git commit -m wip"), {
+    PATH: process.env.PATH,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
+  assert.match(
+    output.hookSpecificOutput.permissionDecisionReason,
+    /COMMIT_AUTHORISED/,
+  );
+});
+test("goose entry blocks a gated push without the session var", () => {
+  const result = invoke("goose", payloads.goose("git push"), {
+    PATH: process.env.PATH,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.decision, "block");
+  assert.match(output.reason, /PUSH_AUTHORISED/);
+});
 test("malformed JSON emits a blocking exit code with clean stdout", () => {
   const result = spawnSync(process.execPath, [entry, "claude"], {
     input: "{",
