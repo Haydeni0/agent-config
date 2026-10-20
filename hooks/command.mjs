@@ -7,11 +7,17 @@ function commandFor(harness, input) {
     throw new Error("Expected a hook object");
   switch (harness) {
     case "claude":
-    case "codex":
-      if (input.hook_event_name !== "PreToolUse")
+    case "codex": {
+      // Cursor imports Claude hooks and renames the event/tool pair
+      // (PreToolUse -> preToolUse, Bash -> Shell); the claude arm accepts
+      // both spellings, codex payloads are never translated.
+      const events = harness === "claude" ? ["PreToolUse", "preToolUse"] : ["PreToolUse"];
+      const tools = harness === "claude" ? ["Bash", "Shell"] : ["Bash"];
+      if (!events.includes(input.hook_event_name))
         throw new Error("Expected PreToolUse event");
-      if (input.tool_name !== "Bash") return null;
+      if (!tools.includes(input.tool_name)) return null;
       return input.tool_input?.command;
+    }
     case "goose":
       if (input.event !== "PreToolUse")
         throw new Error("Expected PreToolUse event");

@@ -125,6 +125,57 @@ test("unknown host is rejected", () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /harness/);
 });
+test("claude entry denies a Cursor-translated preToolUse/Shell payload", () => {
+  const result = invoke("claude", {
+    hook_event_name: "preToolUse",
+    tool_name: "Shell",
+    tool_input: { command: "sudo true" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).hookSpecificOutput.permissionDecision,
+    "deny",
+  );
+});
+test("claude entry passes an innocuous Cursor-translated payload", () => {
+  const result = invoke("claude", {
+    hook_event_name: "preToolUse",
+    tool_name: "Shell",
+    tool_input: { command: "git status" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
+test("claude entry denies a gated commit from a Cursor payload without the session var", () => {
+  const result = invoke("claude", {
+    hook_event_name: "preToolUse",
+    tool_name: "Shell",
+    tool_input: { command: "git commit -m wip" },
+  }, { PATH: process.env.PATH });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(
+    JSON.parse(result.stdout).hookSpecificOutput.permissionDecisionReason,
+    /COMMIT_AUTHORISED/,
+  );
+});
+test("claude entry ignores a non-shell Cursor tool", () => {
+  const result = invoke("claude", {
+    hook_event_name: "preToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: "/tmp/sudo" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
+test("codex entry stays strict about the event name", () => {
+  const result = invoke("codex", {
+    hook_event_name: "preToolUse",
+    tool_name: "Shell",
+    tool_input: { command: "git status" },
+  });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /PreToolUse/);
+});
 test("unrelated tools defer to native permissions", () => {
   const result = invoke("codex", {
     hook_event_name: "PreToolUse",
@@ -179,6 +230,26 @@ test("Claude compatibility entry resolves a deployed custom symlink", async (t) 
     [join(home, "custom/hooks/check-bash-guard.sh")],
     {
       input: JSON.stringify(payloads.claude("sudo true")),
+      encoding: "utf8",
+    },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    JSON.parse(result.stdout).hookSpecificOutput.permissionDecision,
+    "deny",
+  );
+});
+
+test("Claude compatibility entry denies a Cursor-translated payload end-to-end", () => {
+  const result = spawnSync(
+    "bash",
+    [fileURLToPath(new URL("../../custom/hooks/check-bash-guard.sh", import.meta.url))],
+    {
+      input: JSON.stringify({
+        hook_event_name: "preToolUse",
+        tool_name: "Shell",
+        tool_input: { command: "sudo true", cwd: "", timeout: 30000 },
+      }),
       encoding: "utf8",
     },
   );

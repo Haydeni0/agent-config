@@ -32,7 +32,7 @@ exposes a turn-end event yet.
 
 | Harness | Command registration | Verification |
 |---|---|---|
-| Claude Code | Existing Bash hook, thin Bash/Node entry point | CLI 2.1.301: allow, deny, broken entry point, timeout, gate env |
+| Claude Code | Existing Bash hook, thin Bash/Node entry point | CLI 2.1.301: allow, deny, broken entry point, timeout, gate env; Cursor 3.24.12 third-party hook import: translated preToolUse/Shell payload accepted, deny honored |
 | Codex | `hooks.json`, `PreToolUse` Bash mapping | CLI 0.162.1: allow, deny, broken entry point, timeout, untrusted hook, gate env |
 | Opencode | `tool.execute.before` plugin | CLI 1.18.29: allow, deny, gate env |
 | Pi | `tool_call` extension | CLI 0.80.6: allow, deny, gate env |
