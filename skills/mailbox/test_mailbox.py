@@ -1490,6 +1490,29 @@ def test_ring_verb_defers_a_typing_composer(mesh: Mesh) -> None:
     assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
 
 
+def test_ring_verb_typing_deferral_then_cleared_composer_resend_recovers(mesh: Mesh) -> None:
+    # the completion-ring retry loop the spawn prompts pin: a held draft defers
+    # the ring at exit 3 with the not-submitted wording, and the same ring
+    # resent once the composer clears recovers to exit 0 with the rung wording
+    mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ as i was saying the e")})
+
+    deferred = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
+
+    assert deferred.returncode == 3, deferred.stderr
+    assert "not rung: unsubmitted typing" in deferred.stdout
+    assert "the line was not submitted; resend" in deferred.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+    # the human submits their draft; the composer reads empty again
+    mesh.herdr.set("pane_screens", {})
+
+    resent = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
+
+    assert resent.returncode == 0, resent.stderr
+    assert ["agent", "prompt", WORKER_PANE, "done: simplify figure-publish-gate"] in mesh.herdr.calls()
+    assert resent.stdout.strip().endswith("rung")
+
+
 def test_ring_verb_needs_no_membership_on_either_side(mesh: Mesh) -> None:
     mesh.herdr.set("agents", {"planner": PLANNER_PANE, "worker": WORKER_PANE, "critic": CRITIC_PANE, "seat": "w1:p9"})
 
