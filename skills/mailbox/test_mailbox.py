@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-16.14"
+SKILL_VERSION = "2026-10-24.01"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -45,6 +45,12 @@ with open(os.environ["FAKE_HERDR_LOG"], "a") as f:
 
 DEFAULT_SCREEN = f"※ transcript\n{'─' * 40}\n❯\n{'─' * 40}\n  Model: glm | footer\n"
 DEFAULT_RESPONSE = "✻ Working on the ring line\n"
+# the busy pane's live shape (the probe's captured bytes): the queued line's
+# echo sits above the mutating status spinner and the composer's queued-message
+# hint - chrome, never a consumer row, exactly what the queued-unverified class
+# must not read as delivered
+BUSY_SPINNER = "✽ Envisioning… (running UserPromptSubmit hooks… 2/4 · 31s · thinking more with high effort)\n"
+BUSY_HINT = "❯ Press up to edit queued messages\n"
 
 
 def fail(code):
@@ -88,13 +94,16 @@ if verb == "get":
 if verb == "prompt":
     # a submitted line lands in the pane's visible text: an idle recipient
     # consumes it and a fresh response row follows, a busy one queues it with
-    # nothing fresh after - the readback's delivered and queued shapes. A test
-    # can vanish the send outright (prompt_vanish), the founding miss's shape.
+    # the spinner chrome and the queued-message hint below the echo - the
+    # readback's delivered and queued shapes. A test can vanish the send
+    # outright (prompt_vanish), the founding miss's shape.
     pane = agents[target]
     if not state.get("prompt_vanish", {}).get(target):
         screen = state.get("pane_screens", {}).get(pane, DEFAULT_SCREEN)
         busy = state.get("wait", {}).get(target) == "timeout"
-        state.setdefault("pane_screens", {})[pane] = screen + rest[0] + "\n" + ("" if busy else DEFAULT_RESPONSE)
+        state.setdefault("pane_screens", {})[pane] = screen + rest[0] + "\n" + (
+            BUSY_SPINNER + BUSY_HINT if busy else DEFAULT_RESPONSE
+        )
         with open(state_path, "w") as f:
             json.dump(state, f)
     print("{}")
@@ -1468,6 +1477,8 @@ def test_ring_prompts_a_busy_claude_recipient_mid_turn(mesh: Mesh) -> None:
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
     assert "queued-unverified" in result.stdout
     assert "pane:" in result.stdout
+    # the busy pane's live shape: the pane state names the spinner chrome
+    assert "Envisioning" in result.stdout
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
@@ -1558,6 +1569,8 @@ def test_ring_verb_prompts_a_busy_claude_mid_turn(mesh: Mesh) -> None:
     assert ["agent", "prompt", WORKER_PANE, "queue this until your turn ends"] in mesh.herdr.calls()
     assert "queued-unverified" in result.stdout
     assert "pane:" in result.stdout
+    # the busy pane's live shape: the pane state names the spinner chrome
+    assert "Envisioning" in result.stdout
 
 
 def test_ring_verb_exits_3_when_the_sent_line_leaves_no_trace(mesh: Mesh) -> None:
@@ -1598,6 +1611,58 @@ def test_readback_classifier_joins_a_row_wrapped_sent_line() -> None:
     head, tail = long_line[:24], long_line[24:]
     pre = "※ transcript\n❯\n  Model: glm | footer\n"
     wrapped_queued = pre + head + "\n" + tail + "\n"
+
+    verdict, _ = helper.readback_classify(long_line, pre, wrapped_queued)
+    assert verdict == "queued"
+
+    verdict, _ = helper.readback_classify(long_line, pre,
+                                          wrapped_queued + "✻ Working on the ring line\n")
+    assert verdict == "delivered"
+
+
+def test_readback_classifier_reads_the_mutating_spinner_as_chrome() -> None:
+    # the probe's live busy shape: mid-turn the pane's status spinner mutates
+    # between the pre-send read and the poll - glyph, hook count and elapsed
+    # all change, so no pre-row exclusion catches it, and the composer's
+    # queued-message hints and footer rows drift too - only the chrome shape
+    # keeps the busy verdict queued-unverified, never a false delivered
+    helper = load_helper(HELPER)
+    pre = (
+        "※ transcript\n❯\n"
+        "✢ Transfiguring… (running UserPromptSubmit hooks… 3/4 · 1s)\n"
+        "  Model: glm | footer\n"
+    )
+    post = (
+        "※ transcript\n❯\n"
+        "✢ Transfiguring… (running UserPromptSubmit hooks… 3/4 · 1s)\n"
+        "done: simplify figure-publish-gate\n"
+        "✽ Envisioning… (running UserPromptSubmit hooks… 2/4 · 31s · thinking more with high effort)\n"
+        "ctrl+enter to send now\n"
+        "❯ Press up to edit queued messages\n"
+        "  Model: glm | footer\n"
+    )
+
+    verdict, evidence = helper.readback_classify("done: simplify figure-publish-gate", pre, post)
+    assert verdict == "queued"
+    assert evidence.startswith("queued-unverified; pane:")
+
+    # its delivered converse: a real consumer row after the chrome reads delivered
+    verdict, _ = helper.readback_classify("done: simplify figure-publish-gate", pre,
+                                           post + "  Read 1 file\n")
+    assert verdict == "delivered"
+
+
+def test_readback_classifier_joins_a_continuation_indented_wrap() -> None:
+    # the probe's live wrap shape: claude's wrapped rendering indents the
+    # continuation row two spaces at the seam, so the raw pairwise join
+    # carries the indent where the sent text has none - the join re-runs with
+    # the seam normalized, never a false absent for a line the pane really
+    # holds
+    helper = load_helper(HELPER)
+    long_line = "done: build send-delivery-readback at the improve-lab lab dir"
+    head, tail = long_line[:24], long_line[24:]
+    pre = "※ transcript\n❯\n  Model: glm | footer\n"
+    wrapped_queued = pre + "❯ " + head + "\n  " + tail + "\n"
 
     verdict, _ = helper.readback_classify(long_line, pre, wrapped_queued)
     assert verdict == "queued"
@@ -1821,7 +1886,7 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
 
 
 def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
-    newer = "2026-10-16.99"  # any revision above SKILL_VERSION
+    newer = "2026-10-24.99"  # a version above SKILL_VERSION (date, then revision)
     set_mesh_version(mesh.root, newer)
     readme_before = (mesh.root / "README.md").read_text()
     log = mesh.root / "log.jsonl"

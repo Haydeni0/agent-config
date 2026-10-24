@@ -68,7 +68,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-16.14"
+MAILBOX_VERSION = "2026-10-24.01"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -596,6 +596,32 @@ def prompt_box_state(screen: str) -> str | None:
     return "empty"
 
 
+# claude's pane status chrome, pinned on live captured bytes - never a consumer
+# row, whatever it mutates into between the pre-send read and the poll
+STATUS_SPINNER_GLYPHS = "✳✴✵✶✷✸✹✺✻✼✽✾✿❀❁❂❃❄❅❆✢✣✤✥"
+# the bottom status footer's row markers and the composer's queued-message hints
+FOOTER_MARKERS = ("Model:", "⎇", "⏵⏵")
+QUEUED_HINTS = ("ctrl+enter to send now", "Press up to edit queued messages")
+
+
+def is_pane_chrome(row: str) -> bool:
+    """The pane's own status chrome, never a consumer response. The busy pane's
+    live bytes show three mutating families: the status spinner (glyph-led and
+    carrying an elapsed-seconds marker - it rewrites glyph, hook count and
+    elapsed between two reads, so the pre-send exclusion never catches it), the
+    composer's queued-message hints, and the bottom footer rows (context,
+    cost and truncation all drift while a turn runs). Shape tests on the
+    captured bytes, never a time heuristic."""
+    if is_horizontal_rule(row):
+        return True
+    stripped = row.strip()
+    if stripped.startswith(FOOTER_MARKERS):
+        return True
+    if any(hint in stripped for hint in QUEUED_HINTS):
+        return True
+    return stripped[:1] in STATUS_SPINNER_GLYPHS and re.search(r"\d+s\b", stripped) is not None
+
+
 def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:
     """The R140 classifier at ring scale (bin/lab-control.sh its landed
     readback_classify): delivered only when a row after the sent line's last
@@ -619,12 +645,22 @@ def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:
     if hit is None:
         raw = [row.replace("\r", "") for row in post.splitlines()]
         hit = next((i + 1 for i in range(len(raw) - 1) if sent and sent in raw[i] + raw[i + 1]), None)
+        # claude's wrapped rendering indents the continuation row at the seam
+        # (the live bytes' two-space indent), so the raw join carries the indent
+        # where the sent text has none - re-run the join with the seam stripped
+        if hit is None:
+            hit = next(
+                (i + 1 for i in range(len(raw) - 1) if sent and sent in raw[i] + raw[i + 1].lstrip()),
+                None,
+            )
     if hit is None:
         return "absent", f"absent; pane: {pane_state}"
     for row in post_rows[hit + 1:]:
         # a row the pre-send read already held is pane chrome, not a consumer
-        # response - the discriminator the false-delivered face turns on
-        if row and row != "❯" and row not in pre_rows:
+        # response - and so is a row of the pane's own status chrome, whatever
+        # it mutated into - the two discriminators the false-delivered face
+        # turns on
+        if row and row != "❯" and row not in pre_rows and not is_pane_chrome(row):
             return "delivered", f"delivered; fresh row: {row}"
     return "queued", f"queued-unverified; pane: {pane_state}"
 
