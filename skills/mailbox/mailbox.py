@@ -26,6 +26,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -57,13 +58,17 @@ SEQ_WIDTH = 3
 # sender's own turn; a claude recipient still busy past this is prompted
 # mid-turn anyway (see ring)
 RING_WAIT_MS = 30_000
+# the post-send readback's poll budget, 0.5 s apart: the 5 s cap of the landed
+# control verbs' own readback spine (bin/lab-control.sh its post_send_readback,
+# row R140), which the ring twins so a vanished line names itself at the send
+RING_READBACK_POLLS = 10
 TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 
 # The helper's version. `YYYY-MM-DD.NN`, revision zero-padded; comparison parses
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-16.13"
+MAILBOX_VERSION = "2026-10-16.14"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -435,7 +440,8 @@ def pending_by_member(root: Path) -> dict[str, list[PendingRequest]]:
 
 class RingOutcome(StrEnum):
     RUNG = "rung"
-    BUSY = "rung while busy: recipient was mid-turn; the line queues in its input until it reads it"
+    QUEUED = "rung: queued-unverified; the line sits in the recipient's pane until its turn reads it"
+    ABSENT = "not rung: the sent line left no trace in the recipient's pane"
     NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s and mid-turn prompting is unverified for its harness; the file waits in its inbox"
     BLOCKED = "not rung: at a permission prompt; the file waits in its inbox"
     OFFLINE = "not rung: no live herdr agent at the member's seat - tell the user; a session joining under it drains the inbox"
@@ -590,11 +596,67 @@ def prompt_box_state(screen: str) -> str | None:
     return "empty"
 
 
-def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> RingOutcome:
+def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:
+    """The R140 classifier at ring scale (bin/lab-control.sh its landed
+    readback_classify): delivered only when a row after the sent line's last
+    trace is fresh against the pre-send read, queued when the line sits with
+    nothing fresh after it, absent when no trace of the line survives."""
+    def trimmed(row: str) -> str:
+        # pane text carries ESC rendered as `^[` and CR at line ends
+        return row.replace("^[", "").replace("\r", "").strip(" \t%")
+
+    # a multiline submission renders as several pane rows; the last row of the
+    # sent text is the freshest trace Enter lands after
+    sent = trimmed(sent.splitlines()[-1]) if sent.splitlines() else ""
+    pre_rows = [trimmed(row) for row in pre.splitlines()]
+    post_rows = [trimmed(row) for row in post.splitlines()]
+    pane_state = " ".join(post_rows[-3:]).strip()
+    hit = next((i for i, row in reversed(list(enumerate(post_rows))) if sent and sent in row), None)
+    # a pane row-wraps a long line across adjacent rows (the founding payload's
+    # own done: path shape), so at the missed single-row match join adjacent
+    # pairs - the R140 wrap mitigation verbatim; the raw rows keep the wrap
+    # point's own spacing, which trimming would eat
+    if hit is None:
+        raw = [row.replace("\r", "") for row in post.splitlines()]
+        hit = next((i + 1 for i in range(len(raw) - 1) if sent and sent in raw[i] + raw[i + 1]), None)
+    if hit is None:
+        return "absent", f"absent; pane: {pane_state}"
+    for row in post_rows[hit + 1:]:
+        # a row the pre-send read already held is pane chrome, not a consumer
+        # response - the discriminator the false-delivered face turns on
+        if row and row != "❯" and row not in pre_rows:
+            return "delivered", f"delivered; fresh row: {row}"
+    return "queued", f"queued-unverified; pane: {pane_state}"
+
+
+def ring_readback(pane: str, line: str, pre_read: str) -> tuple[RingOutcome, str]:
+    """The post-send readback: pane reads polled 0.5 s apart to the 5 s cap,
+    the sent line classified against the pre-send read - a vanished line
+    names itself here, never at the next digest beat."""
+    verdict, evidence = "absent", ""
+    for poll in range(RING_READBACK_POLLS):
+        try:
+            post = herdr("pane", "read", "--source", "visible", pane)
+        except HerdrError:
+            post = ""
+        verdict, evidence = readback_classify(line, pre_read, post)
+        if verdict == "delivered":
+            break
+        if poll + 1 < RING_READBACK_POLLS:
+            time.sleep(0.5)
+    return {
+        "delivered": (RingOutcome.RUNG, evidence),
+        "queued": (RingOutcome.QUEUED, evidence),
+    }.get(verdict, (RingOutcome.ABSENT, evidence))
+
+
+def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> tuple[RingOutcome, str]:
     # the seat-level ring every line to a pane must go through: raw
     # `herdr agent prompt` types blind, splicing into a draft a human is
-    # mid-typing, and Enter submits both (#70)
-    busy = False
+    # mid-typing, and Enter submits both (#70). The second return value is the
+    # readback evidence, empty for every not-submitted deferral. The readback
+    # itself is claude-only: pane-read semantics of other harnesses are
+    # unprobed, so a non-claude send reports today's bare rung, no claim.
     try:
         herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(wait_ms))
     except HerdrError as exc:
@@ -606,10 +668,9 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> RingOutcome:
             # herdr still refuses to prompt a blocked agent. Other harnesses
             # are unprobed.
             if recipient_harness(pane) != "claude":
-                return RingOutcome.NOT_IDLE
-            busy = True
+                return RingOutcome.NOT_IDLE, ""
         elif exc.code in UNRUNG:
-            return UNRUNG[exc.code]
+            return UNRUNG[exc.code], ""
         else:
             raise
     if recipient_harness(pane) == "claude":
@@ -622,28 +683,41 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> RingOutcome:
         try:
             screen = herdr("pane", "read", "--source", "detection", "--format", "text", pane)
         except HerdrError:
-            return RingOutcome.COMPOSER_UNSEEN
+            return RingOutcome.COMPOSER_UNSEEN, ""
         state = prompt_box_state(screen)
         if state == "typing":
-            return RingOutcome.TYPING
+            return RingOutcome.TYPING, ""
         if state is None:
-            return RingOutcome.COMPOSER_UNSEEN
+            return RingOutcome.COMPOSER_UNSEEN, ""
+    claude = recipient_harness(pane) == "claude"
+    # the pre-send read the readback diffs against, from the visible source:
+    # the queued line is invisible to the detection view the guard reads
+    pre_read = ""
+    if claude:
+        try:
+            pre_read = herdr("pane", "read", "--source", "visible", pane)
+        except HerdrError:
+            # no pre-send read, no honest classification - refuse rather than
+            # promise a delivery nothing verified
+            return RingOutcome.COMPOSER_UNSEEN, ""
     try:
         herdr("agent", "prompt", pane, line)
     except HerdrError as exc:
         if exc.code in UNRUNG:
-            return UNRUNG[exc.code]
+            return UNRUNG[exc.code], ""
         raise
-    return RingOutcome.BUSY if busy else RingOutcome.RUNG
+    if not claude:
+        return RingOutcome.RUNG, ""
+    return ring_readback(pane, line, pre_read)
 
 
-def ring(root: Path, name: str) -> RingOutcome:
+def ring(root: Path, name: str) -> tuple[RingOutcome, str]:
     # the herdr name is not the member's identity (one pane, several meshes,
     # several names): ring the member's seat pane, and only while its recorded
     # claim is live - never a bare name
     member = member_named(root, name)
     if member is None or not live_claim(member)[0]:
-        return RingOutcome.OFFLINE
+        return RingOutcome.OFFLINE, ""
     return ring_seat(member.seat.pane, wake_line(root, name))
 
 
@@ -651,11 +725,15 @@ def ring_all(root: Path, paths: dict[str, Path]) -> None:
     failed = False
     for name, path in paths.items():
         try:
-            outcome = ring(root, name)
+            outcome, evidence = ring(root, name)
         except HerdrError as exc:
             typer.echo(f"{path} written, ring failed: {exc}")
             failed = True
             continue
+        # the evidence line precedes the outcome so the outcome stays the
+        # line a caller greps for
+        if evidence:
+            typer.echo(f"readback: {evidence}")
         typer.echo(f"{path} {outcome}")
     if failed:
         raise typer.Exit(1)
@@ -843,9 +921,11 @@ def poke(member: str) -> None:
         typer.echo(f"{member}: nothing to poke")
         return
     try:
-        outcome = ring(root, member)
+        outcome, evidence = ring(root, member)
     except HerdrError as exc:
         fail(f"{member}: ring failed: {exc}")
+    if evidence:
+        typer.echo(f"readback: {evidence}")
     typer.echo(f"{member}: {outcome}")
 
 
@@ -859,6 +939,7 @@ SEAT_DEFERRED = {
     ),
     RingOutcome.BLOCKED: "not rung: the seat is at a permission prompt - the line was not submitted; resend once it is unblocked",
     RingOutcome.NOT_IDLE: "not rung: the seat stayed busy and mid-turn prompting is unverified for its harness - the line was not submitted; resend later",
+    RingOutcome.ABSENT: "not rung: the sent line left no trace in the seat's pane - it was not submitted; resend it",
 }
 
 
@@ -874,9 +955,11 @@ def ring_any(
         fail(f"{target}: no live herdr agent at that seat")
     pane = record["pane_id"]
     try:
-        outcome = ring_seat(pane, line, wait_ms)
+        outcome, evidence = ring_seat(pane, line, wait_ms)
     except HerdrError as exc:
         fail(f"{target}: ring failed: {exc}")
+    if evidence:
+        typer.echo(f"readback: {evidence}")
     typer.echo(f"{pane}: {SEAT_DEFERRED.get(outcome, outcome)}")
     if outcome in SEAT_DEFERRED:
         typer.echo("mailbox ring writes no mail - nothing waits anywhere; the caller resends")

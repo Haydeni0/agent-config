@@ -56,7 +56,8 @@ EOF
   Add `--no-ring` for broadcasts and FYI mail; the recipient picks it up at
   its next `take`.
 - A busy claude recipient is prompted mid-turn anyway once its composer is
-  seen empty - the wake line sits in its input until it reads it; a draft in
+  seen empty - the send's readback then names the line's pane state (delivered,
+  or queued-unverified with the pane state), never a bare success; a draft in
   its composer means a human is mid-typing, idle or mid-turn, and it is not
   rung. A busy recipient on any other harness is left for its next `take`.
 - An idle claude recipient that is mid-typing is not rung - a ring would
@@ -107,8 +108,9 @@ can still use it (a multi-line payload passes through verbatim). It carries
 the same composer guard as mail rings: while the seat's human is mid-typing,
 idle or mid-turn, the line is deferred (`not rung`) instead of splicing into
 the draft. Use it in place of every raw `herdr agent prompt` to an agent
-pane. Exit 0 means submitted (`rung`, or `rung while busy` - the line queues
-in the seat's input); exit 3 means not submitted - nothing waits anywhere,
+pane. Exit 0 names the line's pane state (delivered, `rung`, the readback
+naming the fresh row, or `rung: queued-unverified` with the pane state); exit 3
+means not submitted, the no-trace shape included - nothing waits anywhere,
 the caller resends (a heartbeat's next beat is a natural retry).
 `--wait-ms <ms>` bounds the idle wait before the mid-turn fallback;
 `--wait-ms 0` checks and falls through at once. The composer guard is

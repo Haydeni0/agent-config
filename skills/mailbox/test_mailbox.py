@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-16.13"
+SKILL_VERSION = "2026-10-16.14"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -42,6 +42,9 @@ with open(state_path) as f:
     state = json.load(f)
 with open(os.environ["FAKE_HERDR_LOG"], "a") as f:
     f.write(json.dumps(sys.argv[1:]) + "\n")
+
+DEFAULT_SCREEN = f"※ transcript\n{'─' * 40}\n❯\n{'─' * 40}\n  Model: glm | footer\n"
+DEFAULT_RESPONSE = "✻ Working on the ring line\n"
 
 
 def fail(code):
@@ -65,8 +68,7 @@ if _group == "pane" and verb == "read":
     pane = rest[-1] if rest else target
     if (code := state.get("pane_read_errors", {}).get(pane)):
         fail(code)
-    default = f"※ transcript\n{'─' * 40}\n❯\n{'─' * 40}\n  Model: glm | footer\n"
-    sys.stdout.write(state.get("pane_screens", {}).get(pane, default))
+    sys.stdout.write(state.get("pane_screens", {}).get(pane, DEFAULT_SCREEN))
     sys.exit(0)
 if verb != "rename":
     # herdr agent commands accept pane ids; state and test overrides key by name
@@ -82,6 +84,20 @@ if verb == "get":
     if (session_id := state.get("agent_sessions", {}).get(target)) is not None:
         agent["agent_session"] = {"kind": "id", "value": session_id}
     print(json.dumps({"result": {"agent": agent}}))
+    sys.exit(0)
+if verb == "prompt":
+    # a submitted line lands in the pane's visible text: an idle recipient
+    # consumes it and a fresh response row follows, a busy one queues it with
+    # nothing fresh after - the readback's delivered and queued shapes. A test
+    # can vanish the send outright (prompt_vanish), the founding miss's shape.
+    pane = agents[target]
+    if not state.get("prompt_vanish", {}).get(target):
+        screen = state.get("pane_screens", {}).get(pane, DEFAULT_SCREEN)
+        busy = state.get("wait", {}).get(target) == "timeout"
+        state.setdefault("pane_screens", {})[pane] = screen + rest[0] + "\n" + ("" if busy else DEFAULT_RESPONSE)
+        with open(state_path, "w") as f:
+            json.dump(state, f)
+    print("{}")
     sys.exit(0)
 print("{}")
 '''
@@ -1123,7 +1139,8 @@ def test_poke_rings_a_member_about_mail_already_waiting(mesh: Mesh) -> None:
 
     assert result.returncode == 0, result.stderr
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
-    assert result.stdout.strip() == "worker: rung"
+    assert "readback: delivered" in result.stdout
+    assert result.stdout.strip().endswith("worker: rung")
     assert len(list(mesh.inbox("worker").glob("*.msg"))) == 1
 
 
@@ -1449,7 +1466,8 @@ def test_ring_prompts_a_busy_claude_recipient_mid_turn(mesh: Mesh) -> None:
 
     assert result.returncode == 0, result.stderr
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
-    assert "rung while busy" in result.stdout
+    assert "queued-unverified" in result.stdout
+    assert "pane:" in result.stdout
     assert (mesh.inbox("worker") / "planner.001-x.msg").exists()
 
 
@@ -1470,6 +1488,8 @@ def test_ring_verb_prompts_an_idle_recipient_by_pane_id(mesh: Mesh) -> None:
 
     assert result.returncode == 0, result.stderr
     assert ["agent", "prompt", WORKER_PANE, "done: simplify figure-publish-gate"] in mesh.herdr.calls()
+    # the delivered readback: the fresh consumer row named beside the outcome
+    assert "readback: delivered" in result.stdout
     assert result.stdout.strip().endswith("rung")
 
 
@@ -1536,7 +1556,55 @@ def test_ring_verb_prompts_a_busy_claude_mid_turn(mesh: Mesh) -> None:
 
     assert result.returncode == 0, result.stderr
     assert ["agent", "prompt", WORKER_PANE, "queue this until your turn ends"] in mesh.herdr.calls()
-    assert "rung while busy" in result.stdout
+    assert "queued-unverified" in result.stdout
+    assert "pane:" in result.stdout
+
+
+def test_ring_verb_exits_3_when_the_sent_line_leaves_no_trace(mesh: Mesh) -> None:
+    # the founding miss: the prompt call exits clean and the line never lands -
+    # the readback must report it not submitted so the caller's resend ladder
+    # fires, never exit 0 "rung"
+    mesh.herdr.set("prompt_vanish", {"worker": "vanish"})
+
+    result = mesh.run("ring", WORKER_PANE, "done: simplify figure-publish-gate", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stderr
+    assert "not rung: the sent line left no trace" in result.stdout
+    assert "resend" in result.stdout
+    assert "writes no mail" in result.stdout
+
+
+def test_readback_classifier_reads_stale_trailing_chrome_as_queued() -> None:
+    # the false-delivered discriminator: a trailing row the pre-send read
+    # already held is pane chrome, not a consumer response
+    helper = load_helper(HELPER)
+    pre = "※ transcript\n❯\n  Model: glm | footer\n"
+    post = pre + "done: simplify figure-publish-gate\n  Model: glm | footer\n"
+
+    verdict, _ = helper.readback_classify("done: simplify figure-publish-gate", pre, post)
+    assert verdict == "queued"
+
+    verdict, _ = helper.readback_classify("done: simplify figure-publish-gate", pre,
+                                          post + "✻ Working on the ring line\n")
+    assert verdict == "delivered"
+
+
+def test_readback_classifier_joins_a_row_wrapped_sent_line() -> None:
+    # the founding payload's own shape: a long done: path wraps at the pane's
+    # column, splitting the sent line across adjacent rows - the R140 wrap
+    # join must classify it, never absent
+    helper = load_helper(HELPER)
+    long_line = "done: build send-delivery-readback at the improve-lab lab dir"
+    head, tail = long_line[:24], long_line[24:]
+    pre = "※ transcript\n❯\n  Model: glm | footer\n"
+    wrapped_queued = pre + head + "\n" + tail + "\n"
+
+    verdict, _ = helper.readback_classify(long_line, pre, wrapped_queued)
+    assert verdict == "queued"
+
+    verdict, _ = helper.readback_classify(long_line, pre,
+                                          wrapped_queued + "✻ Working on the ring line\n")
+    assert verdict == "delivered"
 
 
 def test_ring_verb_defers_a_busy_seat_with_a_typing_composer(mesh: Mesh) -> None:
