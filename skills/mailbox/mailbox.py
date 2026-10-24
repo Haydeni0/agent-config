@@ -68,7 +68,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-24.01"
+MAILBOX_VERSION = "2026-10-24.02"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -596,9 +596,14 @@ def prompt_box_state(screen: str) -> str | None:
     return "empty"
 
 
-# claude's pane status chrome, pinned on live captured bytes - never a consumer
-# row, whatever it mutates into between the pre-send read and the poll
-STATUS_SPINNER_GLYPHS = "✳✴✵✶✷✸✹✺✻✼✽✾✿❀❁❂❃❄❅❆✢✣✤✥"
+# claude's pane status chrome - never a consumer row, whatever it mutates into
+# between the pre-send read and the poll. The spinner's frame set mutates per
+# session and per CLI version (the round-2 hooks-phase capture emits a frame no
+# captured list holds), so the family keys on its structural signature, never
+# a glyph enumeration: a status row led by a symbol glyph and carrying the
+# parenthesised activity marker with its elapsed-seconds component, whatever
+# the glyph frame
+STATUS_ROW_SHAPE = re.compile(r"^[^\x00-\x7f\w\s].*\(.*\d+s\b")
 # the bottom status footer's row markers and the composer's queued-message hints
 FOOTER_MARKERS = ("Model:", "⎇", "⏵⏵")
 QUEUED_HINTS = ("ctrl+enter to send now", "Press up to edit queued messages")
@@ -606,12 +611,13 @@ QUEUED_HINTS = ("ctrl+enter to send now", "Press up to edit queued messages")
 
 def is_pane_chrome(row: str) -> bool:
     """The pane's own status chrome, never a consumer response. The busy pane's
-    live bytes show three mutating families: the status spinner (glyph-led and
-    carrying an elapsed-seconds marker - it rewrites glyph, hook count and
-    elapsed between two reads, so the pre-send exclusion never catches it), the
-    composer's queued-message hints, and the bottom footer rows (context,
-    cost and truncation all drift while a turn runs). Shape tests on the
-    captured bytes, never a time heuristic."""
+    live bytes show three mutating families: the status spinner (a symbol-glyph
+    row carrying the parenthesised activity marker with its elapsed-seconds
+    component - it rewrites glyph, hook count and elapsed between two reads, so
+    the pre-send exclusion never catches it), the composer's queued-message
+    hints, and the bottom footer rows (context, cost and truncation all drift
+    while a turn runs). Shape tests on the captured bytes, never a time
+    heuristic."""
     if is_horizontal_rule(row):
         return True
     stripped = row.strip()
@@ -619,7 +625,7 @@ def is_pane_chrome(row: str) -> bool:
         return True
     if any(hint in stripped for hint in QUEUED_HINTS):
         return True
-    return stripped[:1] in STATUS_SPINNER_GLYPHS and re.search(r"\d+s\b", stripped) is not None
+    return STATUS_ROW_SHAPE.match(stripped) is not None
 
 
 def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:

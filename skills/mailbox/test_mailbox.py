@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-24.01"
+SKILL_VERSION = "2026-10-24.02"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1621,11 +1621,13 @@ def test_readback_classifier_joins_a_row_wrapped_sent_line() -> None:
 
 
 def test_readback_classifier_reads_the_mutating_spinner_as_chrome() -> None:
-    # the probe's live busy shape: mid-turn the pane's status spinner mutates
+    # the probes' live busy shape: mid-turn the pane's status spinner mutates
     # between the pre-send read and the poll - glyph, hook count and elapsed
     # all change, so no pre-row exclusion catches it, and the composer's
-    # queued-message hints and footer rows drift too - only the chrome shape
-    # keeps the busy verdict queued-unverified, never a false delivered
+    # queued-message hints and footer rows drift too. The spinner keys on its
+    # structural signature, never a glyph enumeration - the round-2 frame
+    # sits outside the round-1 family, and both read chrome, keeping the busy
+    # verdict queued-unverified, never a false delivered
     helper = load_helper(HELPER)
     pre = (
         "※ transcript\n❯\n"
@@ -1637,6 +1639,7 @@ def test_readback_classifier_reads_the_mutating_spinner_as_chrome() -> None:
         "✢ Transfiguring… (running UserPromptSubmit hooks… 3/4 · 1s)\n"
         "done: simplify figure-publish-gate\n"
         "✽ Envisioning… (running UserPromptSubmit hooks… 2/4 · 31s · thinking more with high effort)\n"
+        "· Metamorphosing… (running UserPromptSubmit hooks… 0/3 · 32s · thinking some more with high effort)\n"
         "ctrl+enter to send now\n"
         "❯ Press up to edit queued messages\n"
         "  Model: glm | footer\n"
