@@ -24,6 +24,7 @@ def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
     (home / "harnesses/pi").mkdir(parents=True)
     (home / "harnesses/pi" / "settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}))
+    (home / "harnesses/pi" / "mcp.json").write_text(json.dumps({"mcpServers": {"codegraph": {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}}}))
     (home / "harnesses/goose").mkdir(parents=True)
     (home / "harnesses/goose" / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: false\n")
     (home / "harnesses/goose" / "custom_providers").mkdir(parents=True)

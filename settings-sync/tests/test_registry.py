@@ -29,3 +29,11 @@ def test_all_skips_omitted_destinations(source_home: Path, tmp_path: Path):
     outcomes, _ = run_all_tools(paths, False, False)
     assert any(outcome.status == Status.CREATED for outcome in outcomes)
     assert not any(outcome.status == Status.FAILED for outcome in outcomes)
+
+
+def test_codegraph_group_is_first_and_has_both_steps():
+    from settings_sync.registry import HARNESSES
+
+    assert HARNESSES[0].name == "codegraph"
+    assert [step.name for step in HARNESSES[0].steps] == ["binary", "claude-mcp"]
+    assert HARNESSES[0].host == "codegraph"
