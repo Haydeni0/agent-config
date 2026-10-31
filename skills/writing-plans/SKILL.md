@@ -34,6 +34,25 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during the grill/spec stage. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
 
+## Slicing
+
+Cut the work into vertical tracer-bullet slices before mapping files. Each
+task is a narrow but complete path through every layer (schema, API, UI,
+tests) that works and can be verified on its own - never a horizontal slice
+of one layer. Size each slice to fit one fresh context window.
+
+Prefactor first: where the change is easier on cleaned-up ground ("make the
+change easy, then make the easy change"), the prefactor is its own task,
+placed first and blocking the tasks that need it.
+
+Wide refactors are the exception. A wide refactor is one mechanical change
+(rename a shared symbol, retype a column) whose blast radius spans the whole
+codebase, so no vertical slice lands green alone. Sequence it expand-contract
+on this plan's single branch: expand - new form beside the old, nothing
+breaks - as its own task; migrate call sites in batches sized by blast
+radius, each batch a task blocked by the expand; contract - delete the old
+form once no caller remains - a task blocked by every batch.
+
 ## File Structure
 
 Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
@@ -107,6 +126,8 @@ include this section.]
   and return types. A task's implementer sees only their own task; this
   block is how they learn the names and types neighboring tasks use.]
 
+**Blocked by:** <the tasks that must complete before this one, by number - `Task 2, Task 4` - or `None`; the grammar and mechanical check are the work-package skill's dependency-edge contract>
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
@@ -159,6 +180,10 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 **2. Placeholder scan:** Search your plan for red flags — any of the patterns from the "No Placeholders" section above. Fix them.
 
 **3. Type consistency:** Do the types, method signatures, and property names you used in later tasks match what you defined in earlier tasks? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
+
+**4. Edge check:** every task carries its `Blocked by` line and the edges are
+correct - run the work-package graph tool's `check` on the directory holding
+this plan and fix every finding.
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
