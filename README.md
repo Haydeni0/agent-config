@@ -219,7 +219,7 @@ flowchart LR
     %% ponytail_review[ponytail-review]
     %% pr_description[pr-description]
     pr_review[pr-review]
-    %% prototype[prototype]
+    prototype[prototype]
     pytest_guidelines[pytest-guidelines]
     %% python_notebook[python-notebook]
     reflect[reflect]
@@ -256,6 +256,8 @@ flowchart LR
     design_log --> writing_plans
     design_log --> work_package
     design_log --> requirements
+    design_log --> research_spike
+    design_log --> prototype
     dev_cycle --> grill_me
     dev_cycle --> test_plan
     dev_cycle --> write_spec
@@ -268,6 +270,7 @@ flowchart LR
     doc_sweep --> doc_reformat
     executing_plans --> tdd
     executing_plans --> verification_before_completion
+    executing_plans --> work_package
     linear_agent_update --> living_doc
     linear_agent_update --> claim_verification
     living_doc --> claim_verification
