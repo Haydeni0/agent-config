@@ -8,7 +8,7 @@ from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
 from settings_sync.claude import claude_home, sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
-from settings_sync.codegraph import sync_claude_mcp, sync_codegraph_binary
+from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary
 from settings_sync.commands import sync_commands
 from settings_sync.codex import sync_codex_agents_md, sync_codex_config, sync_codex_sqlite_home
 from settings_sync.config import sync_config, sync_tui
@@ -77,6 +77,7 @@ HARNESSES = (
     Harness("agy", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "agy", d), ("harnesses/gemini/hooks.json", "hooks/command.mjs")),
         Step("settings", lambda p, f, d: [sync_agy_settings((p.agy_cli_dir or p.target("agy")) / "settings.json", p.source_dir / "harnesses/gemini/settings.json", f, d)], ("harnesses/gemini/settings.json",)),
+        Step("mcp", lambda p, f, d: sync_agy_mcp(p, d), ()),
         Step("agents-md", lambda p, f, d: [sync_agy_agents_md(p.target("agy") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
         Step("skills", lambda p, f, d: sync_agy_skills(p.target("agy") / "skills", p.source_dir / "skills", f, d), ("skills",)),
     ), lambda p: p.agy_dir, "agy"),

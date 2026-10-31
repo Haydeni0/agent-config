@@ -145,3 +145,27 @@ def sync_claude_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
     target = claude_mcp_json_path(paths)
     content = json.dumps(CLAUDE_MCP_ENTRY, indent=2)
     return [sync_json_defaults(target, content, dry_run)]
+
+
+def agy_mcp_config_path(paths: Paths) -> Path:
+    """Unified ~/.gemini/config/mcp_config.json when migrated (marker or file
+    exists - Antigravity creates the file on first launch post-migration),
+    else the legacy ~/.gemini/antigravity/mcp_config.json. The legacy path
+    derives from agy_dir so --agy-dir provides test isolation."""
+    unified = paths.agy_dir / "mcp_config.json"
+    if (paths.agy_dir / ".migrated").exists() or unified.exists():
+        return unified
+    return paths.agy_dir.parent / "antigravity" / "mcp_config.json"
+
+
+def sync_agy_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
+    """Keyed-merge the Antigravity MCP entry. No 'type' field - Antigravity
+    rejects type: "stdio" entries. On darwin the command is the absolute
+    launcher path (GUI launches get a stripped PATH); the pinned path is
+    computable without the binary, so it serves as the fallback."""
+    command: str = "codegraph"
+    if current_platform() == "darwin":
+        command = str(paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph")
+    entry = {"mcpServers": {"codegraph": {"command": command, "args": ["serve", "--mcp"]}}}
+    target = agy_mcp_config_path(paths)
+    return [sync_json_defaults(target, json.dumps(entry, indent=2), dry_run)]

@@ -242,3 +242,77 @@ def test_claude_mcp_refuses_unparseable_target(tmp_path: Path, monkeypatch: pyte
     assert outcomes[0].status == Status.FAILED
     assert "could not merge JSON configuration" in outcomes[0].detail
     assert target.read_text() == "{not json"
+
+
+def _agy_paths(tmp_path: Path, **overrides) -> Paths:
+    source = tmp_path / "source"
+    source.mkdir(exist_ok=True)
+    return resolve_paths(claude_dir=source, agy_dir=tmp_path / "gemini-config", codegraph_dir=tmp_path / "cg", **overrides)
+
+
+def test_agy_mcp_uses_unified_path_when_migrated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_agy_mcp
+
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
+    paths = _agy_paths(tmp_path)
+    paths.agy_dir.mkdir(parents=True)
+    (paths.agy_dir / ".migrated").write_text("")
+    sync_agy_mcp(paths, dry_run=False)
+    target = paths.agy_dir / "mcp_config.json"
+    assert target.is_file()
+    entry = json.loads(target.read_text())["mcpServers"]["codegraph"]
+    assert entry == {"command": "codegraph", "args": ["serve", "--mcp"]}
+    assert "type" not in entry
+
+
+def test_agy_mcp_uses_unified_path_when_file_exists_without_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_agy_mcp
+
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
+    paths = _agy_paths(tmp_path)
+    paths.agy_dir.mkdir(parents=True)
+    (paths.agy_dir / "mcp_config.json").write_text(json.dumps({"mcpServers": {"other": {"command": "other"}}}))
+    sync_agy_mcp(paths, dry_run=False)
+    data = json.loads((paths.agy_dir / "mcp_config.json").read_text())
+    assert data["mcpServers"]["other"] == {"command": "other"}
+    assert data["mcpServers"]["codegraph"]["command"] == "codegraph"
+
+
+def test_agy_mcp_falls_back_to_legacy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_agy_mcp
+
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
+    paths = _agy_paths(tmp_path)
+    paths.agy_dir.mkdir(parents=True)
+    sync_agy_mcp(paths, dry_run=False)
+    legacy = paths.agy_dir.parent / "antigravity" / "mcp_config.json"
+    assert legacy.is_file()
+    assert not (paths.agy_dir / "mcp_config.json").exists()
+
+
+def test_agy_mcp_darwin_writes_absolute_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_agy_mcp
+
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "darwin")
+    paths = _agy_paths(tmp_path)
+    paths.agy_dir.mkdir(parents=True)
+    (paths.agy_dir / ".migrated").write_text("")
+    launcher = paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph"
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    launcher.write_text("#!/bin/sh\n")
+    sync_agy_mcp(paths, dry_run=False)
+    entry = json.loads((paths.agy_dir / "mcp_config.json").read_text())["mcpServers"]["codegraph"]
+    assert entry["command"] == str(launcher)
+    assert entry["args"] == ["serve", "--mcp"]
+
+
+def test_agy_mcp_darwin_missing_binary_uses_pinned_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_agy_mcp
+
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "darwin")
+    paths = _agy_paths(tmp_path)
+    paths.agy_dir.mkdir(parents=True)
+    (paths.agy_dir / ".migrated").write_text("")
+    sync_agy_mcp(paths, dry_run=False)
+    entry = json.loads((paths.agy_dir / "mcp_config.json").read_text())["mcpServers"]["codegraph"]
+    assert entry["command"] == str(paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph")
