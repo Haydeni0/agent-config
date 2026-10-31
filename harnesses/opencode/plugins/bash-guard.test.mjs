@@ -1,9 +1,9 @@
 // Tests for the bash-guard opencode plugin.
 //
-// Command cases are loaded from command-cases.json (shared with the
-// Claude check-bash-guard.sh hook test at ~/.claude/custom/hooks/).
-// Harness-specific tests (plugin no-op when tool !== "bash", missing args)
-// stay here - they have no Claude hook analogue.
+// Command cases are loaded from hooks/tests/fixtures/command-cases.json
+// (shared with hooks/tests/command.test.mjs, which runs them through the
+// shared core). Harness-specific tests (plugin no-op when tool !== "bash",
+// missing args) stay here - they have no hook-entry analogue.
 //
 // Two layers are tested here:
 //   1. decide(command)        - pure function, the policy logic

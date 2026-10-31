@@ -32,7 +32,7 @@ exposes a turn-end event yet.
 
 | Harness | Command registration | Verification |
 |---|---|---|
-| Claude Code | Existing Bash hook, thin Bash/Node entry point | CLI 2.1.301: allow, deny, broken entry point, timeout, gate env; Cursor 3.24.12 third-party hook import: translated preToolUse/Shell payload accepted, deny honored |
+| Claude Code | `settings.json` `PreToolUse` Bash group running the synced Node command | CLI 2.1.316: allow, deny, broken entry point, timeout, gate env; Cursor 3.24.12 third-party hook import: translated preToolUse/Shell payload accepted, deny honored |
 | Codex | `hooks.json`, `PreToolUse` Bash mapping | CLI 0.162.1: allow, deny, broken entry point, timeout, untrusted hook, gate env |
 | Opencode | `tool.execute.before` plugin | CLI 1.18.29: allow, deny, gate env |
 | Pi | `tool_call` extension | CLI 0.80.6: allow, deny, gate env |
@@ -68,7 +68,9 @@ certification: [Claude launcher](https://github.com/kunchenguid/no-mistakes/blob
 
 ## Install and update
 
-Use Node.js 22+; the Claude compatibility entry also requires Bash and jq.
+Use Node.js 22+ for every command-hook harness, Claude included; the Claude
+forwarder `custom/hooks/check-bash-guard.sh` (kept for installs whose settings
+still name it) also requires Bash.
 Command-hook sync records the available Node executable and absolute checkout
 path, quoted for spaces. Rerun sync after moving the checkout or Node executable.
 Opencode/Pi use their own JavaScript runtimes.

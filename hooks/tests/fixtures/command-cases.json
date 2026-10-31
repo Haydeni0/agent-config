@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared corpus for bash-guard hooks. Consumed by test_bash_guard.py (Claude check-bash-guard.sh) and bash-guard.test.mjs (opencode bash-guard.js). Add commands here; both test suites parametrize from this file. Each group: expect 'deny' (with needle that must appear in the reason) or 'allow'. Harness-specific tests (payload parsing, plugin no-op) stay in their respective test files.",
+  "$comment": "Shared corpus for the command policy. Consumed by command.test.mjs (shared core) and bash-guard.test.mjs (opencode bash-guard.js). Add commands here; both test suites iterate this file. Each group: expect 'deny' (with needle that must appear in the reason) or 'allow'. Harness-specific tests (payload parsing, plugin no-op) stay in their respective test files.",
   "groups": [
     {
       "name": "s3_deletes_blocked",
