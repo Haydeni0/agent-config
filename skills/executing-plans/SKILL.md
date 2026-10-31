@@ -3,7 +3,7 @@ name: executing-plans
 layer: worker
 description: >
   Use when the user asks to execute or implement a written implementation plan (checkbox-tracked plan file), in this or a fresh session. Not auto-triggered: never invoke unless a written plan document exists and the user asks to carry it out.
-deps: [tdd, verification-before-completion]
+deps: [tdd, verification-before-completion, work-package]
 forked-from: superpowers@claude-plugins-official v6.3.0 (executing-plans)
 forked-date: 2026-09-01
 forked-note: description rewritten to require explicit user request; see Provenance line in body
@@ -33,6 +33,11 @@ Load plan, review critically, execute all tasks, report when complete.
 5. If no concerns: Create todos for the plan items and proceed
 
 ### Step 2: Execute Tasks
+
+Pick the next task from the plan's frontier, not by reading order: load the
+work-package skill and run its graph tool on the directory holding the plan
+file - `frontier <dir> | jq '.[0]'` - then repeat after each task completes.
+A plan with no `Blocked by` lines anywhere is legacy: execute tasks in order.
 
 For each task:
 1. Mark as in_progress
