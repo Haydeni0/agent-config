@@ -109,3 +109,61 @@ def test_fenced_content_ignored(graph: types.ModuleType, tmp_path: Path):
         "```markdown\n### Task 2: fake\n**Blocked by:** Task 99\n```\n"
     )
     assert check(graph, tmp_path, plan=plan) == []
+
+
+def test_t5_dangling_q_ref(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n- Q1. First? Blocked by: Q7\n"
+    )
+    assert any("Q7" in f for f in check(graph, tmp_path, decisions=decisions))
+
+
+def test_t5b_resolves_citation_closes(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Decisions\n\n- D1. **X.** Resolves Q7.\n\n"
+        "## Open questions\n\n- Q1. First? Blocked by: Q7\n"
+    )
+    assert check(graph, tmp_path, decisions=decisions) == []
+
+
+def test_t6_struck_q_closes(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n"
+        "- Q1. First? Blocked by: Q2\n- ~~Q2. Old?~~ Superseded.\n"
+    )
+    assert check(graph, tmp_path, decisions=decisions) == []
+
+
+def test_t7_q_tags(graph: types.ModuleType, tmp_path: Path):
+    bad = "state: grill\n\n## Open questions\n\n- Q1 [spike]. First?\n"
+    assert any("spike" in f for f in check(graph, tmp_path, decisions=bad))
+    good = "state: grill\n\n## Open questions\n\n- Q1 [research]. First?\n- Q2. Second?\n"
+    assert check(graph, tmp_path, decisions=good) == []
+
+
+def test_t9_duplicate_q_id(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n- Q1. A?\n- Q1. B?\n"
+    )
+    assert any("duplicate" in f.lower() for f in check(graph, tmp_path, decisions=decisions))
+
+
+def test_cross_file_ref_in_decisions(graph: types.ModuleType, tmp_path: Path):
+    decisions = "state: grill\n\n## Open questions\n\n- Q1. A? Blocked by: Task 2\n"
+    assert any("cross" in f.lower() for f in check(graph, tmp_path, decisions=decisions))
+
+
+def test_q_cycle(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n"
+        "- Q1. A? Blocked by: Q2\n- Q2. B? Blocked by: Q1\n"
+    )
+    assert any("cycle" in f.lower() for f in check(graph, tmp_path, decisions=decisions))
+
+
+def test_q_title_excludes_blocked_by_text(graph: types.ModuleType, tmp_path: Path):
+    qs, resolved = graph.parse_decisions(
+        "## Open questions\n\n- Q1. What is it? Blocked by: Q2\n- Q2. B?\n"
+    )
+    assert qs[0].title == "What is it?"
+    assert qs[0].blocked_by == ["Q2"]

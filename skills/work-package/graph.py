@@ -179,4 +179,90 @@ def check_pkg(pkg: Path) -> list[str]:
     plan = pkg / "plan.md"
     if plan.exists():
         findings += _check_plan(parse_plan(plan.read_text()))
+    decisions = pkg / "decisions.md"
+    if decisions.exists():
+        qs, resolved = parse_decisions(decisions.read_text())
+        findings += _check_decisions(qs, resolved)
     return findings
+
+
+def parse_decisions(text: str) -> tuple[list[QNode], set[int]]:
+    """Returns every Q entry (open and struck, in file order) plus the set of
+    Q nums some `Resolves Q<n>` citation closes."""
+    qs: list[QNode] = []
+    resolved: set[int] = set()
+    cur: QNode | None = None
+    for raw in _unfenced(text):
+        rm = RESOLVES_RE.search(raw)
+        if rm:
+            resolved.add(int(rm.group(1)))
+        m = Q_RE.match(raw)
+        if m:
+            struck = m.group(1) is not None
+            qtype = m.group(3)
+            cur = QNode(num=int(m.group(2)), title=m.group(4).strip(), qtype=qtype, struck=struck)
+            qs.append(cur)
+            bm = Q_BLOCKED_RE.search(cur.title)
+            if bm:
+                cur.blocked_by = [t.strip().rstrip("?.!~") for t in bm.group(1).split(",")]
+                cur.title = cur.title[: bm.start()].strip().rstrip(",;~-").strip() or cur.title
+            continue
+        if cur is not None and raw.startswith("  ") and not raw.strip().startswith("- "):
+            bm = Q_BLOCKED_RE.search(raw)
+            if bm:
+                cur.blocked_by = [t.strip().rstrip("?.!~") for t in bm.group(1).split(",")]
+    return qs, resolved
+
+
+def _check_decisions(qs: list[QNode], resolved: set[int]) -> list[str]:
+    f: list[str] = []
+    seen: set[int] = set()
+    for q in qs:
+        if q.num in seen:
+            f.append(f"decisions.md: duplicate question ID {q.id}")
+        seen.add(q.num)
+        if q.qtype is not None and q.qtype not in Q_TYPES:
+            f.append(f"decisions.md: {q.id} unknown type tag {q.qtype!r} (allowed: {' | '.join(Q_TYPES)})")
+    for q in qs:
+        for r in q.blocked_by:
+            m = TASK_REF_RE.match(r)
+            if m:
+                f.append(f"decisions.md: {q.id} cross-file reference Task {m.group(1)} - edges stay within one file")
+                continue
+            m = Q_REF_RE.match(r)
+            if m:
+                num = int(m.group(1))
+                if num not in seen and num not in resolved:
+                    f.append(f"decisions.md: {q.id} blocked by unknown Q{num}")
+            else:
+                f.append(f"decisions.md: {q.id} unparseable reference {r!r}")
+    # cycles among open Qs
+    open_qs = {q.num: q for q in qs if not q.struck}
+    color: dict[int, int] = {}
+    chain: list[int] = []
+
+    def dfs(n: int) -> str | None:
+        color[n] = 1
+        chain.append(n)
+        for r in open_qs[n].blocked_by:
+            m = Q_REF_RE.match(r)
+            if not m or int(m.group(1)) not in open_qs:
+                continue
+            nxt = int(m.group(1))
+            if color.get(nxt, 0) == 1:
+                i = chain.index(nxt)
+                return " -> ".join(f"Q{x}" for x in chain[i:] + [nxt])
+            if color.get(nxt, 0) == 0:
+                got = dfs(nxt)
+                if got:
+                    return got
+        color[n] = 2
+        chain.pop()
+        return None
+
+    for n in open_qs:
+        if color.get(n, 0) == 0:
+            got = dfs(n)
+            if got:
+                f.append(f"decisions.md: dependency cycle: {got}")
+    return f
