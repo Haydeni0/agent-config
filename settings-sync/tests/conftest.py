@@ -35,6 +35,9 @@ def source_home(tmp_path: Path) -> Path:
     (source / "harnesses/goose" / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: false\n")
     (source / "harnesses/goose" / "custom_providers").mkdir()
     (source / "harnesses/no-mistakes" / "config.yaml").write_text("{}\n")
+    (source / "harnesses/pi" / "mcp.json").write_text(json.dumps({
+        "mcpServers": {"codegraph": {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}}
+    }))
     (source / "harnesses/codex" / "config.toml").write_text('model = "shared"\n')
     (source / "harnesses/opencode/plugins").mkdir()
     install_hook_sources(source)

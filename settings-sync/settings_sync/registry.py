@@ -8,7 +8,7 @@ from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
 from settings_sync.claude import claude_home, sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
-from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary
+from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary, sync_pi_mcp
 from settings_sync.commands import sync_commands
 from settings_sync.codex import sync_codex_agents_md, sync_codex_config, sync_codex_sqlite_home
 from settings_sync.config import sync_config, sync_tui
@@ -64,6 +64,7 @@ HARNESSES = (
     Harness("pi", (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),
         Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=claude_home(p))], ("harnesses/pi/settings.json",)),
+        Step("mcp", lambda p, f, d: sync_pi_mcp(p, d), ("harnesses/pi/mcp.json",)),
         Step("context", lambda p, f, d: [sync_pi_context(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
         Step("keybindings", lambda p, f, d: [sync_pi_keybindings(p.target("pi") / "keybindings.json", p.source_dir / "harnesses/pi/keybindings.json", d, force=f)]),
     ), lambda p: p.pi_dir, "pi"),

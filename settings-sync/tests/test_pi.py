@@ -42,6 +42,7 @@ def pi_home(tmp_path: pathlib.Path) -> pathlib.Path:
     home = tmp_path / "claude"
     (home / "harnesses/pi").mkdir(parents=True)
     (home / "harnesses/pi" / "settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"]}))
+    (home / "harnesses/pi" / "mcp.json").write_text(json.dumps({"mcpServers": {"codegraph": {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}}}))
     (home / "harnesses/pi" / "keybindings.json").write_text(json.dumps({"app.tree.foldOrUp": ["alt+left"], "app.tree.unfoldOrDown": ["alt+right"]}))
     (home / "rules").mkdir(parents=True, exist_ok=True)
     (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")

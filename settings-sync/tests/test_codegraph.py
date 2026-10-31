@@ -316,3 +316,24 @@ def test_agy_mcp_darwin_missing_binary_uses_pinned_path(tmp_path: Path, monkeypa
     sync_agy_mcp(paths, dry_run=False)
     entry = json.loads((paths.agy_dir / "mcp_config.json").read_text())["mcpServers"]["codegraph"]
     assert entry["command"] == str(paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph")
+
+
+def test_pi_mcp_merges_and_preserves_user_servers(tmp_path: Path):
+    from settings_sync.codegraph import sync_pi_mcp
+
+    (tmp_path / "source").mkdir()
+    paths = resolve_paths(claude_dir=tmp_path / "source", pi_dir=tmp_path / "pi", codegraph_dir=tmp_path / "cg")
+    target = paths.pi_dir / "mcp.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"mcpServers": {"mine": {"command": "mine"}}}))
+    template = paths.source_dir / "harnesses/pi/mcp.json"
+    template.parent.mkdir(parents=True)
+    template.write_text(json.dumps({
+        "mcpServers": {"codegraph": {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}}
+    }))
+    sync_pi_mcp(paths, dry_run=False)
+    data = json.loads(target.read_text())
+    assert data["mcpServers"]["mine"] == {"command": "mine"}
+    entry = data["mcpServers"]["codegraph"]
+    assert entry == {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}
+    assert "type" not in entry

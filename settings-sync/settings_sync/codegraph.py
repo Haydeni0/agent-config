@@ -169,3 +169,13 @@ def sync_agy_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
     entry = {"mcpServers": {"codegraph": {"command": command, "args": ["serve", "--mcp"]}}}
     target = agy_mcp_config_path(paths)
     return [sync_json_defaults(target, json.dumps(entry, indent=2), dry_run)]
+
+
+def sync_pi_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
+    """Keyed-merge pi's mcp.json from the harnesses/pi/mcp.json template.
+    exposure: "direct" is required - pi's default codemode never declares a
+    server's tools to the model. Keyed merge (not wholesale) so user servers
+    in the same file survive."""
+    target = paths.pi_dir / "mcp.json"
+    content = (paths.source_dir / "harnesses/pi/mcp.json").read_text()
+    return [sync_json_defaults(target, content, dry_run)]
