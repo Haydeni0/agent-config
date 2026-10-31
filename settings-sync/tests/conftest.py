@@ -12,7 +12,7 @@ def isolated_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(home / ".cache"))
-    for key in ("AGENT_CONFIG_REPO", "CODEX_HOME", "OPENCODE_CONFIG_DIR", "PI_CODING_AGENT_DIR"):
+    for key in ("AGENT_CONFIG_REPO", "CODEX_HOME", "OPENCODE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR"):
         monkeypatch.delenv(key, raising=False)
     return home
 

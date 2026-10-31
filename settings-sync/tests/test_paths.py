@@ -113,3 +113,35 @@ def test_opencode_destination_precedence(source_home: Path, isolated_home: Path,
     assert result.exit_code == 0, result.output
     assert ((chosen if explicit else native) / "AGENTS.md").is_file()
     assert not (isolated_home / ".config/opencode").exists()
+
+
+def test_resolve_paths_honors_claude_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.paths import resolve_paths
+    source = tmp_path / "source"
+    source.mkdir()
+    profile = tmp_path / "profile"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(profile))
+    paths = resolve_paths(claude_dir=source)
+    assert paths.claude_home == profile.expanduser().absolute()
+
+
+def test_resolve_paths_honors_pi_coding_agent_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.paths import resolve_paths
+    source = tmp_path / "source"
+    source.mkdir()
+    target = tmp_path / "pi-home"
+    monkeypatch.setenv("PI_CODING_AGENT_DIR", str(target))
+    paths = resolve_paths(claude_dir=source)
+    assert paths.pi_dir == target.expanduser().absolute()
+
+
+def test_resolve_paths_codegraph_dir_flag_and_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.paths import resolve_paths
+    source = tmp_path / "source"
+    source.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    paths = resolve_paths(claude_dir=source, codegraph_dir=tmp_path / "cg")
+    assert paths.codegraph_dir == tmp_path / "cg"
+    paths = resolve_paths(claude_dir=source)
+    assert paths.codegraph_dir == (tmp_path / "home" / ".codegraph").expanduser().absolute()

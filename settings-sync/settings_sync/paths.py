@@ -17,6 +17,7 @@ class Paths:
     nomistakes_dir: Path | None = None
     codex_dir: Path | None = None
     claude_home: Path | None = None
+    codegraph_dir: Path | None = None
 
 
     def target(self, name: str) -> Path:
@@ -61,17 +62,21 @@ def resolve_paths(
     nomistakes_dir: Path | None = None,
     codex_dir: Path | None = None,
     claude_home: Path | None = None,
+    codegraph_dir: Path | None = None,
 ) -> Paths:
     home = Path.home()
     config = config_home()
+    claude_profile = os.environ.get("CLAUDE_CONFIG_DIR")
+    pi_agent_dir = os.environ.get("PI_CODING_AGENT_DIR")
     return Paths(
         source_dir=resolve_source(claude_dir),
-        claude_home=(claude_home or home / ".claude").expanduser().absolute(),
+        claude_home=(claude_home or (Path(claude_profile) if claude_profile else None) or home / ".claude").expanduser().absolute(),
         opencode_dir=Path(opencode_dir or os.environ.get("OPENCODE_CONFIG_DIR") or config / "opencode").expanduser().absolute(),
-        pi_dir=(pi_dir or home / ".pi" / "agent").expanduser().absolute(),
+        pi_dir=(pi_dir or (Path(pi_agent_dir) if pi_agent_dir else None) or home / ".pi" / "agent").expanduser().absolute(),
         goose_dir=(goose_dir or config / "goose").expanduser().absolute(),
         agy_dir=(agy_dir or home / ".gemini" / "config").expanduser().absolute(),
         agy_cli_dir=(agy_cli_dir or home / ".gemini" / "antigravity-cli").expanduser().absolute(),
         nomistakes_dir=(nomistakes_dir or home / ".no-mistakes").expanduser().absolute(),
         codex_dir=Path(codex_dir or os.environ.get("CODEX_HOME") or home / ".codex").expanduser().absolute(),
+        codegraph_dir=(codegraph_dir or home / ".codegraph").expanduser().absolute(),
     )

@@ -106,10 +106,11 @@ def callback(
     nomistakes_dir: Path | None = typer.Option(None, "--nomistakes-dir", help="Target ~/.no-mistakes directory."),
     codex_dir: Path | None = typer.Option(None, "--codex-dir", help="Target CODEX_HOME directory."),
     claude_home: Path | None = typer.Option(None, "--claude-home", help="Claude runtime destination."),
+    codegraph_dir: Path | None = typer.Option(None, "--codegraph-dir", help="Target ~/.codegraph directory."),
 ) -> None:
     """Deploy shared configuration from the selected source checkout into native harness homes."""
     try:
-        paths = resolve_paths(claude_dir, opencode_dir, pi_dir, goose_dir, agy_dir, agy_cli_dir, nomistakes_dir, codex_dir, claude_home)
+        paths = resolve_paths(claude_dir, opencode_dir, pi_dir, goose_dir, agy_dir, agy_cli_dir, nomistakes_dir, codex_dir, claude_home, codegraph_dir)
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     ctx.obj = {"paths": paths, "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
