@@ -78,6 +78,7 @@ goose discovers skills and agents from `~/.claude` natively (backward-compat pat
 | entry dict (`settings_sync/codegraph.py`) | `~/.gemini/config/mcp_config.json` (or legacy `~/.gemini/antigravity/mcp_config.json`) | keyed merge; no `type` field; absolute launcher path on darwin |
 | `harnesses/pi/mcp.json` | `~/.pi/agent/mcp.json` | keyed merge; preserve user servers |
 | `harnesses/claude/settings.json` | `~/.claude/settings.json` | `mcp__codegraph__*` rides the shared permissions allowlist |
+| stored opt-out (`codegraph telemetry off`) | `~/.codegraph/telemetry.json` | enforce `enabled: false` on every sync; covers CLI, MCP server, and daemon |
 
 `codegraph` (external tool delivery) installs the pinned binary and wires the MCP server entry for every harness; per-repo indexing (`codegraph init`) stays the user's decision.
 
@@ -119,7 +120,7 @@ agent-config bootstrap [harness]       # install external packages; --dry-run to
 
 | Harness | Steps |
 |---|---|
-| codegraph | `binary`, `claude-mcp` |
+| codegraph | `binary`, `claude-mcp`, `telemetry` |
 | claude | `config`, `context`, `links` |
 | opencode | `resources`, `config`, `tui`, `agents-md`, `agents`, `commands`, `plugins` |
 | pi | `resources`, `config`, `mcp`, `context`, `keybindings` |

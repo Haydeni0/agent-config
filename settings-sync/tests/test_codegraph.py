@@ -337,3 +337,73 @@ def test_pi_mcp_merges_and_preserves_user_servers(tmp_path: Path):
     entry = data["mcpServers"]["codegraph"]
     assert entry == {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}
     assert "type" not in entry
+
+
+def test_telemetry_dry_run_no_file_reports_would_create(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_codegraph_telemetry
+
+    paths = _paths(tmp_path)
+    outcomes = sync_codegraph_telemetry(paths, dry_run=True)
+    assert outcomes[0].status == Status.WOULD_CREATE
+
+
+def test_telemetry_dry_run_stored_optout_reports_unchanged(tmp_path: Path):
+    from settings_sync.codegraph import sync_codegraph_telemetry
+
+    paths = _paths(tmp_path)
+    target = paths.codegraph_dir / "telemetry.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"enabled": False, "machine_id": None}))
+    outcomes = sync_codegraph_telemetry(paths, dry_run=True)
+    assert outcomes[0].status == Status.UNCHANGED
+
+
+def test_telemetry_dry_run_enabled_file_reports_would_create(tmp_path: Path):
+    from settings_sync.codegraph import sync_codegraph_telemetry
+
+    paths = _paths(tmp_path)
+    target = paths.codegraph_dir / "telemetry.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"enabled": True}))
+    outcomes = sync_codegraph_telemetry(paths, dry_run=True)
+    assert outcomes[0].status == Status.WOULD_CREATE
+
+
+def test_telemetry_real_run_invokes_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_codegraph_telemetry
+
+    paths = _paths(tmp_path)
+    launcher = _install_fake_version(paths)
+    calls = []
+
+    def fake_run(argv, check, capture_output):
+        calls.append(argv)
+        assert check is True
+
+    monkeypatch.setattr("settings_sync.codegraph.subprocess.run", fake_run)
+    outcomes = sync_codegraph_telemetry(paths, dry_run=False)
+    assert outcomes[0].status == Status.CREATED
+    assert calls == [[str(launcher), "telemetry", "off"]]
+
+
+def test_telemetry_real_run_requires_binary(tmp_path: Path):
+    from settings_sync.codegraph import sync_codegraph_telemetry
+
+    paths = _paths(tmp_path)
+    with pytest.raises(ValueError, match="installed binary"):
+        sync_codegraph_telemetry(paths, dry_run=False)
+
+
+def test_telemetry_off_failure_becomes_valueerror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import subprocess as subprocess_module
+    from settings_sync.codegraph import sync_codegraph_telemetry
+
+    paths = _paths(tmp_path)
+    _install_fake_version(paths)
+
+    def failing_run(argv, check, capture_output):
+        raise subprocess_module.CalledProcessError(1, argv)
+
+    monkeypatch.setattr("settings_sync.codegraph.subprocess.run", failing_run)
+    with pytest.raises(ValueError, match="codegraph telemetry off failed"):
+        sync_codegraph_telemetry(paths, dry_run=False)

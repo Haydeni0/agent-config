@@ -60,6 +60,14 @@ def stub_codegraph_download(monkeypatch: pytest.MonkeyPatch):
     def fake(url: str, version_dir: Path) -> None:
         launcher = version_dir / "bin" / "codegraph"
         launcher.parent.mkdir(parents=True, exist_ok=True)
-        launcher.write_text("#!/bin/sh\necho 1.6.2\n")
+        launcher.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "telemetry" ] && [ "$2" = "off" ]; then\n'
+            '  mkdir -p "$HOME/.codegraph"\n'
+            "  printf '{\"enabled\": false, \"machine_id\": null}' > \"$HOME/.codegraph/telemetry.json\"\n"
+            "  exit 0\n"
+            "fi\n"
+            "echo 1.6.2\n"
+        )
         launcher.chmod(0o755)
     monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fake)

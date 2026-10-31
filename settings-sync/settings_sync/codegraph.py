@@ -179,3 +179,30 @@ def sync_pi_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
     target = paths.pi_dir / "mcp.json"
     content = (paths.source_dir / "harnesses/pi/mcp.json").read_text()
     return [sync_json_defaults(target, content, dry_run)]
+
+
+def sync_codegraph_telemetry(paths: Paths, dry_run: bool) -> list[Outcome]:
+    """Store the anonymous-usage telemetry opt-out (codegraph defaults to on).
+    The stored choice covers every process - CLI, MCP server, background
+    daemon - and deletes any unsent queue; the spec leaves telemetry values
+    at codegraph defaults but the user policy is opt-out everywhere, so sync
+    enforces it on every machine it touches."""
+    target = paths.codegraph_dir / "telemetry.json"
+    enabled = None
+    if target.exists():
+        try:
+            enabled = json.loads(target.read_text()).get("enabled")
+        except ValueError as exc:
+            return [Outcome(target, Status.FAILED, f"could not parse telemetry config: {exc}")]
+    if enabled is False:
+        return [Outcome(target, Status.UNCHANGED, "telemetry opt-out stored")]
+    if dry_run:
+        return [Outcome(target, Status.WOULD_CREATE, "would store telemetry opt-out")]
+    launcher = paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph"
+    if not launcher.exists():
+        raise ValueError("telemetry opt-out requires the installed binary; run the binary step first")
+    try:
+        subprocess.run([str(launcher), "telemetry", "off"], check=True, capture_output=True)
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"codegraph telemetry off failed: returncode={exc.returncode}") from exc
+    return [Outcome(target, Status.CREATED, "telemetry opt-out stored (codegraph telemetry off)")]

@@ -8,7 +8,7 @@ from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
 from settings_sync.claude import claude_home, sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
-from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary, sync_pi_mcp
+from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary, sync_codegraph_telemetry, sync_pi_mcp
 from settings_sync.commands import sync_commands
 from settings_sync.codex import sync_codex_agents_md, sync_codex_config, sync_codex_sqlite_home
 from settings_sync.config import sync_config, sync_tui
@@ -46,6 +46,7 @@ HARNESSES = (
     Harness("codegraph", (
         Step("binary", lambda p, f, d: sync_codegraph_binary(p, d), ()),
         Step("claude-mcp", lambda p, f, d: sync_claude_mcp(p, d), ()),
+        Step("telemetry", lambda p, f, d: sync_codegraph_telemetry(p, d), ()),
     ), lambda p: p.codegraph_dir, "codegraph"),
     Harness("claude", (
         Step("config", lambda p, f, d: [sync_claude_config(p, d)], ("harnesses/claude/settings.json",)),
