@@ -27,6 +27,9 @@
 //   - Tool names match by basename (/usr/bin/git is git).
 //   - fd-duplicating redirections (2>&1, >&2, &>) are blanked before
 //     segmenting, so their & does not split a command from its own flags.
+//   - Extglob groups without blanks (/@(mnt), /!(tmp)) are read as *.
+//   - When an option missing from a tool's value-option table precedes a
+//     word, both that word and the next are checked as the subcommand.
 //   - Flattened view: command-token guards (sudo, dd, mkfs, kubectl, S3) flatten shell
 //     separators + quote/subshell chars so wrapped forms (bash -c "...",
 //     $(...), a && b) still match.
@@ -114,6 +117,9 @@ const BRACE_SEQUENCE = /\{[^{},/]*\.\.[^{},/]*\}/g
 // fd-duplicating redirections (2>&1, >&2, <&0, >&-, &>, &>>): their & is not
 // a command separator.
 const FD_REDIRECT = /\d*[<>]&(?:\d+|-)?|&>>?/g
+// An extglob group (@(a|b), !(x), +(x), *(x), ?(x)) without blanks; rewritten
+// to * before lexing because both views split on parentheses.
+const EXTGLOB_GROUP = /[@!+*?]\([^()\s]*\)/g
 // find exec delete: a delete verb must appear within this many tokens after the action
 // (covers `-exec sh -c rm ...`-style wrappers without scanning the whole line).
 const FIND_EXEC_RM_WINDOW = 5
@@ -124,7 +130,12 @@ const GH_API_VALUE_FLAGS = new Set(["-H", "-t", "-q", "-p", "--hostname", "--cac
 // Option tables for findSubcommand. `value`: options that consume the next
 // token. `prefixes`: the tool accepts unambiguous option-name prefixes.
 const KUBECTL_OPTIONS = {
-  value: new Set(["-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "--server", "-s"]),
+  value: new Set([
+    "-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "--server", "-s",
+    "--as", "--as-group", "--as-uid", "--token", "--request-timeout", "-v", "--v", "--vmodule",
+    "--certificate-authority", "--client-certificate", "--client-key", "--tls-server-name",
+    "--cache-dir", "--password", "--username", "--profile", "--profile-output", "--log-flush-frequency",
+  ]),
   prefixes: false,
 }
 // Value-taking global options of aws-cli 2.35.10 (awscli/data/cli.json); also
@@ -138,7 +149,10 @@ const AWS_OPTIONS = {
   prefixes: true,
 }
 const GIT_OPTIONS = {
-  value: new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"]),
+  value: new Set([
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env",
+    "--attr-source", "--super-prefix", "--list-cmds",
+  ]),
   prefixes: false,
 }
 const GH_OPTIONS = { value: new Set(["-R", "--repo", "--hostname"]), prefixes: false }
@@ -262,6 +276,30 @@ function globPathReason(label, norm, path) {
   return null
 }
 
+// Indexes that may hold the subcommand: every non-option token from `start`
+// up to the first one no unknown option could have consumed as its value, so
+// a value-taking option missing from the table cannot hide the subcommand.
+function subcommandCandidates(tokens, start, options) {
+  const candidates = []
+  let j = start
+  while (j < tokens.length) {
+    const t = tokens[j]
+    if (options.value.has(t) || (options.prefixes && isValueOptionPrefix(t, options.value))) {
+      j += 2
+      continue
+    }
+    if (t.startsWith("-")) {
+      j++
+      continue
+    }
+    candidates.push(j)
+    const previous = tokens[j - 1]
+    if (j === start || !previous.startsWith("-") || previous.includes("=")) return candidates
+    j++
+  }
+  return candidates
+}
+
 // Index of the first token at or after `start` that is neither an option nor
 // an option's value; tokens.length when none. A bare `--` is a one-token skip.
 function findSubcommand(tokens, start, options) {
@@ -340,15 +378,16 @@ function kubectlGuard(tokens) {
   for (let i = 0; i < tokens.length; i++) {
     const name = toolName(tokens[i])
     if (name !== "kubectl" && name !== "k") continue
-    const j = findSubcommand(tokens, i + 1, KUBECTL_OPTIONS)
-    const verb = tokens[j]
-    if (KUBECTL_VERBS.has(verb)) {
-      return `Blocked: kubectl ${verb} mutates cluster resources. ${KUBECTL_REASON}`
-    }
-    if (verb === "rollout") {
-      const action = tokens[findSubcommand(tokens, j + 1, KUBECTL_OPTIONS)]
-      if (KUBECTL_ROLLOUT_DENY.has(action)) {
-        return `Blocked: kubectl rollout ${action} mutates cluster resources. ${KUBECTL_REASON}`
+    for (const j of subcommandCandidates(tokens, i + 1, KUBECTL_OPTIONS)) {
+      const verb = tokens[j]
+      if (KUBECTL_VERBS.has(verb)) {
+        return `Blocked: kubectl ${verb} mutates cluster resources. ${KUBECTL_REASON}`
+      }
+      if (verb !== "rollout") continue
+      for (const k of subcommandCandidates(tokens, j + 1, KUBECTL_OPTIONS)) {
+        if (KUBECTL_ROLLOUT_DENY.has(tokens[k])) {
+          return `Blocked: kubectl rollout ${tokens[k]} mutates cluster resources. ${KUBECTL_REASON}`
+        }
       }
     }
   }
@@ -387,23 +426,26 @@ function isDeleteOptionPrefix(t) {
 function gitGuard(s, env) {
   for (let i = 0; i < s.length; i++) {
     if (toolName(s[i]) !== "git") continue
-    const j = findSubcommand(s, i + 1, GIT_OPTIONS)
-    const sub = s[j]
-    let gate = null
-    if (sub === "push") {
-      for (const t of s.slice(j + 1)) {
-        if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
-          return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
-        }
-      }
-      gate = gitGateReason(env, "git push", "push")
-    } else if (COMMIT_SUBCOMMANDS.has(sub)) {
-      gate = gitGateReason(env, `git ${sub}`, "commit")
-    } else if (sub === "pull" && !s.slice(j + 1).includes("--ff-only")) {
-      gate = gitGateReason(env, "git pull", "commit")
+    for (const j of subcommandCandidates(s, i + 1, GIT_OPTIONS)) {
+      const reason = gitSubcommandReason(s, j, env)
+      if (reason) return reason
     }
-    if (gate) return gate
   }
+  return null
+}
+
+function gitSubcommandReason(s, j, env) {
+  const sub = s[j]
+  if (sub === "push") {
+    for (const t of s.slice(j + 1)) {
+      if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
+        return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
+      }
+    }
+    return gitGateReason(env, "git push", "push")
+  }
+  if (COMMIT_SUBCOMMANDS.has(sub)) return gitGateReason(env, `git ${sub}`, "commit")
+  if (sub === "pull" && !s.slice(j + 1).includes("--ff-only")) return gitGateReason(env, "git pull", "commit")
   return null
 }
 
@@ -412,19 +454,37 @@ function gitGuard(s, env) {
 function ghGuard(s, env) {
   for (let i = 0; i < s.length; i++) {
     if (toolName(s[i]) !== "gh") continue
-    const j = findSubcommand(s, i + 1, GH_OPTIONS)
-    if (s[j] === "pr" && s[j + 1] === "merge") {
-      const gate = gitGateReason(env, "gh pr merge", "commit") ?? gitGateReason(env, "gh pr merge", "push")
-      if (gate) return gate
+    for (const j of subcommandCandidates(s, i + 1, GH_OPTIONS)) {
+      if (s[j] === "pr" && s[j + 1] === "merge") {
+        const gate = gitGateReason(env, "gh pr merge", "commit") ?? gitGateReason(env, "gh pr merge", "push")
+        if (gate) return gate
+      }
+      if (s[j] !== "api") continue
+      const reason = ghApiWriteReason(s, j + 1)
+      if (reason) return reason
     }
-    if (s[j] !== "api") continue
-    const reason = ghApiWriteReason(s, j + 1)
-    if (reason) return reason
   }
   return null
 }
 
+// The method a gh api token sets: -X/--method (value in the next token),
+// -XDELETE, -X=DELETE, --method=DELETE, or a short cluster whose first
+// value-taking flag is X (-iX DELETE, -iXDELETE). Upper-cased; undefined when
+// the token sets no method.
+function ghMethod(s, i) {
+  const t = s[i]
+  if (t === "--method") return s[i + 1]?.toUpperCase()
+  if (t.startsWith("--method=")) return t.slice(9).toUpperCase()
+  if (!t.startsWith("-") || t.startsWith("--")) return undefined
+  const flag = [...t.slice(1)].findIndex((c) => GH_API_SHORT_VALUE_FLAGS.has(c))
+  if (flag === -1 || t[flag + 1] !== "X") return undefined
+  const rest = t.slice(flag + 2).replace(/^=/, "")
+  return (rest || s[i + 1])?.toUpperCase()
+}
+
 const isGhFieldCluster = (t) => t.startsWith("-") && !t.startsWith("--") && /[fF]/.test(t)
+// gh api short flags that take a value (pflag: the rest of a cluster, or the next token).
+const GH_API_SHORT_VALUE_FLAGS = new Set(["X", "F", "H", "q", "p", "f", "t"])
 
 // gh api write signals: DELETE/POST/PATCH/PUT via -X/--method (incl. attached
 // -XDELETE/-X=DELETE/--method=DELETE), --input (request body, incl.
@@ -438,12 +498,9 @@ function ghApiWriteReason(s, start) {
   let hasGet = false
   for (let i = start; i < s.length; i++) {
     const t = s[i]
-    if (t === "-X" || t === "--method") {
-      if (s[i + 1] === "GET") hasGet = true
-    } else if (t.startsWith("-X")) {
-      if (t.slice(2).replace(/^=/, "") === "GET") hasGet = true
-    } else if (t.startsWith("--method=")) {
-      if (t.slice(9) === "GET") hasGet = true
+    const method = ghMethod(s, i)
+    if (method !== undefined) {
+      if (method === "GET") hasGet = true
     } else if (GH_API_VALUE_FLAGS.has(t)) {
       i++
     } else if (isGhFieldCluster(t)) {
@@ -454,13 +511,9 @@ function ghApiWriteReason(s, start) {
     `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}`
   for (let i = start; i < s.length; i++) {
     const t = s[i]
-    if (t === "-X" || t === "--method") {
-      const method = s[i + 1]
+    const method = ghMethod(s, i)
+    if (method !== undefined) {
       if (GH_WRITE_METHODS.has(method)) return `Blocked: gh api -X ${method} is a write method. ${GH_API_REASON}`
-    } else if (t.startsWith("-X")) {
-      if (GH_WRITE_METHODS.has(t.slice(2).replace(/^=/, ""))) return `Blocked: gh api ${t} is a write method. ${GH_API_REASON}`
-    } else if (t.startsWith("--method=")) {
-      if (GH_WRITE_METHODS.has(t.slice(9))) return `Blocked: gh api ${t} is a write method. ${GH_API_REASON}`
     } else if (t === "--input" || t.startsWith("--input=")) {
       return `Blocked: gh api ${t} sends a request body. ${GH_API_REASON}`
     } else if (t === "--raw-field" || t === "--field") {
@@ -639,6 +692,7 @@ export function decide(command, env = process.env) {
   // `gh api -X \<newline> DELETE` can't split a flag from its value across a
   // segment boundary.
   command = command.replace(/\\\n/g, " ").replace(FD_REDIRECT, " ")
+  while (EXTGLOB_GROUP.test(command)) command = command.replace(EXTGLOB_GROUP, "*")
   // Either view denying denies: the flattened view sees inside wrapper
   // strings, the quoted view keeps quoted option values whole.
   const reason = viewReason(flattenedView(command), env) ?? quotedReason(command, env, NESTED_COMMAND_DEPTH)

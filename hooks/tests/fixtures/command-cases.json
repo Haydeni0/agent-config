@@ -975,6 +975,82 @@
       ]
     },
     {
+      "name": "unknown_value_option_does_not_hide_subcommand_blocked",
+      "label": "a value-taking option missing from the table cannot hide a gated subcommand",
+      "expect": "deny",
+      "needle": "Blocked",
+      "commands": [
+        "kubectl --as admin delete pod x",
+        "kubectl --token t delete pod x",
+        "kubectl -v 9 delete pod x",
+        "kubectl --request-timeout 5s delete pod x",
+        "kubectl --some-new-flag v delete pod x",
+        "kubectl --some-new-flag v rollout restart deploy/x",
+        "git --attr-source HEAD push origin main",
+        "git --super-prefix x push",
+        "git --some-new-flag v push",
+        "gh --some-new-flag v api -X DELETE repos/o/r"
+      ]
+    },
+    {
+      "name": "unknown_value_option_reads_allowed",
+      "label": "value-taking options before read subcommands allowed",
+      "expect": "allow",
+      "commands": [
+        "kubectl --as admin get pods",
+        "kubectl -v 9 logs x",
+        "kubectl --some-new-flag v get pods",
+        "git --attr-source HEAD status",
+        "gh -R o/r api repos/o/r"
+      ]
+    },
+    {
+      "name": "gh_api_method_spellings_blocked",
+      "label": "gh api write methods in any case and inside short clusters blocked",
+      "expect": "deny",
+      "needle": "gh api",
+      "commands": [
+        "gh api -X delete repos/o/r",
+        "gh api --method delete repos/o/r",
+        "gh api --method=Delete repos/o/r",
+        "gh api -iX DELETE repos/o/r",
+        "gh api -iXDELETE repos/o/r",
+        "gh api -iX=patch repos/o/r"
+      ]
+    },
+    {
+      "name": "gh_api_method_spellings_reads_allowed",
+      "label": "gh api explicit GET in any spelling allowed",
+      "expect": "allow",
+      "commands": [
+        "gh api -i repos/o/r",
+        "gh api -X get search/issues -f q=x",
+        "gh api -iX GET search/issues -f q=x"
+      ]
+    },
+    {
+      "name": "extglob_protected_paths_blocked",
+      "label": "extglob spellings of protected paths blocked",
+      "expect": "deny",
+      "needle": "Blocked",
+      "commands": [
+        "shopt -s extglob; rm -rf /@(mnt)",
+        "rm -rf /+(mnt)/data",
+        "rm -rf /!(tmp)",
+        "rm -rf /mnt/@(data)",
+        "rm -rf /@(m@(n)t)"
+      ]
+    },
+    {
+      "name": "extglob_paths_allowed",
+      "label": "extglob paths away from protected paths allowed",
+      "expect": "allow",
+      "commands": [
+        "rm -rf /tmp/@(a|b)",
+        "ls /@(mnt)"
+      ]
+    },
+    {
       "name": "fd_redirection_does_not_split_blocked",
       "label": "an fd-duplicating redirection does not split a command from its flags",
       "expect": "deny",
