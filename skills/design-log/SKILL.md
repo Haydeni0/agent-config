@@ -2,7 +2,7 @@
 name: design-log
 layer: orchestrator
 description: Use when designing or planning a feature or new body of work across turns or sessions - a design grill, writing a spec or plan from a design, implementation that diverges from the agreed design, or "wrap up / finalise the design docs".
-deps: [grill-me, test-plan, write-spec, writing-plans, work-package, requirements]
+deps: [grill-me, test-plan, write-spec, writing-plans, work-package, requirements, research-spike, prototype]
 ---
 
 # Design log
@@ -17,6 +17,27 @@ updated only at an explicit promote step.
 ## Package
 
 The package layout, file roles, entry formats, ID rules, marker formats, and the legacy conversion recipe are the work-package skill's contract - load it before reading or writing package files. This skill adds only the discipline of *when* entries get written, below.
+
+## Opening a design: the chart pass
+
+Before answering anything in a package design-log opens, chart it
+breadth-first. Write the `## Destination` section in the decisions file - one
+or two lines, what reaching the end of this work looks like; every later
+session orients to it. File the sharp questions as typed Q entries with
+their blocking edges. Fill a `## Not yet specified` section with the in-scope
+fog: questions you can tell are coming but cannot state precisely yet. The
+sharpness test: if the question can be stated precisely now, it is a Q entry
+however unanswerable; if it cannot, it is fog. Do not pre-slice fog into
+question-sized pieces - one patch may graduate into several questions, or
+none. Out-of-scope work stays in Deferred entries; fog never holds it.
+
+`## Destination` names where the effort heads; it is unrelated to write-spec's
+save-location label of the same word.
+
+Then hand the frontier order to grill-me and let it resolve the questions one
+at a time. When a decision lands, re-read the fog section: graduate whatever
+the answer has made sharp enough to state into new Q entries and delete it
+from fog.
 
 ## When to write
 
@@ -38,8 +59,16 @@ package lacks.
 When the user drives design work through this skill, compose the workers and file their
 output into the package:
 
-- Design not settled -> run grill-me. User answers become D entries here (R instead when
-  they say must / never / always); new forks become Q.
+- Design not settled -> run grill-me, working the questions in frontier order
+  (run the work-package graph tool's `frontier` on the package directory and
+  take the first item - not a re-read-and-judge). Tag new forks when you file
+  them: `[research]` when the answer is knowledge outside the working
+  directory (route to research-spike), `[prototype]` when the question is how
+  it should look or behave (route to the prototype skill), `[task]` when
+  manual work must happen before any decision can be made (do it directly or
+  hand the user a checklist); untagged means grilling. User answers become D
+  entries here (R instead when they say must / never / always); new forks
+  become Q.
 - Test scenarios wanted -> run test-plan; file its output as `scenarios.md`.
 - Spec wanted -> run write-spec; destination is the package's `spec.md`. Any pick the
   spec makes that no D covers is logged here first, and the spec's open questions become
