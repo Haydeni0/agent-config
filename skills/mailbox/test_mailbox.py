@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-31.02"
+SKILL_VERSION = "2026-10-31.03"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1314,14 +1314,25 @@ def test_writes_leave_no_temporary_files(mesh: Mesh) -> None:
     assert [p.name for p in mesh.inbox("worker").iterdir() if p.name.startswith(".")] == []
 
 
-def test_ring_waits_for_idle_then_prompts_a_pointer_to_the_contract(mesh: Mesh) -> None:
+def test_a_mail_ring_checks_idle_once_then_prompts_the_pointer_line(mesh: Mesh) -> None:
+    # a send never waits on the recipient's idle state (row G538's block): the
+    # wait call checks once and falls through at once
     result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
     calls = mesh.herdr.calls()
-    assert ["agent", "wait", WORKER_PANE, "--until", "idle", "--until", "done", "--timeout", "30000"] in calls
+    assert ["agent", "wait", WORKER_PANE, "--until", "idle", "--until", "done", "--timeout", "0"] in calls
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in calls
     assert result.stdout.strip().endswith("rung")
+
+
+def test_the_ring_verb_keeps_the_30_second_idle_wait_by_default(mesh: Mesh) -> None:
+    # the mail riders' no-wait must not leak into the interactive verb: a
+    # caller who waits chooses to
+    result = mesh.run("ring", WORKER_PANE, "line", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "wait", WORKER_PANE, "--until", "idle", "--until", "done", "--timeout", "30000"] in mesh.herdr.calls()
 
 
 def composer_box(body: str) -> str:

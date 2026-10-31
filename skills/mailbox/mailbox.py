@@ -54,10 +54,17 @@ NO_UNACKED = "no unacked mail"
 # zero-padded so `ls` lists one sender's requests in send order (invariant
 # holds below 1000 sends per sender - `"1000-"` sorts before `"999-"`)
 SEQ_WIDTH = 3
-# long enough to catch a turn that is finishing, short enough not to stall the
-# sender's own turn; a claude recipient still busy past this is prompted
-# mid-turn anyway (see ring)
+# the `ring` verb's default idle wait: long enough to catch a turn that is
+# finishing, short enough not to stall the caller's own turn; a claude seat
+# still busy past it is prompted mid-turn anyway (see ring_seat)
 RING_WAIT_MS = 30_000
+# mail rings (send, reply, poke) wait for no idle state: a busy recipient
+# holds the sender only for the guard reads and the readback - a claude
+# recipient is prompted mid-turn anyway, and a busy other-harness recipient
+# is left to its own inbox check, so an idle wait would tax the sender
+# (14% of sampled lab sends held 81% of its send-seconds blocked on it,
+# row G538) without changing what lands (see ring_seat)
+MAIL_RING_WAIT_MS = 0
 # the post-send readback's poll budget, 0.5 s apart: the 5 s cap of the landed
 # control verbs' own readback spine (bin/lab-control.sh its post_send_readback,
 # row R140), which the ring twins so a vanished line names itself at the send
@@ -68,7 +75,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-31.02"
+MAILBOX_VERSION = "2026-10-31.03"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -442,7 +449,7 @@ class RingOutcome(StrEnum):
     RUNG = "rung"
     QUEUED = "rung: queued-unverified; the line sits in the recipient's pane until its turn reads it"
     ABSENT = "not rung: the sent line left no trace in the recipient's pane"
-    NOT_IDLE = f"not rung: not idle within {RING_WAIT_MS // 1000} s and mid-turn prompting is unverified for its harness; the file waits in its inbox"
+    NOT_IDLE = "not rung: recipient not idle and mid-turn prompting is unverified for its harness; the file waits in its inbox"
     BLOCKED = "not rung: at a permission prompt; the file waits in its inbox"
     OFFLINE = "not rung: no live herdr agent at the member's seat - tell the user; a session joining under it drains the inbox"
     TYPING = "not rung: unsubmitted typing sits in the recipient's composer - the file waits in its inbox"
@@ -831,7 +838,7 @@ def ring(root: Path, name: str) -> tuple[RingOutcome, str]:
     member = member_named(root, name)
     if member is None or not live_claim(member)[0]:
         return RingOutcome.OFFLINE, ""
-    return ring_seat(member.seat.pane, wake_line(root, name))
+    return ring_seat(member.seat.pane, wake_line(root, name), wait_ms=MAIL_RING_WAIT_MS)
 
 
 def ring_all(root: Path, paths: dict[str, Path]) -> None:

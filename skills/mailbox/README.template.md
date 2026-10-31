@@ -55,6 +55,9 @@ EOF
   the requester is waiting on - and anything the recipient must act on now.
   Add `--no-ring` for broadcasts and FYI mail; the recipient picks it up at
   its next `take`.
+- A send never waits on the recipient's idle state: the ring checks once
+  and falls through at once, so a busy recipient holds your send only for
+  its short readback.
 - A busy claude recipient is prompted mid-turn anyway once its composer is
   seen empty - the send's readback then names the line's pane state (delivered,
   or queued-unverified with the pane state), never a bare success; a draft in
