@@ -98,3 +98,21 @@ def test_bootstrap_passes_effective_destinations(source_home: Path, isolated_hom
     assert (target / "settings.json").is_file()
     assert (source_home / "targets").read_text().splitlines() == [str(isolated_home / ".config/opencode"), str(target)]
     assert not (isolated_home / ".pi").exists()
+
+
+def test_bootstrap_codegraph_arm_requires_cli(source_home: Path, isolated_home: Path):
+    result = subprocess.run(["bash", str(SCRIPT), str(source_home), "codegraph"], capture_output=True, text=True, env={**os.environ, "PATH": "/usr/bin:/bin"})
+    assert result.returncode == 1
+    assert "unknown harness" not in result.stderr
+
+
+def test_bootstrap_codegraph_arm_accepts_installed_cli(source_home: Path, isolated_home: Path, tmp_path: Path):
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    stub = binaries / "codegraph"
+    stub.write_text("#!/bin/sh\nexit 0\n")
+    stub.chmod(0o755)
+    env = {**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"]}
+    result = subprocess.run(["bash", str(SCRIPT), str(source_home), "codegraph"], capture_output=True, text=True, env=env)
+    assert result.returncode == 0, result.stderr
+    assert "has no declared external installs" in result.stdout

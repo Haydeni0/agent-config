@@ -111,7 +111,7 @@ case "$harness" in
         "$nomistakes_home/bin/no-mistakes" daemon restart || fail "no-mistakes install failed"
     fi
     ;;
-  codex|goose|agy) require "$harness" || exit 1; echo "bootstrap: $harness has no declared external installs" ;;
+  codex|goose|agy|codegraph) require "$harness" || exit 1; echo "bootstrap: $harness has no declared external installs" ;;
   *) fail "unknown harness: $harness" ;;
 esac
 exit "$exit_code"
