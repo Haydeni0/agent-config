@@ -200,6 +200,7 @@ flowchart LR
     %% handoff[handoff]
     %% herdr[herdr]
     %% jupyter_to_marimo[jupyter-to-marimo]
+    %% knowledge[knowledge]
     %% kubectl[kubectl]
     %% lavish[lavish]
     librarian[librarian]
