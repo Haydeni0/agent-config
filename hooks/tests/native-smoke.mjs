@@ -8,8 +8,6 @@ import {
   readFileSync,
   existsSync,
   rmSync,
-  symlinkSync,
-  copyFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,15 +217,6 @@ for (const scenario of ["pi", "opencode"].includes(host)
         nativeHome,
         host === "claude" ? "settings.json" : "hooks.json",
       );
-      if (host === "claude") {
-        if (scenario === "broken") {
-          mkdirSync(join(nativeHome, "custom/hooks"), { recursive: true });
-          copyFileSync(
-            join(repo, "custom/hooks/check-bash-guard.sh"),
-            join(nativeHome, "custom/hooks/check-bash-guard.sh"),
-          );
-        } else symlinkSync(join(repo, "custom"), join(nativeHome, "custom"));
-      }
       if (host === "goose") {
         const plugin = join(home, ".agents/plugins/agent-config-goose");
         mkdirSync(join(plugin, "hooks"), { recursive: true });

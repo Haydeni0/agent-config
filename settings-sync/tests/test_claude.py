@@ -1,9 +1,15 @@
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+from settings_sync.claude import sync_claude_config
 from settings_sync.cli import agent_config_app
+from settings_sync.paths import resolve_paths
+from settings_sync.sync import Outcome, Status
 
 
 def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated_home: Path):
@@ -76,3 +82,83 @@ def test_claude_permissions_include_codegraph(tmp_path: Path, isolated_home: Pat
     # Declared arrays replace (REQ-SYNC-04): the template allow list wins.
     assert "mcp__codegraph__*" in allow
     assert "Bash(git status*)" not in allow
+
+
+REPO = Path(__file__).resolve().parents[2]
+FOREIGN_GROUP = {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo local-hook"}]}
+
+
+def synced_claude_settings(source_home: Path, isolated_home: Path) -> tuple[Outcome, Path]:
+    """Sync the real Claude template into an isolated home that already carries a foreign hook and a local key."""
+    shutil.copyfile(REPO / "harnesses/claude/settings.json", source_home / "harnesses/claude/settings.json")
+    target = isolated_home / ".claude/settings.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({"hooks": {"PreToolUse": [FOREIGN_GROUP]}, "localKey": "keep"}))
+    paths = resolve_paths(claude_dir=source_home, claude_home=target.parent)
+    return sync_claude_config(paths, dry_run=False), target
+
+
+def installed_guard_command(target: Path) -> str:
+    groups = json.loads(target.read_text())["hooks"]["PreToolUse"]
+    commands = [hook["command"] for group in groups if group.get("matcher") == "Bash" for hook in group["hooks"]]
+    guards = [command for command in commands if "hooks/command.mjs" in command]
+    assert len(guards) == 1, commands
+    return guards[0]
+
+
+def run_hook(command: str, payload: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["bash", "-c", command], input=json.dumps(payload), capture_output=True, text=True)
+
+
+def test_synced_claude_guard_denies_and_preserves_local_state(source_home: Path, isolated_home: Path):
+    outcome, target = synced_claude_settings(source_home, isolated_home)
+    assert outcome.status != Status.FAILED, outcome.detail
+    config = json.loads(target.read_text())
+    assert config["localKey"] == "keep"
+    assert FOREIGN_GROUP in config["hooks"]["PreToolUse"]
+    result = run_hook(
+        installed_guard_command(target),
+        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "sudo true"}},
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_synced_claude_guard_fails_closed_on_malformed_payload(source_home: Path, isolated_home: Path):
+    _, target = synced_claude_settings(source_home, isolated_home)
+    result = run_hook(installed_guard_command(target), {"tool_input": {"command": "sudo true"}})
+    assert (result.returncode, result.stdout) == (2, "")
+
+
+def test_synced_claude_guard_denies_cursor_payload(source_home: Path, isolated_home: Path):
+    _, target = synced_claude_settings(source_home, isolated_home)
+    result = run_hook(
+        installed_guard_command(target),
+        {"hook_event_name": "preToolUse", "tool_name": "Shell", "tool_input": {"command": "sudo true"}},
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_claude_guard_sync_without_node_fails_untouched(
+    source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+):
+    empty_bin = isolated_home / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    target = isolated_home / ".claude/settings.json"
+    target.parent.mkdir(parents=True)
+    before = json.dumps({"hooks": {"PreToolUse": [FOREIGN_GROUP]}, "localKey": "keep"})
+    target.write_text(before)
+    shutil.copyfile(REPO / "harnesses/claude/settings.json", source_home / "harnesses/claude/settings.json")
+    outcome = sync_claude_config(resolve_paths(claude_dir=source_home, claude_home=target.parent), dry_run=False)
+    assert outcome.status == Status.FAILED
+    assert "Node.js" in outcome.detail
+    assert target.read_text() == before
+
+
+def test_synced_claude_settings_have_no_inline_gh_api_hook(source_home: Path, isolated_home: Path):
+    _, target = synced_claude_settings(source_home, isolated_home)
+    groups = json.loads(target.read_text())["hooks"]["PreToolUse"]
+    commands = [hook["command"] for group in groups for hook in group["hooks"]]
+    assert not [command for command in commands if "gh api" in command]

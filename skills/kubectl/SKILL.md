@@ -21,7 +21,7 @@ kubectl rollout status deployment <name>   # observes a rollout, does not change
 
 ## Mutation verbs are hard-blocked
 
-The bash guard (`check-bash-guard.sh` / `bash-guard.js`) hard-denies all mutation verbs. Do not attempt them - they will fail. If the user needs one, tell them to run it themselves outside Claude:
+The shared command policy (`hooks/core/command-policy.mjs`, behind every harness's command hook) hard-denies all mutation verbs. Do not attempt them - they will fail. If the user needs one, tell them to run it themselves outside Claude:
 
 - `delete`, `deletecollection` - remove resources
 - `drain`, `cordon`, `uncordon`, `taint` - node scheduling changes

@@ -1,9 +1,9 @@
 // Tests for the bash-guard opencode plugin.
 //
-// Command cases are loaded from command-cases.json (shared with the
-// Claude check-bash-guard.sh hook test at ~/.claude/custom/hooks/).
-// Harness-specific tests (plugin no-op when tool !== "bash", missing args)
-// stay here - they have no Claude hook analogue.
+// Command cases are loaded from hooks/tests/fixtures/command-cases.json
+// (shared with hooks/tests/command.test.mjs, which runs them through the
+// shared core). Harness-specific tests (plugin no-op when tool !== "bash",
+// missing args) stay here - they have no hook-entry analogue.
 //
 // Two layers are tested here:
 //   1. decide(command)        - pure function, the policy logic
@@ -23,8 +23,8 @@ const CASES_PATH = path.resolve(__dirname, "../../../hooks/tests/fixtures/comman
 const CASES = JSON.parse(readFileSync(CASES_PATH, "utf8"))
 
 // -- shared corpus (parametrized from command-cases.json) -------------
-// Add a command to the JSON and it flows into both this test and the Claude
-// hook test. The loop below is the thin harness; the corpus is the source of
+// Add a command to the JSON and it flows into both this test (opencode
+// adapter) and hooks/tests/command.test.mjs (shared core). The loop below is the thin harness; the corpus is the source of
 // truth for what's blocked/allowed.
 
 for (const g of CASES.groups) {

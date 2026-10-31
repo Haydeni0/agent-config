@@ -157,6 +157,48 @@ def sync_hook_config(
         return Outcome(target, Status.FAILED, f"could not sync hooks: {exc}")
 
 
+COMMAND_PLACEHOLDER = "${AGENT_CONFIG_COMMAND}"
+CommandHarness = Literal["claude", "codex", "goose", "agy"]
+
+
+def has_command_placeholder(groups: HookGroups) -> bool:
+    return any(
+        COMMAND_PLACEHOLDER in hook.get("command", "")
+        for event_groups in groups.values()
+        for group in event_groups
+        for hook in group.get("hooks", [])
+    )
+
+
+def expand_command_hooks(
+    source_dir: Path, harness: CommandHarness, groups: HookGroups
+) -> None:
+    """Replace the command placeholder in every action with the quoted Node
+    invocation of the checkout's entry point for `harness`.
+
+    Raises ValueError when Node or the entry point and its policy are missing,
+    so callers fail before writing a hook that could not run.
+    """
+    node = shutil.which("node")
+    entry = source_dir / "hooks/command.mjs"
+    if (
+        node is None
+        or not entry.is_file()
+        or not (entry.parent / "core/command-policy.mjs").is_file()
+    ):
+        raise ValueError(
+            "command hooks require Node.js, the command entry point and its shared policy in the source checkout"
+        )
+    invocation = shlex.join((node, str(entry), harness))
+    for event_groups in groups.values():
+        for group in event_groups:
+            for hook in group.get("hooks", []):
+                if isinstance(hook.get("command"), str):
+                    hook["command"] = hook["command"].replace(
+                        COMMAND_PLACEHOLDER, invocation
+                    )
+
+
 def sync_command_hooks(
     paths: Paths, harness: Literal["codex", "goose", "agy"], dry_run: bool
 ) -> list[Outcome]:
@@ -169,25 +211,9 @@ def sync_command_hooks(
         else paths.target(harness) / "hooks.json"
     )
     try:
-        node = shutil.which("node")
-        entry = paths.source_dir / "hooks/command.mjs"
-        if (
-            node is None
-            or not entry.is_file()
-            or not (entry.parent / "core/command-policy.mjs").is_file()
-        ):
-            raise ValueError(
-                "command hooks require Node.js, the command entry point and its shared policy in the source checkout"
-            )
         defaults = json.loads(source.read_text())
         key = "agent-config" if harness == "agy" else "hooks"
-        for groups in hook_groups(defaults[key]).values():
-            for group in groups:
-                for hook in group["hooks"]:
-                    hook["command"] = hook["command"].replace(
-                        "${AGENT_CONFIG_COMMAND}",
-                        shlex.join((node, str(entry), harness)),
-                    )
+        expand_command_hooks(paths.source_dir, harness, hook_groups(defaults[key]))
         outcome = sync_hook_config(target, defaults, dry_run, key)
         if harness != "goose" or outcome.status == Status.FAILED:
             return [outcome]

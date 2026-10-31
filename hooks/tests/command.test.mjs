@@ -240,6 +240,27 @@ test("Claude compatibility entry resolves a deployed custom symlink", async (t) 
   );
 });
 
+test("Claude compatibility entry fails closed on a payload without event or tool", async () => {
+  const forwarder = fileURLToPath(
+    new URL("../../custom/hooks/check-bash-guard.sh", import.meta.url),
+  );
+  const input = JSON.stringify({ tool_input: { command: "sudo true" } });
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const withoutNode = process.env.PATH.split(":")
+    .filter((dir) => !existsSync(join(dir, "node")))
+    .join(":");
+  for (const env of [process.env, { ...process.env, PATH: withoutNode }]) {
+    const result = spawnSync("/bin/bash", [forwarder], {
+      input,
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(result.status, 2, result.stderr);
+    assert.equal(result.stdout, "");
+  }
+});
+
 test("Claude compatibility entry denies a Cursor-translated payload end-to-end", () => {
   const result = spawnSync(
     "bash",
