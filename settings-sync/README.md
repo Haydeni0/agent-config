@@ -1,6 +1,6 @@
 # settings-sync
 
-The `agent-config` CLI. Syncs the source checkout into Claude, opencode, pi, goose, agy, Codex, and no-mistakes. The source checkout owns the managed artifacts listed below; each harness keeps its own local state. Setup and the everyday loop live in the [root README](../README.md).
+The `agent-config` CLI. Syncs the source checkout into Claude, opencode, pi, goose, agy, Codex, codegraph, and no-mistakes. The source checkout owns the managed artifacts listed below; each harness keeps its own local state. Setup and the everyday loop live in the [root README](../README.md).
 
 Shared skills and commands use each harness's native discovery where available; the tables below identify the artifacts that need conversion.
 
@@ -69,6 +69,18 @@ goose discovers skills and agents from `~/.claude` natively (backward-compat pat
 
 `agy` (Antigravity) reads agent settings from `antigravity-cli/settings.json`, global rules from `AGENTS.md`, and discovers custom skills from `skills/`.
 
+### codegraph
+
+| Source in the checkout | Target | Mechanism |
+|---|---|---|
+| `CODEGRAPH_VERSION` pin (`settings_sync/codegraph.py`) | `~/.codegraph/versions/<pin>` + `~/.local/bin/codegraph` launcher | download pinned release tarball, extract, symlink, prune stale versions |
+| entry dict (`settings_sync/codegraph.py`) | `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) | keyed merge of `mcpServers.codegraph` only; trust/oauth state untouched |
+| entry dict (`settings_sync/codegraph.py`) | `~/.gemini/config/mcp_config.json` (or legacy `~/.gemini/antigravity/mcp_config.json`) | keyed merge; no `type` field; absolute launcher path on darwin |
+| `harnesses/pi/mcp.json` | `~/.pi/agent/mcp.json` | keyed merge; preserve user servers |
+| `harnesses/claude/settings.json` | `~/.claude/settings.json` | `mcp__codegraph__*` rides the shared permissions allowlist |
+
+`codegraph` (external tool delivery) installs the pinned binary and wires the MCP server entry for every harness; per-repo indexing (`codegraph init`) stays the user's decision.
+
 ### no-mistakes
 
 | Source in the checkout | Target in `~/.no-mistakes` | Mechanism |
@@ -107,15 +119,16 @@ agent-config bootstrap [harness]       # install external packages; --dry-run to
 
 | Harness | Steps |
 |---|---|
+| codegraph | `binary`, `claude-mcp` |
 | claude | `config`, `context`, `links` |
 | opencode | `resources`, `config`, `tui`, `agents-md`, `agents`, `commands`, `plugins` |
-| pi | `resources`, `config`, `context`, `keybindings` |
+| pi | `resources`, `config`, `mcp`, `context`, `keybindings` |
 | goose | `hooks`, `resources`, `hints`, `config`, `providers` |
-| agy | `hooks`, `settings`, `agents-md`, `skills` |
+| agy | `hooks`, `settings`, `mcp`, `agents-md`, `skills` |
 | codex | `hooks`, `skills`, `config`, `agents-md` |
 | no-mistakes | `config` |
 
-Path overrides: `--source` (alias `--claude-dir`), `--claude-home`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`. The legacy `sync` entry point (`sync [harness] [step]`, flags accepted anywhere, `--check` as a flag) stays available; it alone carries the opencode skill lint, `sync opencode skills`.
+Path overrides: `--source` (alias `--claude-dir`), `--claude-home`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`, `--codegraph-dir`. The legacy `sync` entry point (`sync [harness] [step]`, flags accepted anywhere, `--check` as a flag) stays available; it alone carries the opencode skill lint, `sync opencode skills`.
 
 Install with `uv tool install --editable ./settings-sync` from the repo root. Python dependency changes require refreshing the editable tool environment; lockfile alternative: `uv run --locked --directory settings-sync agent-config`.
 
