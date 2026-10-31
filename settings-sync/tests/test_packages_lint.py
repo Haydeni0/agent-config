@@ -170,3 +170,15 @@ def test_duplicate_footer_markers_pass(lint: types.ModuleType, tmp_work: Path) -
     spec = "# S\n\nReviewed: fail 1\n\nReviewed: pass 2\n"
     make_package(tmp_work, "p", decisions="state: plan\n\n# D\n", spec=spec)
     assert findings(lint, tmp_work) == []
+
+
+def test_lint_reports_graph_edge_finding(tmp_work: Path, lint: types.ModuleType):
+    bad = make_package(tmp_work, "bad-edges", plan=(
+        "### Task 1: A\n**Blocked by:** Task 9\n- [ ] s\n"
+    ))
+    legacy = make_package(tmp_work, "legacy", plan=(
+        "### Task 1: A\n- [ ] s\n"
+    ))
+    findings = lint.lint_all(tmp_work)
+    assert any("graph:" in f and "Task 9" in f for f in findings)
+    assert not any("legacy" in f for f in findings)

@@ -10,6 +10,7 @@ a silent zero-finding pass."""
 
 import importlib.util
 import re
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -32,6 +33,18 @@ def _load_package_states():
 _ps = _load_package_states()
 ALL_STATES = _ps.ALL_STATES
 DEBUG_STATES = _ps.DEBUG_STATES
+
+
+def _load_graph():
+    spec = importlib.util.spec_from_file_location(
+        "wp_graph", Path(__file__).resolve().parent.parent / "skills" / "work-package" / "graph.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["wp_graph"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_graph = _load_graph()
 
 
 def lint_decisions(text: str, rel: str) -> list[str]:
@@ -128,6 +141,7 @@ def lint_package(pkg: Path, root: Path) -> list[str]:
         p = pkg / name
         if p.exists():
             findings += lint_markers(p.read_text(), str(p.relative_to(root)), is_plan=(name == "plan.md"))
+    findings += [f"graph: {f_}" for f_ in _graph.check_pkg(pkg)]
     return findings
 
 
