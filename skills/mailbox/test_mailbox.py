@@ -68,8 +68,8 @@ if verb == "rename":
     print("{}")
     sys.exit(0)
 if _group == "pane" and verb == "read":
-    # herdr pane read --source detection --format text <PANE>: the screen herdr's
-    # own agent-state detection runs over. Default: a normal idle claude pane
+    # herdr pane read <PANE> (the composer guard reads --source visible --format
+    # ansi, so fixture bytes carry their own SGR styling). Default: a normal idle claude pane
     # with an empty composer box; tests override via pane_screens/pane_read_errors.
     pane = rest[-1] if rest else target
     if (code := state.get("pane_read_errors", {}).get(pane)):
@@ -1376,8 +1376,10 @@ def test_ring_rings_through_a_fresh_hint_composer(mesh: Mesh) -> None:
 
 def test_ring_rings_through_a_dim_replayed_prompt(mesh: Mesh) -> None:
     # a worked session can replay a prior prompt shape as a dim placeholder in
-    # the empty composer (item rrb's captured bytes, the seven-deferral
-    # founding shape) - suggestion text, not a typed draft
+    # the empty composer (item rrb's captured text, the seven-deferral founding
+    # shape, with the dim SGR styling transplanted from this item's fresh-hint
+    # capture since rrb's detection captures carry no escapes) - suggestion text,
+    # not a typed draft
     mesh.herdr.set(
         "pane_screens",
         {WORKER_PANE: composer_box("❯ \x1b[0m\x1b[2mwrite marker-s1.txt saying delivered-1\x1b[0m\r")},
