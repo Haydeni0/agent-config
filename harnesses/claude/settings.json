@@ -119,16 +119,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command' | grep -qE 'gh api .*(-X (DELETE|POST|PATCH|PUT)|--method[= ](DELETE|POST|PATCH|PUT)|--input)' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"gh api write methods blocked\"}}' || true"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/custom/hooks/check-bash-guard.sh"
+            "command": "${AGENT_CONFIG_COMMAND} || exit 2"
           }
         ]
       },

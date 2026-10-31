@@ -5,7 +5,7 @@ import re
 import shlex
 from pathlib import Path
 
-from settings_sync.hooks import hook_groups, sync_hook_config
+from settings_sync.hooks import expand_command_hooks, has_command_placeholder, hook_groups, sync_hook_config
 from settings_sync.ownership import prune_generated, sync_generated_symlink
 from settings_sync.paths import Paths, config_home
 from settings_sync.sync import Outcome, Status
@@ -27,7 +27,10 @@ def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
         defaults = json.loads((paths.source_dir / "harnesses/claude/settings.json").read_text())
         if not isinstance(defaults, dict):
             raise ValueError("Claude settings must be a JSON object")
-        for groups in hook_groups(defaults.get("hooks", {})).values():
+        hooks = hook_groups(defaults.get("hooks", {}))
+        if has_command_placeholder(hooks):
+            expand_command_hooks(paths.source_dir, "claude", hooks)
+        for groups in hooks.values():
             for group in groups:
                 for hook in group.get("hooks", []):
                     if hook.get("type") == "command":
