@@ -27,7 +27,9 @@ Compose sections to fit the task - this is loose guidance, not a mandated skelet
 - **Design** - approach, components, boundaries; each unit answerable: what does it do, how is it used, what does it depend on
 - **Data flow** - where information moves, if it moves
 - **Error handling** - failure modes that matter
-- **Testing** - what gets verified and how
+- **Testing** - what gets verified and how; cite the seams the test plan chose
+  (its Seams block), or - when no test plan exists - propose seams (existing
+  over new, highest that exercises the behavior, fewest) and confirm them
 - **Open questions** - anything unresolved; empty is fine, "TBD" is not
 
 Follow the repo's existing spec style if one exists. If the design covers multiple independent subsystems that weren't split during the grill, flag it and suggest separate specs - one per subsystem, each independently implementable.
@@ -42,6 +44,15 @@ After writing, look at it with fresh eyes and fix inline:
 4. **Ambiguity check** - could any requirement be read two ways? Pick one, make it explicit.
 
 Fix and move on - no re-review loop.
+
+## No paths, no code
+
+Name modules and interfaces; never file paths, line numbers, or code - they
+rot before the design does. The one exception: a snippet a prototype produced
+that encodes a decision better than prose can (state machine, reducer,
+schema, type shape) - inline it trimmed to the decision-rich parts and label
+it prototype-derived. Implementation plans keep their exact paths; this rule
+is for specs.
 
 ## User review gate
 

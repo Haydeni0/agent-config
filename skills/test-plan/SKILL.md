@@ -14,9 +14,15 @@ Timing-agnostic. Invoke during design, after a design is done, or mid-implementa
 ## The loop
 
 1. **Preamble** - load the canon and heuristics (below). Defer mechanics to existing skills.
-2. **Draft** - enumerate candidate tests using the heuristics. Run the two gates. Label each test.
-3. **Hand off to grill-me** - invoke `grill-me` with the draft as the plan to stress-test. `grill-me` sharpens fuzzy scenarios, resolves overlaps, finds gaps, ends in a decision log.
-4. **Output** - inline by default. Offer to write the final plan to a file (`docs/tests/<feature>.md` or alongside the design doc) if the user wants it persisted.
+2. **Seams** - choose the test seams before drafting: where in the code the
+   tests attach. Prefer existing seams over new ones, the highest seam that
+   still exercises the behavior, and as few as possible - ideally one. Confirm
+   them with the user when running interactively. Record the chosen seams as a
+   Seams block at the top of the output; every scenario names its seam. A
+   seam you cannot name is design output, not test planning - say so.
+3. **Draft** - enumerate candidate tests using the heuristics. Run the two gates. Label each test.
+4. **Hand off to grill-me** - invoke `grill-me` with the draft as the plan to stress-test. `grill-me` sharpens fuzzy scenarios, resolves overlaps, finds gaps, ends in a decision log.
+5. **Output** - inline by default. Offer to write the final plan to a file (`docs/tests/<feature>.md` or alongside the design doc) if the user wants it persisted.
 
 ## Preamble
 
@@ -77,6 +83,7 @@ Apply the heuristics to the feature. Produce a candidate test list. One entry pe
 | Field | What it captures |
 |---|---|
 | Name | the scenario, named by what it asserts |
+| Seam | which chosen seam this test attaches to |
 | Given/When/Then | the scenario, in that structure |
 | Asserts | what it checks (the observable outcome/side effect) |
 | Break it catches | the production change that makes it fail, and that the change is a bug not a decision (Gate 1) |
