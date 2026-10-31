@@ -116,3 +116,20 @@ def test_codex_sync_accepts_native_nested_skills(tmp_path: Path, defaults_source
 
     assert result.exit_code == 0, result.output
     assert (target / "AGENTS.md").is_file()
+
+
+def test_codex_template_includes_codegraph_mcp(tmp_path: Path, defaults_source: Path):
+    from settings_sync.codex import sync_codex_config
+
+    (defaults_source / "harnesses/codex/config.toml").write_text(
+        'model = "m"\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve", "--mcp"]\n'
+    )
+    target = tmp_path / "codex/config.toml"
+    target.parent.mkdir(parents=True)
+    target.write_text('model = "local"\n')
+    sync_codex_config(target, defaults_source / "harnesses/codex/config.toml", dry_run=False)
+    text = target.read_text()
+    # Declared scalars replace (REQ-SYNC-04): template model wins, local keys absent from the template stay.
+    assert 'model = "m"' in text
+    assert "[mcp_servers.codegraph]" in text
+    assert 'command = "codegraph"' in text

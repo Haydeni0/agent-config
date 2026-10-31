@@ -55,3 +55,7 @@ status_line_use_colors = true
 # base_url = "<responses-api base url>"
 # env_key = "ZAI_API_KEY"
 # wire_api = "responses"
+
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]

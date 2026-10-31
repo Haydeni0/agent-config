@@ -90,7 +90,8 @@
       "Bash(codex exec:*)",
       "Bash(~/.local/bin/codex exec:*)",
       "Bash(codex:*)",
-      "Bash(local-codex:*)"
+      "Bash(local-codex:*)",
+      "mcp__codegraph__*"
     ],
     "deny": [
       "Bash(aws s3 rm*)",
@@ -136,7 +137,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set 💬 || true"
+            "command": "bash \"$HOME/.claude/custom/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh\" -C \"$CLAUDE_PROJECT_DIR\" config state marker set \ud83d\udcac || true"
           }
         ]
       }

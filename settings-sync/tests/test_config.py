@@ -116,3 +116,18 @@ def test_jsonc_parse_failure_leaves_jsonc_intact(tmp_path: pathlib.Path):
 
     assert outcome.status == Status.FAILED
     assert jsonc.exists()
+
+
+def test_opencode_config_carries_codegraph_entry(tmp_path: pathlib.Path):
+    base = tmp_path / "claude" / "opencode.json"
+    base.parent.mkdir(parents=True)
+    base.write_text(json.dumps({
+        "mcp": {"servers": {"codegraph": {"type": "local", "command": ["codegraph", "serve", "--mcp"], "disabled": False, "codemode": False}}}
+    }))
+    target = tmp_path / "config" / "opencode" / "opencode.json"
+
+    outcome = sync_config(target, base)
+
+    assert outcome.status == Status.CREATED
+    entry = json.loads(target.read_text())["mcp"]["servers"]["codegraph"]
+    assert entry == {"type": "local", "command": ["codegraph", "serve", "--mcp"], "disabled": False, "codemode": False}

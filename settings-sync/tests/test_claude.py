@@ -58,3 +58,21 @@ def test_custom_claude_home_runs_its_source_hook(source_home: Path, isolated_hom
         executed = subprocess.run(["bash", "-c", command], capture_output=True, text=True)
         assert executed.returncode == 0, executed.stderr
         assert executed.stdout == "selected-hook\n"
+
+
+def test_claude_permissions_include_codegraph(tmp_path: Path, isolated_home: Path):
+    from settings_sync.claude import sync_claude_config
+    from settings_sync.paths import resolve_paths
+
+    source = tmp_path / "source"
+    (source / "harnesses/claude").mkdir(parents=True)
+    (source / "harnesses/claude/settings.json").write_text(json.dumps({"permissions": {"allow": ["mcp__codegraph__*"]}}))
+    target = isolated_home / ".claude/settings.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({"permissions": {"allow": ["Bash(git status*)"]}}))
+    paths = resolve_paths(claude_dir=source, claude_home=target.parent)
+    sync_claude_config(paths, dry_run=False)
+    allow = json.loads(target.read_text())["permissions"]["allow"]
+    # Declared arrays replace (REQ-SYNC-04): the template allow list wins.
+    assert "mcp__codegraph__*" in allow
+    assert "Bash(git status*)" not in allow

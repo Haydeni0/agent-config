@@ -37,5 +37,19 @@
       "gh api* --method PUT*": "deny",
       "gh api* --input*": "deny"
     }
+  },
+  "mcp": {
+    "servers": {
+      "codegraph": {
+        "type": "local",
+        "command": [
+          "codegraph",
+          "serve",
+          "--mcp"
+        ],
+        "disabled": false,
+        "codemode": false
+      }
+    }
   }
 }

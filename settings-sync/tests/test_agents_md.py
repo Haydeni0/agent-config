@@ -41,3 +41,15 @@ def test_sync_agents_md_skips_diverging_without_force(tmp_path: pathlib.Path):
 
     assert outcome.status == Status.SKIPPED
     assert target.read_text() == "hand-edited\n"
+
+
+def test_codegraph_marker_block_survives_agents_md_build(tmp_path: pathlib.Path):
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "# Rules\n"
+        "<!-- CODEGRAPH_START -->\n## CodeGraph\nUse codegraph before grep.\n<!-- CODEGRAPH_END -->\n"
+    )
+    result = build_agents_md(claude_md)
+    assert "<!-- CODEGRAPH_START -->" in result
+    assert "<!-- CODEGRAPH_END -->" in result
+    assert "Use codegraph before grep." in result
