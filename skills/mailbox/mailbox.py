@@ -68,7 +68,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-24.02"
+MAILBOX_VERSION = "2026-10-31.01"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -659,6 +659,25 @@ def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:
                 (i + 1 for i in range(len(raw) - 1) if sent and sent in raw[i] + raw[i + 1].lstrip()),
                 None,
             )
+        if hit is None:
+            # the founding payload wraps past two rows (a 230-char line holds
+            # eight at a 57-column pane), and its word-boundary seams defeat
+            # the pair joins too - the indent doubles the seam space the sent
+            # text carries, and stripping it drops the space outright. Join
+            # the whole post read with all whitespace squashed out of both
+            # sides and map the match back to the row its last byte lands in:
+            # that row is the freshest trace Enter lands after
+            squashed = [re.sub(r"\s+", "", row) for row in raw]
+            target = re.sub(r"\s+", "", sent)
+            joined = "".join(squashed)
+            start = joined.find(target) if target else -1
+            if start >= 0:
+                end = start + len(target) - 1
+                spent = 0
+                hit = next(
+                    (i for i, row in enumerate(squashed) if (spent := spent + len(row)) > end),
+                    None,
+                )
     if hit is None:
         return "absent", f"absent; pane: {pane_state}"
     for row in post_rows[hit + 1:]:

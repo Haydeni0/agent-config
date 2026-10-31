@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-24.02"
+SKILL_VERSION = "2026-10-31.01"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -96,12 +96,25 @@ if verb == "prompt":
     # consumes it and a fresh response row follows, a busy one queues it with
     # the spinner chrome and the queued-message hint below the echo - the
     # readback's delivered and queued shapes. A test can vanish the send
-    # outright (prompt_vanish), the founding miss's shape.
+    # outright (prompt_vanish), the founding miss's shape, or land the echo
+    # row-wrapped (prompt_wrap: the pane's column width) as claude renders a
+    # long line - word-boundary seams, two-space continuation indent.
     pane = agents[target]
     if not state.get("prompt_vanish", {}).get(target):
         screen = state.get("pane_screens", {}).get(pane, DEFAULT_SCREEN)
         busy = state.get("wait", {}).get(target) == "timeout"
-        state.setdefault("pane_screens", {})[pane] = screen + rest[0] + "\n" + (
+        line = rest[0]
+        if (width := state.get("prompt_wrap", {}).get(target)):
+            rows, cur = [], ""
+            for word in line.split():
+                if cur and len(cur) + 1 + len(word) > width:
+                    rows.append(cur)
+                    cur = word
+                else:
+                    cur = f"{cur} {word}"
+            rows.append(cur)
+            line = rows[0] + "\n" + "\n".join("  " + row for row in rows[1:])
+        state.setdefault("pane_screens", {})[pane] = screen + line + "\n" + (
             BUSY_SPINNER + BUSY_HINT if busy else DEFAULT_RESPONSE
         )
         with open(state_path, "w") as f:
@@ -1587,6 +1600,29 @@ def test_ring_verb_exits_3_when_the_sent_line_leaves_no_trace(mesh: Mesh) -> Non
     assert "writes no mail" in result.stdout
 
 
+def test_ring_verb_reads_a_row_wrapped_echo_as_rung(mesh: Mesh) -> None:
+    # the founding false-negative's end-to-end arm (probe-pane bytes,
+    # 2026-10-31): the long ring line lands wrapped across several pane rows
+    # with word-boundary seams, so the pairwise trace search called the
+    # delivered line absent with a resend instruction - the squashed join
+    # reads the consumer row after the echo and reports rung
+    mesh.herdr.set("prompt_wrap", {"worker": 57})
+    line = (
+        "probe long ring: create a file named marker.txt containing exactly the word delivered then"
+        " reply done and stop - this line is deliberately long so that it wraps across three or"
+        " more pane rows in the composer and the transcript, the founding shape of the ring"
+        " readback false negative bug, padded with extra descriptive words added here to reach"
+        " the founding length of roughly two hundred thirty characters today"
+    )
+
+    result = mesh.run("ring", WORKER_PANE, line, pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert "readback: delivered" in result.stdout
+    assert result.stdout.strip().endswith("rung")
+    assert "resend" not in result.stdout
+
+
 def test_readback_classifier_reads_stale_trailing_chrome_as_queued() -> None:
     # the false-delivered discriminator: a trailing row the pre-send read
     # already held is pane chrome, not a consumer response
@@ -1673,6 +1709,71 @@ def test_readback_classifier_joins_a_continuation_indented_wrap() -> None:
     verdict, _ = helper.readback_classify(long_line, pre,
                                           wrapped_queued + "✻ Working on the ring line\n")
     assert verdict == "delivered"
+
+
+def test_readback_classifier_joins_the_founding_multi_row_wrap() -> None:
+    # the founding false-absent, live probe-pane bytes (2026-10-31): the sent
+    # line's echo holds eight rows at the pane's 57 columns, so no single row
+    # or adjacent pair contains it, and every seam lands on a word boundary -
+    # the raw pair join doubles the seam space the sent text carries and the
+    # stripped one drops it. Only the squashed whole-pane join finds the trace
+    helper = load_helper(HELPER)
+    long_line = (
+        "probe long ring 1: when you read this create a file named marker-l1.txt in your working"
+        " directory containing exactly the word delivered-1 then reply done and stop - this line"
+        " is deliberately long so that it wraps across three or more pane rows in the composer and"
+        " the transcript, the founding shape of the ring readback false negative bug, padded with"
+        " extra descriptive words added here to reach the founding length of roughly two hundred"
+        " thirty characters today"
+    )
+    pre = "✳ Claude Code\n❯\n  Model: glm | footer\n"
+    wrapped = (
+        "❯ probe long ring 1: when you read this create a file named\n"
+        "  marker-l1.txt in your working directory containing exactly\n"
+        "  the word delivered-1 then reply done and stop - this line is\n"
+        "  deliberately long so that it wraps across three or more pane\n"
+        "  rows in the composer and the transcript, the founding shape\n"
+        "  of the ring readback false negative bug, padded with extra\n"
+        "  descriptive words added here to reach the founding length of\n"
+        "  roughly two hundred thirty characters today\n"
+    )
+
+    verdict, evidence = helper.readback_classify(long_line, pre, wrapped)
+    assert verdict == "queued"
+    assert evidence.startswith("queued-unverified; pane:")
+
+    verdict, _ = helper.readback_classify(long_line, pre, wrapped + "  Ran 1 shell command\n● done\n")
+    assert verdict == "delivered"
+
+
+def test_readback_classifier_joins_a_word_boundary_seam_pair() -> None:
+    # the seam shape both pair joins miss at two rows: the wrap lands on the
+    # space between words, so the raw join carries the continuation indent as
+    # a doubled space and the stripped join loses the space outright - the
+    # squashed join holds the sent text either way
+    helper = load_helper(HELPER)
+    sent = "done: build send-delivery-readback at the improve-lab lab dir"
+    pre = "✳ Claude Code\n❯\n  Model: glm | footer\n"
+    wrapped = pre + "❯ done: build send-delivery-readback at\n  the improve-lab lab dir\n"
+
+    verdict, _ = helper.readback_classify(sent, pre, wrapped)
+    assert verdict == "queued"
+
+    verdict, _ = helper.readback_classify(sent, pre, wrapped + "✻ Working on the ring line\n")
+    assert verdict == "delivered"
+
+
+def test_readback_classifier_still_reads_a_vanished_line_as_absent() -> None:
+    # the squash join widens the trace search, never the honesty of absent:
+    # a line whose bytes are nowhere in the pane stays not-submitted
+    helper = load_helper(HELPER)
+    pre = "✳ Claude Code\n❯\n  Model: glm | footer\n"
+    post = pre + "✻ Working on the ring line\n"
+
+    verdict, evidence = helper.readback_classify("done: a line that was never sent", pre, post)
+
+    assert verdict == "absent"
+    assert evidence.startswith("absent; pane:")
 
 
 def test_ring_verb_defers_a_busy_seat_with_a_typing_composer(mesh: Mesh) -> None:
@@ -1889,7 +1990,7 @@ def test_update_migrates_a_pre_stamp_mesh(mesh: Mesh) -> None:
 
 
 def test_update_refuses_a_newer_mesh_instead_of_downgrading(mesh: Mesh) -> None:
-    newer = "2026-10-24.99"  # a version above SKILL_VERSION (date, then revision)
+    newer = "2026-10-31.99"  # a version above SKILL_VERSION (date, then revision)
     set_mesh_version(mesh.root, newer)
     readme_before = (mesh.root / "README.md").read_text()
     log = mesh.root / "log.jsonl"
