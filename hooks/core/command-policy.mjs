@@ -54,6 +54,8 @@
 //   - A glob pattern is matched per path component against mnt and data, so
 //     one that names a different directory with the same spelling (/m* also
 //     names /media) is denied on the safe side.
+//   - A glob component that can match . or .. (.*, .?) is also read as them,
+//     so rm -rf "$DIR"/.* (flattened to /.*) is denied as filesystem root.
 
 const S3_REASON =
   "S3 deletes are not permitted for the agent - run them yourself outside the agent. (policy: command)"
@@ -214,26 +216,49 @@ function globComponentMatches(pattern, name) {
   return new RegExp(`^${source}$`).test(name)
 }
 
+// Spellings `path` takes when a dot-led glob component that can match `.` or `..`
+// (.*, .?) matches them, as bash before 5.2 lets it; null past
+// MAX_BRACE_EXPANSIONS, which callers treat as protected.
+function dotGlobVariants(path) {
+  let variants = [""]
+  for (const part of path.split("/").slice(1)) {
+    const options = [part]
+    if (part.startsWith(".") && /[*?[]/.test(part)) {
+      if (globComponentMatches(part, ".")) options.push(".")
+      if (globComponentMatches(part, "..")) options.push("..")
+    }
+    variants = variants.flatMap((variant) => options.map((option) => `${variant}/${option}`))
+    if (variants.length > MAX_BRACE_EXPANSIONS) return null
+  }
+  return variants
+}
+
 // Reason for an absolute glob or brace pattern that can name /mnt or a path
 // at or under /mnt/data; null when it cannot or is not a pattern. A sequence
-// expression ({a..c}, {1..9..2}) counts as `*`; each expansion is checked
-// with `..` resolved.
+// expression ({a..c}, {1..9..2}) counts as `*`; each expansion is checked in
+// every dot-glob spelling with `..` resolved.
 function globReason(label, norm) {
   if (!norm.startsWith("/") || !/[*?[{]/.test(norm)) return null
   const expansions = expandBraces(norm.replace(BRACE_SEQUENCE, "*"))
   if (expansions === null) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
   for (const expansion of expansions) {
-    const path = resolveDotDot(normalizePath(expansion))
-    if (!/[*?[]/.test(path)) {
-      const reason = expansion === norm ? null : protectedReason(label, path)
+    const variants = dotGlobVariants(normalizePath(expansion))
+    if (variants === null) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
+    for (const variant of variants) {
+      const reason = globPathReason(label, norm, resolveDotDot(normalizePath(variant)))
       if (reason) return reason
-      continue
     }
-    const [first, second] = path.split("/").slice(1)
-    if (!globComponentMatches(first, "mnt")) continue
-    if (second === undefined) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
-    if (globComponentMatches(second, "data")) return `Blocked: ${label} on a path under /mnt/data. ${MNT_REASON}`
   }
+  return null
+}
+
+// Reason for one brace-free spelling `path` of the pattern `norm`.
+function globPathReason(label, norm, path) {
+  if (!/[*?[]/.test(path)) return path === norm ? null : protectedReason(label, path)
+  const [first, second] = path.split("/").slice(1)
+  if (!globComponentMatches(first, "mnt")) return null
+  if (second === undefined) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
+  if (globComponentMatches(second, "data")) return `Blocked: ${label} on a path under /mnt/data. ${MNT_REASON}`
   return null
 }
 
