@@ -136,3 +136,12 @@ def claude_mcp_json_path(paths: Paths) -> Path:
     if profile:
         return paths.claude_home / ".claude.json"
     return paths.claude_home.parent / ".claude.json"
+
+
+def sync_claude_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
+    """Keyed-merge the MCP server entry into ~/.claude.json (or the profile
+    copy). Only the mcpServers.codegraph key is managed; trust, oauth, and
+    onboarding state pass through untouched (merge_defaults)."""
+    target = claude_mcp_json_path(paths)
+    content = json.dumps(CLAUDE_MCP_ENTRY, indent=2)
+    return [sync_json_defaults(target, content, dry_run)]

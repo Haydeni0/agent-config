@@ -182,3 +182,63 @@ def test_claude_mcp_json_path_with_and_without_profile_dir(tmp_path: Path, monke
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "profile"))
     profile_paths = resolve_paths(claude_dir=tmp_path / "source")
     assert claude_mcp_json_path(profile_paths) == profile_paths.claude_home / ".claude.json"
+
+
+def test_claude_mcp_sets_entry_and_preserves_foreign_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_claude_mcp
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    paths = _paths(tmp_path)
+    target = claude_mcp_json_path(paths)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({
+        "projects": {"/work": {"allowedTools": ["Bash"]}},
+        "oauthAccount": {"email": "user@example.com"},
+        "mcpServers": {"other": {"type": "stdio", "command": "other"}},
+    }))
+    outcomes = sync_claude_mcp(paths, dry_run=False)
+    assert outcomes[0].status in (Status.CREATED, Status.REPLACED)
+    data = json.loads(target.read_text())
+    assert data["mcpServers"]["codegraph"] == {
+        "type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"], "alwaysLoad": True,
+    }
+    assert data["projects"]["/work"]["allowedTools"] == ["Bash"]
+    assert data["oauthAccount"] == {"email": "user@example.com"}
+    assert data["mcpServers"]["other"]["command"] == "other"
+
+
+def test_claude_mcp_idempotent_second_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_claude_mcp
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    paths = _paths(tmp_path)
+    sync_claude_mcp(paths, dry_run=False)
+    before = claude_mcp_json_path(paths).read_text()
+    outcomes = sync_claude_mcp(paths, dry_run=False)
+    assert outcomes[0].status == Status.UNCHANGED
+    assert claude_mcp_json_path(paths).read_text() == before
+
+
+def test_claude_mcp_creates_absent_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_claude_mcp
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    paths = _paths(tmp_path)
+    outcomes = sync_claude_mcp(paths, dry_run=False)
+    target = claude_mcp_json_path(paths)
+    assert target.is_file()
+    assert json.loads(target.read_text())["mcpServers"]["codegraph"]["command"] == "codegraph"
+
+
+def test_claude_mcp_refuses_unparseable_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.codegraph import sync_claude_mcp
+
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    paths = _paths(tmp_path)
+    target = claude_mcp_json_path(paths)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("{not json")
+    outcomes = sync_claude_mcp(paths, dry_run=False)
+    assert outcomes[0].status == Status.FAILED
+    assert "could not merge JSON configuration" in outcomes[0].detail
+    assert target.read_text() == "{not json"
