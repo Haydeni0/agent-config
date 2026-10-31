@@ -91,6 +91,39 @@ transitions are the driving skills' prose.
 - **X** = reality disagreed with the design; always points to the D or Q it produced.
 - A resolved Q is removed and cited by the D that resolved it.
 
+## Dependency edges
+
+Plan tasks and Open-questions entries may declare what blocks them. Same-file
+edges only: plan tasks block plan tasks, Q entries block Q entries.
+
+- Plan task: a `**Blocked by:**` line under the task heading - `Task 2, Task 4`
+  references or `None`. Required on every task once any task in the plan has
+  it (a plan with none anywhere is legacy and passes untouched). A task is
+  closed when every checkbox under its heading is checked.
+- Q entry: an optional `Blocked by: Q2, Q3` in the entry, and an optional
+  type tag after the ID - `- Q3 [research] ...` - one of grill (the default,
+  untagged), research, prototype, task. A Q is closed when struck through or
+  when some D carries `Resolves Q<n>`; resolution still removes the entry,
+  the citation is the closure record.
+
+`graph.py` in this directory checks a package mechanically
+(`uv run --script <this skill's directory>/graph.py check <package-dir>`):
+
+- `check` - findings, one per line, exit 1 on findings: a reference that
+  resolves to no task and to no open/struck/`Resolves`-cited Q; a cycle; a
+  closed plan task with an open blocker; an opted-in task missing the field;
+  an opted-in task with no checkboxes (it could never close); a duplicate
+  task or Q ID; a cross-file reference; an unparseable reference; an unknown
+  type tag.
+- `frontier` - the open items whose blockers are all closed, as a JSON array
+  in file order (plan tasks in plan order, then Qs in decisions order), each
+  `{id, kind: task|q, type, title, blocked_by}`; plan-task items carry
+  `type: null`, an untagged Q reads as grill. Exit 1 and no array when check
+  reports findings. Pick the next item with jq: `frontier <dir> | jq '.[0]'`.
+
+This repo's package lint runs `check` across every package; other repos run
+the script directly.
+
 ## Markers
 
 Bytes that cycle-driving skills write on artifacts and read back; their *interpretation* (which stage consumes which marker) stays with the driving skill:
