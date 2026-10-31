@@ -68,7 +68,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-31.01"
+MAILBOX_VERSION = "2026-10-31.02"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -448,7 +448,7 @@ class RingOutcome(StrEnum):
     TYPING = "not rung: unsubmitted typing sits in the recipient's composer - the file waits in its inbox"
     COMPOSER_UNSEEN = (
         "not rung: the recipient's composer could not be seen (menu, overlay, or herdr without"
-        " `pane read --source detection`) - the file waits in its inbox"
+        " `pane read --source visible`) - the file waits in its inbox"
     )
 
 
@@ -574,25 +574,74 @@ def is_horizontal_rule(line: str) -> bool:
     return trimmed[width:].strip() == "" or width >= 3
 
 
+# a CSI escape sequence: herdr's styled pane reads interleave them with the
+# text; SGR sequences (final byte m) carry the rendering attributes
+ANSI_CSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def row_text_and_dim(row: str) -> tuple[str, list[bool]]:
+    """The row's text with its ANSI sequences stripped, plus a dim flag per
+    kept character. claude renders its own empty-composer suggestions - a fresh
+    session's `Try "..."` hint, a worked session's replay of a prior prompt -
+    dim (SGR 2) and a human's typed draft plain (the probe's captured bytes),
+    so the flags tell suggestion text from typed text where style-stripped
+    text cannot."""
+    chars: list[str] = []
+    dims: list[bool] = []
+    dim = False
+    pos = 0
+    for seq in ANSI_CSI.finditer(row):
+        chars.extend(row[pos:seq.start()])
+        dims.extend([dim] * (seq.start() - pos))
+        if seq.group().endswith("m"):
+            params = seq.group()[2:-1].split(";")
+            i = 0
+            while i < len(params):
+                code = params[i]
+                i += 1
+                if code in ("38", "48") and i < len(params):
+                    # an SGR color's own arguments: 38/48;5;N and 38/48;2;R;G;B
+                    # - the colorspace's 2 is not the dim attribute
+                    i += 3 if params[i] == "2" else 2 if params[i] == "5" else 0
+                elif code in ("0", "00"):
+                    dim = False
+                elif code == "2":
+                    dim = True
+                elif code == "22":
+                    dim = False
+        pos = seq.end()
+    chars.extend(row[pos:])
+    dims.extend([dim] * (len(row) - pos))
+    return "".join(chars), dims
+
+
 def prompt_box_state(screen: str) -> str | None:
-    """The claude composer as herdr's own detection sees it: "empty", "typing",
-    or None when the box cannot be seen - never a guess.
+    """The claude composer as the pane's styled bytes show it: "empty",
+    "typing", or None when the box cannot be seen - never a guess.
 
     The composer is the box whose top border is the second horizontal rule
-    from the bottom of herdr's detection view (the same parse herdr's
-    claude.toml `live_prompt_box` rule runs over); its body runs to the next
+    from the bottom of the pane read; its body runs to the next
     rule. A body beyond the bare prompt cursor is unsubmitted typing - a human
-    draft, since an agent mid-turn does not leave one on an idle pane."""
+    draft, since an agent mid-turn does not leave one on an idle pane - unless
+    every character of it renders dim: claude's own empty-composer suggestions
+    render dim while a typed draft renders plain, so the dim flag is what
+    tells a suggestion from a human's text."""
     lines = screen.splitlines()
-    rules = [i for i, line in enumerate(lines) if is_horizontal_rule(line)]
+    rules = [i for i, line in enumerate(lines) if is_horizontal_rule(ANSI_CSI.sub("", line))]
     if len(rules) < 2:
         return None
     for line in lines[rules[-2] + 1:]:
-        if is_horizontal_rule(line):
+        if is_horizontal_rule(ANSI_CSI.sub("", line)):
             break
-        stripped = line.strip()
-        if stripped and stripped != PROMPT_CURSOR:
-            return "typing"
+        text, dims = row_text_and_dim(line)
+        if text.startswith(PROMPT_CURSOR):
+            text = text[len(PROMPT_CURSOR):]
+            dims = dims[len(PROMPT_CURSOR):]
+        if not text.strip():
+            continue
+        if all(dim for dim, ch in zip(dims, text) if ch.strip()):
+            continue
+        return "typing"
     return "empty"
 
 
@@ -738,11 +787,14 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> tuple[RingOu
         # a draft in a claude pane's composer means a human is mid-typing,
         # idle or mid-turn alike: prompting splices into the draft and Enter
         # submits both (#70's busy arm - the human types while the agent
-        # works). Read the composer through herdr's own detection view and
-        # defer the ring on anything but a provably empty box - the mail stays
-        # in the inbox and the turn-end guard or a poke surfaces it.
+        # works). Read the composer through the styled visible view - herdr's
+        # detection view strips the rendering attributes that tell claude's
+        # dim suggestion hints from a human's typed draft (the founding
+        # lost-ring shape) - and defer the ring on anything but a provably
+        # empty box; the mail stays in the inbox and the turn-end guard or a
+        # poke surfaces it.
         try:
-            screen = herdr("pane", "read", "--source", "detection", "--format", "text", pane)
+            screen = herdr("pane", "read", "--source", "visible", "--format", "ansi", pane)
         except HerdrError:
             return RingOutcome.COMPOSER_UNSEEN, ""
         state = prompt_box_state(screen)
@@ -751,8 +803,8 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> tuple[RingOu
         if state is None:
             return RingOutcome.COMPOSER_UNSEEN, ""
     claude = recipient_harness(pane) == "claude"
-    # the pre-send read the readback diffs against, from the visible source:
-    # the queued line is invisible to the detection view the guard reads
+    # the pre-send read the readback diffs against, from the visible source in
+    # plain text: the readback matches on words, not rendering attributes
     pre_read = ""
     if claude:
         try:
@@ -996,7 +1048,7 @@ SEAT_DEFERRED = {
     RingOutcome.TYPING: "not rung: unsubmitted typing sits in the seat's composer - the line was not submitted; resend it once the composer is clear",
     RingOutcome.COMPOSER_UNSEEN: (
         "not rung: the seat's composer could not be seen (menu, overlay, or herdr without"
-        " `pane read --source detection`) - the line was not submitted; resend when the view is clear"
+        " `pane read --source visible`) - the line was not submitted; resend when the view is clear"
     ),
     RingOutcome.BLOCKED: "not rung: the seat is at a permission prompt - the line was not submitted; resend once it is unblocked",
     RingOutcome.NOT_IDLE: "not rung: the seat stayed busy and mid-turn prompting is unverified for its harness - the line was not submitted; resend later",

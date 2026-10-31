@@ -32,7 +32,7 @@ PLANNER_PANE = "w1:p1"
 WORKER_PANE = "w1:p2"
 CRITIC_PANE = "w1:p3"
 SESSION = "s1"
-SKILL_VERSION = "2026-10-31.01"
+SKILL_VERSION = "2026-10-31.02"
 
 FAKE_HERDR = r'''#!/usr/bin/env python3
 import json, os, sys
@@ -1332,7 +1332,7 @@ def test_ring_rings_through_an_empty_composer(mesh: Mesh) -> None:
     result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
-    assert ["pane", "read", "--source", "detection", "--format", "text", WORKER_PANE] in mesh.herdr.calls()
+    assert ["pane", "read", "--source", "visible", "--format", "ansi", WORKER_PANE] in mesh.herdr.calls()
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
     assert result.stdout.strip().endswith("rung")
 
@@ -1350,6 +1350,53 @@ def test_ring_defers_a_claude_recipient_who_is_typing(mesh: Mesh) -> None:
 
 def test_ring_defers_a_claude_recipient_with_a_multiline_draft(mesh: Mesh) -> None:
     mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ first line of a draft\nwrapped second line")})
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert "not rung: unsubmitted typing" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_rings_through_a_fresh_hint_composer(mesh: Mesh) -> None:
+    # a fresh claude session shows its own suggestion hint dim in an otherwise
+    # empty composer (the probe pane's captured bytes) - no human is typing,
+    # so the founding lost-ring shape must deliver
+    mesh.herdr.set(
+        "pane_screens",
+        {WORKER_PANE: composer_box('❯ \x1b[0m\x1b[2mTry "refactor <filepath>"\x1b[0m\r')},
+    )
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith("rung")
+    assert any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_rings_through_a_dim_replayed_prompt(mesh: Mesh) -> None:
+    # a worked session can replay a prior prompt shape as a dim placeholder in
+    # the empty composer (item rrb's captured bytes, the seven-deferral
+    # founding shape) - suggestion text, not a typed draft
+    mesh.herdr.set(
+        "pane_screens",
+        {WORKER_PANE: composer_box("❯ \x1b[0m\x1b[2mwrite marker-s1.txt saying delivered-1\x1b[0m\r")},
+    )
+
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith("rung")
+    assert any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_defers_a_draft_with_a_dim_completion_appended(mesh: Mesh) -> None:
+    # typed text with claude's dim inline suggestion completing it: the
+    # non-dim prefix is a human's draft, and the splice hole stays shut
+    mesh.herdr.set(
+        "pane_screens",
+        {WORKER_PANE: composer_box("❯ fix the logi\x1b[0m\x1b[2mc the flaky login test\x1b[0m\r")},
+    )
 
     result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
@@ -1388,6 +1435,16 @@ def test_prompt_box_state_classifies_herdr_shaped_screens(helper: ModuleType) ->
     assert helper.prompt_box_state(box("❯ wrapped draft\nsecond line")) == "typing"
     assert helper.prompt_box_state("no rules in this view\n") is None
 
+    # claude renders its empty-composer suggestions dim and a human's typed
+    # draft plain (the probe pane's captured bytes): the dim flag is what
+    # tells suggestion text from typed text
+    assert helper.prompt_box_state(box('❯ \x1b[0m\x1b[2mTry "how does <filepath> work?"\x1b[0m')) == "empty"
+    assert helper.prompt_box_state(box("❯ \x1b[0m\x1b[2mTry \"fix lint errors\"\x1b[0m\n\x1b[0m\x1b[2mwrapped hint row\x1b[0m")) == "empty"
+    assert helper.prompt_box_state(box("❯ fix the logi\x1b[0m\x1b[2mc the flaky login test\x1b[0m")) == "typing"
+    # an SGR color's own arguments (38;2;R;G;B) carry a 2 that is not the dim
+    # attribute - theme-colored text still reads as typed
+    assert helper.prompt_box_state(box("❯ \x1b[0m\x1b[38;2;153;153;153m\x1b[48;2;55;55;55mtyped with theme colors\x1b[0m")) == "typing"
+
     # herdr's own rule semantic (detect/manifest.rs): a bare dash run of any
     # length is a rule, and so is a run of three or more with text after it
     assert helper.is_horizontal_rule("─" * 2) is True
@@ -1402,7 +1459,7 @@ def test_a_busy_claude_recipient_is_prompted_once_the_composer_is_seen_empty(mes
     result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
-    assert ["pane", "read", "--source", "detection", "--format", "text", WORKER_PANE] in mesh.herdr.calls()
+    assert ["pane", "read", "--source", "visible", "--format", "ansi", WORKER_PANE] in mesh.herdr.calls()
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
 
 
