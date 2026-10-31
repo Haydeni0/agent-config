@@ -1,34 +1,58 @@
 // Shared command policy. Passing decisions defer to the harness permission engine.
 //
 // Scope:
-//   S3:       deletes only blocked. Uploads (cp ./x s3://..., s3api put-*) and
-//             read ops (ls, cp download, sync download, list-*/get-*) allowed.
+//   S3:       deletes only blocked (s3 rm, s3 rb, s3 sync --delete, s3api
+//             delete-*). Uploads (cp ./x s3://..., s3api put-*) and read ops
+//             (ls, cp download, sync download, list-*/get-*) allowed.
 //   sudo/dd/mkfs, chmod 777, forced git push, gh api writes and kubectl
-//   mutations are blocked by the command checks below.
+//   mutations are blocked by the guards below.
 //   Git gate: commit-creating subcommands (commit, merge, cherry-pick,
 //   revert, rebase, am, pull without --ff-only) need COMMIT_AUTHORISED,
 //   push and gh pr merge need PUSH_AUTHORISED (pr merge needs both);
 //   COMMIT_UNAUTHORISED/PUSH_UNAUTHORISED deny despite a set authorise var.
-//   /mnt/data: ALL deletes blocked (rm, rmdir, shred, unlink, trash,
-//             find -delete, find -exec rm). Reads/writes allowed.
+//   Protected paths: /mnt/data and everything under it, filesystem root,
+//             and /mnt, in any literal absolute spelling (//, /./, trailing
+//             /, .. resolved lexically, a glob or brace expansion within / or
+//             /mnt). Deletes on them are blocked for the delete verbs (rm,
+//             rmdir, shred, unlink, trash) and for a find carrying a delete
+//             action (-delete, or -exec/-execdir/-ok/-okdir with a delete
+//             verb). Reads/writes allowed.
 //
 // Shell heuristics:
-//   - S3 guard flattens shell separators + quote/subshell chars so wrapped
-//     forms (bash -c "...", $(...), a && b) still match. Last-match-style scan
-//     over a fixed 3-token sequence (aws s3 <sub>) prevents cross-boundary
-//     leakage constructing a false match.
-//   - /mnt/data guard splits on command separators FIRST, then within each
-//     segment flattens only quote/subshell chars (NOT separators) and requires
-//     /mnt/data to be an argument to the delete verb in the same segment. This
-//     prevents false positives where the verb and /mnt/data appear as unrelated
-//     words across a boundary (rm /tmp/x && echo cleaned /mnt/data done).
+//   - Every command is read in two views and denies when either denies. The
+//     flattened view (below) sees inside wrapper strings; the quoted view
+//     keeps a quoted span inside one word, so a blank in an option value
+//     (git -c "a b" push) cannot shift the subcommand position, and re-lexes
+//     quoted words holding a blank as nested commands.
+//   - Tool names match by basename (/usr/bin/git is git).
+//   - Flattened view: command-token guards (sudo, dd, mkfs, kubectl, S3) flatten shell
+//     separators + quote/subshell chars so wrapped forms (bash -c "...",
+//     $(...), a && b) still match.
+//   - Segment guards (git, gh, chmod, delete verbs, find) split on command
+//     separators FIRST, then within each segment flatten only quote/subshell
+//     chars (NOT separators), so a verb and a path must share a segment. This
+//     prevents false positives where they appear as unrelated words across a
+//     boundary (rm /tmp/x && echo cleaned /mnt/data done).
+//   - Subcommands are found past global options: a value-taking option skips
+//     its value token too. aws also accepts unambiguous option-name prefixes
+//     (--prof p) and options between s3/s3api and the subcommand, so both
+//     positions use the aws option table with prefix matching.
+//   - find takes search paths anywhere on the line (bfs), so a deleting find
+//     denies when ANY non-option token after find is a protected path.
 //
-// Known limitation: a delete verb
-// nested in a quoted flag VALUE (git commit -m "rm ... /mnt/data ...") is
-// indistinguishable from a quoted wrapper that EXECUTES (bash -c "rm ...").
-// Both are denied; the user rewords if hit. The same limitation covers a
-// git gate verb nested in a quoted flag value (git commit -m "then git
-// push") - denied on the safe side.
+// Known limitations:
+//   - A delete verb nested in a quoted flag VALUE (git commit -m "rm ...
+//     /mnt/data ...") is indistinguishable from a quoted wrapper that
+//     EXECUTES (bash -c "rm ..."). Both are denied; the user rewords if hit.
+//     The same covers a git gate verb nested in a quoted flag value (git
+//     commit -m "then git push") - denied on the safe side.
+//   - A deleting find that merely mentions a protected path as an operand of
+//     a test (find /tmp -newer /mnt/data/ref -delete) is denied on the safe
+//     side.
+//   - An absolute glob or brace whose first wildcard sits in the top-level
+//     directory counts as filesystem root even when it cannot reach a
+//     protected path (rm -rf /tmp*, rm -rf /{tmp,var}/x) - denied on the safe
+//     side.
 
 const S3_REASON =
   "S3 deletes are not permitted for the agent - run them yourself outside the agent. (policy: command)"
@@ -56,6 +80,59 @@ const GIT_GATE_TAIL =
   "The user sets it in their session - run it yourself outside the agent if it must happen now. (policy: command)"
 const COMMIT_SUBCOMMANDS = new Set(["commit", "merge", "cherry-pick", "revert", "rebase", "am"])
 
+// Command tokens: flatten separators + quote/subshell/backslash chars so
+// wrapped/compound forms (bash -c "...", $(...), a && b, \rm) tokenize to bare
+// tokens.
+const S3_FLATTEN = /["'`$()|;&\\]/g
+// Segment: flatten only quote/subshell/backslash chars (NOT separators, which
+// were already split on).
+const SEG_FLATTEN = /["'`$()\\]/g
+const SPLIT_SEPS = /[\n;&|]/
+// Match Bash's default IFS; Unicode whitespace stays inside argument values.
+const SHELL_WHITESPACE = /[ \t\n]+/
+const DELETE_VERBS = new Set(["rm", "rmdir", "shred", "unlink", "trash"])
+// Tool names match by basename so a path-qualified invocation (/bin/rm,
+// /usr/bin/git) is the same tool. Reasons name the basename.
+const toolName = (t) => t.slice(t.lastIndexOf("/") + 1)
+const GH_WRITE_METHODS = new Set(["DELETE", "POST", "PATCH", "PUT"])
+const KUBECTL_VERBS = new Set([
+  "delete", "deletecollection", "drain", "edit", "apply", "create",
+  "patch", "replace", "scale", "set", "expose", "autoscale", "run",
+  "label", "annotate", "cordon", "uncordon", "taint", "cp",
+])
+const KUBECTL_ROLLOUT_DENY = new Set(["restart", "undo", "pause", "resume"])
+const FIND_EXEC_ACTIONS = new Set(["-exec", "-execdir", "-ok", "-okdir"])
+// Wrapper-string levels the quoted view re-lexes, one per wrapper (sh -c "..." is 1).
+const NESTED_COMMAND_DEPTH = 3
+// find exec delete: a delete verb must appear within this many tokens after the action
+// (covers `-exec sh -c rm ...`-style wrappers without scanning the whole line).
+const FIND_EXEC_RM_WINDOW = 5
+// gh api flags whose value is the next token, skipped so a quoted value like
+// `--jq "-X GET"` can't fake a method.
+const GH_API_VALUE_FLAGS = new Set(["-H", "-t", "-q", "-p", "--hostname", "--cache", "--template", "--jq", "--preview", "--input", "--raw-field", "--field"])
+
+// Option tables for findSubcommand. `value`: options that consume the next
+// token. `prefixes`: the tool accepts unambiguous option-name prefixes.
+const KUBECTL_OPTIONS = {
+  value: new Set(["-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "--server", "-s"]),
+  prefixes: false,
+}
+// Value-taking global options of aws-cli 2.35.10 (awscli/data/cli.json); also
+// accepted between s3/s3api and the subcommand.
+const AWS_OPTIONS = {
+  value: new Set([
+    "--profile", "--region", "--endpoint-url", "--output", "--query", "--color",
+    "--ca-bundle", "--cli-read-timeout", "--cli-connect-timeout",
+    "--cli-binary-format", "--cli-error-format",
+  ]),
+  prefixes: true,
+}
+const GIT_OPTIONS = {
+  value: new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"]),
+  prefixes: false,
+}
+const GH_OPTIONS = { value: new Set(["-R", "--repo", "--hostname"]), prefixes: false }
+
 // Returns a deny reason when the gate blocks, null when authorized. A set
 // revoke var denies even when the authorise var is set.
 function gitGateReason(env, sub, kind) {
@@ -70,340 +147,404 @@ function gitGateReason(env, sub, kind) {
   return null
 }
 
-// The precheck operates on normalized text so continuations cannot hide a
-// guarded command.
-const PRECHECK = /aws\s+s3(api)?\s|\/mnt\b|\b(rm|rmdir|shred|unlink|trash|find|sudo|dd|mkfs|chmod)\b|\bgit\b.*\b(push|api|commit|merge|cherry-pick|revert|rebase|am|pull)\b|\bgh\b.*\b(api|pr)\b|\bkubectl\b|\bk\b/
-
-// S3 guard: flatten separators + quote/subshell/backslash chars so wrapped/compound
-// forms (bash -c "...", $(...), a && b, \rm) tokenize to bare tokens.
-const S3_FLATTEN = /["'`$()|;&\\]/g
-// Segment: flatten only quote/subshell/backslash chars (NOT separators, which
-// were already split on).
-const SEG_FLATTEN = /["'`$()\\]/g
-const SPLIT_SEPS = /[\n;&|]/
-// Match Bash's default IFS; Unicode whitespace stays inside argument values.
-const SHELL_WHITESPACE = /[ \t\n]+/
-const DELETE_VERBS = new Set(["rm", "rmdir", "shred", "unlink", "trash"])
-const GH_WRITE_METHODS = new Set(["DELETE", "POST", "PATCH", "PUT"])
-
-// Collapse // -> / and /./ -> / so path-normalization bypasses (//mnt/data,
-// /mnt/./data, //, /./) are caught. Does NOT resolve .. (the one .. case we
-// tested, /mnt/data/.., is caught by the raw prefix match on /mnt/data).
+// Collapse // and /./ and drop a trailing / or /. so every spelling of one
+// directory compares equal (//mnt/data, /mnt/./data, /mnt/, /., //). `..` is
+// not resolved: /mnt/data/.. still matches the /mnt/data prefix.
 function normalizePath(p) {
-  return p.replace(/\/+/g, "/").replace(/\/\.\//g, "/").replace(/\/\.$/, "")
+  const collapsed = p.replace(/\/+/g, "/").replace(/(\/\.)+(?=\/|$)/g, "")
+  if (collapsed === "" && p.startsWith("/")) return "/"
+  return collapsed.length > 1 ? collapsed.replace(/\/$/, "") : collapsed
+}
+
+// Directory an absolute glob or brace expansion expands within: the path up to
+// the last / before the first wildcard or brace (/mnt/* -> /mnt, /m* -> /,
+// /mnt/{data,x} -> /mnt). null for a non-glob or a relative path.
+function globBase(norm) {
+  const wildcard = norm.search(/[*?[{]/)
+  if (wildcard === -1 || !norm.startsWith("/")) return null
+  return norm.slice(0, norm.lastIndexOf("/", wildcard)) || "/"
+}
+
+// Index of the first token at or after `start` that is neither an option nor
+// an option's value; tokens.length when none. A bare `--` is a one-token skip.
+function findSubcommand(tokens, start, options) {
+  let j = start
+  while (j < tokens.length) {
+    const t = tokens[j]
+    if (options.value.has(t) || (options.prefixes && isValueOptionPrefix(t, options.value))) {
+      j += 2
+      continue
+    }
+    if (t.startsWith("-")) {
+      j++
+      continue
+    }
+    return j
+  }
+  return tokens.length
+}
+
+// aws-cli rejects ambiguous prefixes, so a prefix that names a value option in
+// a running command names exactly that option.
+function isValueOptionPrefix(t, valueOptions) {
+  if (t.length <= 2 || !t.startsWith("--") || t.includes("=")) return false
+  for (const option of valueOptions) if (option.startsWith(t)) return true
+  return false
+}
+
+// Lexically resolve `..` in an absolute normalized path (/tmp/../mnt -> /mnt,
+// /.. -> /).
+function resolveDotDot(norm) {
+  if (!norm.startsWith("/")) return norm
+  const parts = []
+  for (const part of norm.split("/").slice(1)) {
+    if (part === "..") parts.pop()
+    else parts.push(part)
+  }
+  return "/" + parts.join("/")
+}
+
+// Checks the path as written, then with `..` resolved, so both
+// /mnt/data/.. and /tmp/../mnt/data deny.
+function protectedPathReason(label, arg) {
+  const norm = normalizePath(arg)
+  return protectedReason(label, norm) ?? protectedReason(label, resolveDotDot(norm))
+}
+
+// Protected: /mnt/data and below, filesystem root, /mnt, and any absolute glob
+// that expands directly within / or /mnt (so it can match /mnt or /mnt/data).
+function protectedReason(label, norm) {
+  const base = globBase(norm)
+  if (norm.startsWith("/mnt/data")) return `Blocked: ${label} on a path under /mnt/data. ${MNT_REASON}`
+  if (norm === "/" || base === "/") return `Blocked: ${label} on filesystem root. ${ROOT_REASON}`
+  if (norm === "/mnt" || base === "/mnt") return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
+  return null
+}
+
+// ---------- command-token guards: (tokens, env) -> reason | null ----------
+
+// sudo anywhere in the command (covers sudo rm, bash -c "sudo ...").
+function sudoGuard(tokens) {
+  return tokens.some((t) => toolName(t) === "sudo") ? `Blocked: sudo is not permitted. ${SUDO_REASON}` : null
+}
+
+function ddGuard(tokens) {
+  return tokens.some((t) => toolName(t) === "dd") ? `Blocked: dd is not permitted. ${DD_REASON}` : null
+}
+
+// mkfs and its mkfs.<fs> variants; word-boundary so mkfs_tool/mkfsx pass.
+function mkfsGuard(tokens) {
+  return tokens.some((t) => /^mkfs\b/.test(t) || /^mkfs\b/.test(toolName(t))) ? `Blocked: mkfs is not permitted. ${MKFS_REASON}` : null
+}
+
+// kubectl|k with a mutating verb (read-only policy). exec is NOT denied (the
+// kubectl skill guides the agent to read-only use inside exec). rollout
+// status is read-only; rollout restart/undo/pause/resume mutate.
+function kubectlGuard(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const name = toolName(tokens[i])
+    if (name !== "kubectl" && name !== "k") continue
+    const j = findSubcommand(tokens, i + 1, KUBECTL_OPTIONS)
+    const verb = tokens[j]
+    if (KUBECTL_VERBS.has(verb)) {
+      return `Blocked: kubectl ${verb} mutates cluster resources. ${KUBECTL_REASON}`
+    }
+    if (verb === "rollout") {
+      const action = tokens[findSubcommand(tokens, j + 1, KUBECTL_OPTIONS)]
+      if (KUBECTL_ROLLOUT_DENY.has(action)) {
+        return `Blocked: kubectl rollout ${action} mutates cluster resources. ${KUBECTL_REASON}`
+      }
+    }
+  }
+  return null
+}
+
+function s3Guard(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    if (toolName(tokens[i]) !== "aws") continue
+    const j = findSubcommand(tokens, i + 1, AWS_OPTIONS)
+    const service = tokens[j]
+    if (service !== "s3" && service !== "s3api") continue
+    const k = findSubcommand(tokens, j + 1, AWS_OPTIONS)
+    const sub = tokens[k]
+    if (service === "s3api") {
+      if (sub?.startsWith("delete-")) return `Blocked: aws s3api ${sub} deletes S3 data. ${S3_REASON}`
+      continue
+    }
+    if (sub === "rm" || sub === "rb") return `Blocked: aws s3 ${sub} deletes S3 data. ${S3_REASON}`
+    if (sub === "sync" && tokens.slice(k + 1).some(isDeleteOptionPrefix)) {
+      return `Blocked: aws s3 sync --delete removes S3 objects. ${S3_REASON}`
+    }
+  }
+  return null
+}
+
+// --delete or an unambiguous aws prefix of it (--del, --dele, ...).
+function isDeleteOptionPrefix(t) {
+  return t.startsWith("--del") && "--delete".startsWith(t)
+}
+
+// ---------- segment guards: (segment tokens, env) -> reason | null ----------
+
+// git push --force/-f (exact --force, not --force-with-lease; short clusters
+// containing f; +refspec), then the push/commit gate. --ff-only pull is exempt.
+function gitGuard(s, env) {
+  for (let i = 0; i < s.length; i++) {
+    if (toolName(s[i]) !== "git") continue
+    const j = findSubcommand(s, i + 1, GIT_OPTIONS)
+    const sub = s[j]
+    let gate = null
+    if (sub === "push") {
+      for (const t of s.slice(j + 1)) {
+        if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
+          return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
+        }
+      }
+      gate = gitGateReason(env, "git push", "push")
+    } else if (COMMIT_SUBCOMMANDS.has(sub)) {
+      gate = gitGateReason(env, `git ${sub}`, "commit")
+    } else if (sub === "pull" && !s.slice(j + 1).includes("--ff-only")) {
+      gate = gitGateReason(env, "git pull", "commit")
+    }
+    if (gate) return gate
+  }
+  return null
+}
+
+// gh pr merge needs both gates (merge commit + remote update); gh api write
+// signals are denied.
+function ghGuard(s, env) {
+  for (let i = 0; i < s.length; i++) {
+    if (toolName(s[i]) !== "gh") continue
+    const j = findSubcommand(s, i + 1, GH_OPTIONS)
+    if (s[j] === "pr" && s[j + 1] === "merge") {
+      const gate = gitGateReason(env, "gh pr merge", "commit") ?? gitGateReason(env, "gh pr merge", "push")
+      if (gate) return gate
+    }
+    if (s[j] !== "api") continue
+    const reason = ghApiWriteReason(s, j + 1)
+    if (reason) return reason
+  }
+  return null
+}
+
+const isGhFieldCluster = (t) => t.startsWith("-") && !t.startsWith("--") && /[fF]/.test(t)
+
+// gh api write signals: DELETE/POST/PATCH/PUT via -X/--method (incl. attached
+// -XDELETE/-X=DELETE/--method=DELETE), --input (request body, incl.
+// --input=file), and request fields -f/-F/--raw-field/--field (gh switches the
+// method to POST when fields are present, incl. attached -fkey=value and
+// clusters like -if). An explicit GET keeps fields allowed (gh's read pattern:
+// `gh api -X GET search/issues -f q=x`). Value tokens of value-taking flags are
+// skipped in both passes so a quoted value like `--jq "-X GET"` can't fake an
+// explicit GET.
+function ghApiWriteReason(s, start) {
+  let hasGet = false
+  for (let i = start; i < s.length; i++) {
+    const t = s[i]
+    if (t === "-X" || t === "--method") {
+      if (s[i + 1] === "GET") hasGet = true
+    } else if (t.startsWith("-X")) {
+      if (t.slice(2).replace(/^=/, "") === "GET") hasGet = true
+    } else if (t.startsWith("--method=")) {
+      if (t.slice(9) === "GET") hasGet = true
+    } else if (GH_API_VALUE_FLAGS.has(t)) {
+      i++
+    } else if (isGhFieldCluster(t)) {
+      if (/[fF]$/.test(t)) i++ // cluster ends in the field flag: value follows
+    }
+  }
+  const fieldReason = (t) =>
+    `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}`
+  for (let i = start; i < s.length; i++) {
+    const t = s[i]
+    if (t === "-X" || t === "--method") {
+      const method = s[i + 1]
+      if (GH_WRITE_METHODS.has(method)) return `Blocked: gh api -X ${method} is a write method. ${GH_API_REASON}`
+    } else if (t.startsWith("-X")) {
+      if (GH_WRITE_METHODS.has(t.slice(2).replace(/^=/, ""))) return `Blocked: gh api ${t} is a write method. ${GH_API_REASON}`
+    } else if (t.startsWith("--method=")) {
+      if (GH_WRITE_METHODS.has(t.slice(9))) return `Blocked: gh api ${t} is a write method. ${GH_API_REASON}`
+    } else if (t === "--input" || t.startsWith("--input=")) {
+      return `Blocked: gh api ${t} sends a request body. ${GH_API_REASON}`
+    } else if (t === "--raw-field" || t === "--field") {
+      if (!hasGet) return fieldReason(t)
+      i++
+    } else if (t.startsWith("--raw-field=") || t.startsWith("--field=")) {
+      if (!hasGet) return fieldReason(t)
+    } else if (GH_API_VALUE_FLAGS.has(t)) {
+      i++
+    } else if (isGhFieldCluster(t)) {
+      if (!hasGet) return fieldReason(t)
+      if (/[fF]$/.test(t)) i++
+    }
+  }
+  return null
+}
+
+// chmod with a 777-granting octal mode (777, 0777, 1777, ...: any octal whose
+// low 9 bits are 777) in this segment.
+function chmodGuard(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (toolName(s[i]) !== "chmod") continue
+    const mode = s.slice(i + 1).find((t) => /^[0-7]*777$/.test(t))
+    if (mode) return `Blocked: chmod ${mode} is not permitted. ${CHMOD_REASON}`
+  }
+  return null
+}
+
+// Delete verb with a protected path among its args. Flags are skipped so
+// rearrangements (rm -rf, rm -r -f, rm -fr) all match the same.
+function deleteVerbGuard(s) {
+  for (let i = 0; i < s.length; i++) {
+    const verb = toolName(s[i])
+    if (!DELETE_VERBS.has(verb)) continue
+    for (const arg of s.slice(i + 1)) {
+      if (arg.startsWith("-")) continue
+      const reason = protectedPathReason(verb, arg)
+      if (reason) return reason
+    }
+  }
+  return null
+}
+
+// First find in the segment: with a delete action present, any non-option
+// token after find that is a protected path denies.
+function findGuard(s) {
+  const start = s.findIndex((t) => toolName(t) === "find")
+  if (start === -1) return null
+  const args = s.slice(start + 1)
+  const label = findDeleteLabel(args)
+  if (!label) return null
+  for (const arg of args) {
+    if (arg.startsWith("-")) continue
+    const reason = protectedPathReason(label, arg)
+    if (reason) return reason
+  }
+  return null
+}
+
+// Label of the first delete action, scanning left to right; null when none.
+// An exec action counts when a delete verb, by basename (/bin/rm, unlink),
+// appears within the window after it.
+function findDeleteLabel(args) {
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i]
+    if (t === "-delete" || t === "--delete") return "find -delete"
+    if (!FIND_EXEC_ACTIONS.has(t)) continue
+    const verb = args
+      .slice(i + 1, i + 1 + FIND_EXEC_RM_WINDOW)
+      .map(toolName)
+      .find((name) => DELETE_VERBS.has(name))
+    if (verb) return `find ${t} ${verb}`
+  }
+  return null
+}
+
+// Order decides which reason a multi-violation command reports.
+const COMMAND_GUARDS = [sudoGuard, ddGuard, mkfsGuard, kubectlGuard, s3Guard]
+const SEGMENT_GUARDS = [gitGuard, ghGuard, chmodGuard, deleteVerbGuard, findGuard]
+
+function firstReason(guards, tokens, env) {
+  for (const guard of guards) {
+    const reason = guard(tokens, env)
+    if (reason) return reason
+  }
+  return null
+}
+
+// One tokenization of the command: `tokens` feed the command-token guards,
+// each entry of `segments` the segment guards.
+function viewReason({ tokens, segments }, env) {
+  const commandReason = firstReason(COMMAND_GUARDS, tokens, env)
+  if (commandReason) return commandReason
+  for (const s of segments) {
+    const reason = firstReason(SEGMENT_GUARDS, s, env)
+    if (reason) return reason
+  }
+  return null
+}
+
+// Quote-flattening view: quote/subshell chars become blanks, so a command
+// wrapped in a string (bash -c "...", $(...)) tokenizes to its bare words.
+function flattenedView(command) {
+  return {
+    tokens: command.replace(S3_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean),
+    segments: command
+      .split(SPLIT_SEPS)
+      .map((segment) => segment.replace(SEG_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean))
+      .filter((s) => s.length > 0),
+  }
+}
+
+// Quoted view of the command, then of every quoted word holding a blank,
+// re-lexed as a nested command (sh -c "aws --query 'a b' s3 rm ..."), down to
+// `depth` levels. The flattened view already reads those words as commands, so
+// nesting adds no new false-positive class.
+function quotedReason(command, env, depth) {
+  const view = quotedView(command)
+  const reason = viewReason(view, env)
+  if (reason || depth === 0) return reason
+  for (const word of view.tokens) {
+    if (!/[ \t\n]/.test(word)) continue
+    const nested = quotedReason(word, env, depth - 1)
+    if (nested) return nested
+  }
+  return null
+}
+
+// Quote-honouring view: a quoted span stays inside one word (quotes removed),
+// so a blank inside an option value (--query "a b") cannot shift the
+// subcommand position. Unquoted separators end a segment; unquoted
+// subshell and redirection chars end a word (git push>log is git push). An
+// unterminated quote runs to the end.
+function quotedView(command) {
+  const segments = [[]]
+  let word = null
+  const endWord = () => {
+    if (word !== null) segments.at(-1).push(word)
+    word = null
+  }
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    if (c === "'") {
+      const close = command.indexOf("'", i + 1)
+      const stop = close === -1 ? command.length : close
+      word = (word ?? "") + command.slice(i + 1, stop)
+      i = stop
+    } else if (c === '"') {
+      let text = ""
+      let j = i + 1
+      for (; j < command.length && command[j] !== '"'; j++) {
+        if (command[j] === "\\" && j + 1 < command.length) j++
+        text += command[j]
+      }
+      word = (word ?? "") + text
+      i = j
+    } else if (c === "\\" && i + 1 < command.length) {
+      word = (word ?? "") + command[++i]
+    } else if (SPLIT_SEPS.test(c)) {
+      endWord()
+      if (segments.at(-1).length > 0) segments.push([])
+    } else if (SHELL_WHITESPACE.test(c) || "`$()<>".includes(c)) {
+      endWord()
+    } else {
+      word = (word ?? "") + c
+    }
+  }
+  endWord()
+  const nonEmpty = segments.filter((s) => s.length > 0)
+  return { tokens: nonEmpty.flat(), segments: nonEmpty }
 }
 
 export function decide(command, env = process.env) {
-  const allow = { deny: false }
-  if (typeof command !== "string" || command === "") return allow
-
+  if (typeof command !== "string" || command === "") return { deny: false }
   // Collapse backslash-newline continuations BEFORE segmenting, so
   // `gh api -X \<newline> DELETE` can't split a flag from its value across a
   // segment boundary.
   command = command.replace(/\\\n/g, " ")
-  if (!PRECHECK.test(command)) return allow
-
-  // ---------- command-level guards (flattened tokens) ----------
-  const tokens = command.replace(S3_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean)
-  const n = tokens.length
-
-  // sudo: deny anywhere in the command (covers sudo rm, bash -c "sudo ...").
-  if (tokens.includes("sudo")) {
-    return { deny: true, reason: `Blocked: sudo is not permitted. ${SUDO_REASON}` }
-  }
-
-  // dd: deny anywhere (destructive disk operations).
-  if (tokens.includes("dd")) {
-    return { deny: true, reason: `Blocked: dd is not permitted. ${DD_REASON}` }
-  }
-
-  // mkfs: deny any token starting with mkfs (mkfs.ext4, mkfs.btrfs, ...).
-  for (const t of tokens) {
-    if (t.startsWith("mkfs")) {
-      return { deny: true, reason: `Blocked: mkfs is not permitted. ${MKFS_REASON}` }
-    }
-  }
-
-  // ---------- kubectl guard ----------
-  // kubectl|k with a mutating subcommand -> deny (read-only policy). Value-
-  // taking global flags (those that consume the next token as their value) are
-  // skipped as a pair so `kubectl -n kube-system delete pod foo` finds `delete`,
-  // not `kube-system`. Boolean flags and =value forms (--kubeconfig=...) are
-  // single tokens already skipped by the -?* flag skip. exec is NOT denied (the
-  // kubectl skill guides the agent to read-only use inside exec). rollout is
-  // special: `rollout status` is read-only (allowed); rollout
-  // restart/undo/pause/resume mutate (denied) - so when the verb is `rollout`,
-  // the next non-flag token is inspected.
-  const KUBECTL_VERBS = new Set([
-    "delete", "deletecollection", "drain", "edit", "apply", "create",
-    "patch", "replace", "scale", "set", "expose", "autoscale", "run",
-    "label", "annotate", "cordon", "uncordon", "taint", "cp",
-  ])
-  const KUBECTL_ROLLOUT_DENY = new Set(["restart", "undo", "pause", "resume"])
-  const KUBECTL_VALUE_FLAGS = new Set(["-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "--server", "-s"])
-  for (let i = 0; i < n; i++) {
-    if (tokens[i] !== "kubectl" && tokens[i] !== "k") continue
-    let j = i + 1
-    while (j < n) {
-      const t = tokens[j]
-      if (KUBECTL_VALUE_FLAGS.has(t)) { j += 2; continue }
-      if (t.startsWith("-")) { j++; continue }
-      break
-    }
-    if (j >= n) continue
-    const sub = tokens[j]
-    if (KUBECTL_VERBS.has(sub)) {
-      return { deny: true, reason: `Blocked: kubectl ${sub} mutates cluster resources. ${KUBECTL_REASON}` }
-    }
-    if (sub === "rollout") {
-      let rj = j + 1
-      while (rj < n && tokens[rj].startsWith("-")) rj++
-      if (rj < n && KUBECTL_ROLLOUT_DENY.has(tokens[rj])) {
-        return { deny: true, reason: `Blocked: kubectl rollout ${tokens[rj]} mutates cluster resources. ${KUBECTL_REASON}` }
-      }
-    }
-  }
-
-  // ---------- S3 guard ----------
-  // When we find `aws`, skip flag tokens (--*) before looking for s3/s3api,
-  // so `aws --profile=p s3 rm ...` is caught.
-  for (let i = 0; i < n; i++) {
-    if (tokens[i] === "aws") {
-      let j = i + 1
-      while (j < n && tokens[j].startsWith("-")) j++
-      if (j >= n) continue
-      if (tokens[j] === "s3") {
-        const sub = tokens[j + 1]
-        if (sub === "rm" || sub === "rb") {
-          return { deny: true, reason: `Blocked: aws s3 ${sub} deletes S3 data. ${S3_REASON}` }
-        }
-        if (sub === "sync") {
-          for (let k = j + 2; k < n; k++) {
-            if (tokens[k] === "--delete") {
-              return { deny: true, reason: `Blocked: aws s3 sync --delete removes S3 objects. ${S3_REASON}` }
-            }
-          }
-        }
-      }
-      if (tokens[j] === "s3api") {
-        const sub = tokens[j + 1]
-        if (sub && sub.startsWith("delete-")) {
-          return { deny: true, reason: `Blocked: aws s3api ${sub} deletes S3 data. ${S3_REASON}` }
-        }
-      }
-    }
-  }
-
-  // ---------- segment-based path guards ----------
-  for (const seg of command.split(SPLIT_SEPS)) {
-    if (!seg.trim()) continue
-    const s = seg.replace(SEG_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean)
-    const sn = s.length
-    if (sn === 0) continue
-
-    // git push --force/-f: deny force push (exact --force, not
-    // --force-with-lease). Short-flag clusters containing f (-f, -fq, -qf)
-    // and +refspec (+main:main, unconditional force) count as force; long
-    // flags (--*) other than --force pass. Git global flags before the
-    // subcommand (-C <path>, -c <kv>, --git-dir=...) are skipped so
-    // `git -C /repo push -f` is still recognized as a push. Bounded to this
-    // segment so a `rm -f` later in a && chain can't false-trigger.
-    // After the force check, the push/commit gate denies unauthorized actions (env vars; --ff-only pull is exempt).
-    const GIT_VALUE_FLAGS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"])
-    for (let si = 0; si < sn; si++) {
-      if (s[si] !== "git") continue
-      // find git's subcommand token, skipping global flags and the value
-      // token of value-taking flags
-      let sj = si + 1
-      while (sj < sn) {
-        const t = s[sj]
-        if (GIT_VALUE_FLAGS.has(t)) { sj += 2; continue }
-        if (t.startsWith("-")) { sj++; continue }
-        break
-      }
-      if (sj >= sn) continue
-      const sub = s[sj]
-      if (sub === "push") {
-        // --force exact; short-flag clusters containing f (-f, -fq, -qf);
-        // +refspec (+main:main = unconditional force)
-        for (let sk = sj + 1; sk < sn; sk++) {
-          const t = s[sk]
-          if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
-            return { deny: true, reason: `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}` }
-          }
-        }
-        const gate = gitGateReason(env, "git push", "push")
-        if (gate) return { deny: true, reason: gate }
-      } else if (COMMIT_SUBCOMMANDS.has(sub)) {
-        const gate = gitGateReason(env, `git ${sub}`, "commit")
-        if (gate) return { deny: true, reason: gate }
-      } else if (sub === "pull" && !s.slice(sj + 1).includes("--ff-only")) {
-        const gate = gitGateReason(env, "git pull", "commit")
-        if (gate) return { deny: true, reason: gate }
-      }
-    }
-
-    // gh: find the subcommand token, skipping global flags and the value
-    // token of value-taking flags (gh accepts -R/--repo/--hostname before
-    // the subcommand: `gh -R o/r pr merge 5`, `gh --hostname x api ...`).
-    const GH_GLOBAL_VALUE_FLAGS = new Set(["-R", "--repo", "--hostname"])
-    const GH_VALUE_FLAGS = new Set(["-H", "-t", "-q", "-p", "--hostname", "--cache", "--template", "--jq", "--preview", "--input", "--raw-field", "--field"])
-    const isFieldToken = (t) => t.startsWith("-") && !t.startsWith("--") && /[fF]/.test(t)
-    for (let si = 0; si < sn; si++) {
-      if (s[si] !== "gh") continue
-      let gj = si + 1
-      while (gj < sn) {
-        const t = s[gj]
-        if (GH_GLOBAL_VALUE_FLAGS.has(t)) { gj += 2; continue }
-        if (t.startsWith("-")) { gj++; continue }
-        break
-      }
-      if (gj >= sn) continue
-      const ghSub = s[gj]
-      if (ghSub === "pr" && gj + 1 < sn && s[gj + 1] === "merge") {
-        // gh pr merge: creates a merge commit and updates the remote, so
-        // it needs BOTH authorizations.
-        const commitGate = gitGateReason(env, "gh pr merge", "commit")
-        if (commitGate) return { deny: true, reason: commitGate }
-        const pushGate = gitGateReason(env, "gh pr merge", "push")
-        if (pushGate) return { deny: true, reason: pushGate }
-      }
-      if (ghSub !== "api") continue
-      // gh api write methods: deny DELETE/POST/PATCH/PUT (via -X/--method,
-      // incl. attached forms -XDELETE/-X=DELETE/--method=DELETE), --input
-      // (sends a request body, incl. --input=file), and request fields
-      // -f/-F/--raw-field/--field (gh auto-switches the method to POST when
-      // fields are present, incl. attached -fkey=value and shorthand
-      // clusters like -if). An explicit GET method keeps fields allowed
-      // (gh's read pattern: `gh api -X GET search/issues -f q=x`). Value
-      // tokens of value-taking flags are skipped in both passes so a quoted
-      // value like `--jq "-X GET"` can't fake an explicit GET. Bounded to
-      // this segment so a `curl -X POST` or `--input` elsewhere in a &&
-      // chain can't false-trigger.
-      // first pass: is an explicit GET method present?
-      let hasGet = false
-      for (let sj = gj + 1; sj < sn; sj++) {
-        const t = s[sj]
-        if (t === "-X" || t === "--method") {
-          if (s[sj + 1] === "GET") hasGet = true
-        } else if (t.startsWith("-X")) {
-          if (t.slice(2).replace(/^=/, "") === "GET") hasGet = true
-        } else if (t.startsWith("--method=")) {
-          if (t.slice(9) === "GET") hasGet = true
-        } else if (GH_VALUE_FLAGS.has(t)) {
-          sj++ // skip the flag's value token
-        } else if (isFieldToken(t)) {
-          // shorthand cluster with a field flag: its value follows when the
-          // cluster ends in f/F
-          if ( /[fF]$/.test(t)) sj++
-        }
-      }
-      // second pass: write signals
-      for (let sj = gj + 1; sj < sn; sj++) {
-        const t = s[sj]
-        if (t === "-X" || t === "--method") {
-          const method = s[sj + 1]
-          if (method && GH_WRITE_METHODS.has(method)) {
-            return { deny: true, reason: `Blocked: gh api -X ${method} is a write method. ${GH_API_REASON}` }
-          }
-        } else if (t.startsWith("-X")) {
-          const method = t.slice(2).replace(/^=/, "")
-          if (GH_WRITE_METHODS.has(method)) {
-            return { deny: true, reason: `Blocked: gh api ${t} is a write method. ${GH_API_REASON}` }
-          }
-        } else if (t.startsWith("--method=")) {
-          const method = t.slice(9)
-          if (GH_WRITE_METHODS.has(method)) {
-            return { deny: true, reason: `Blocked: gh api ${t} is a write method. ${GH_API_REASON}` }
-          }
-        } else if (t === "--input" || t.startsWith("--input=")) {
-          return { deny: true, reason: `Blocked: gh api ${t} sends a request body. ${GH_API_REASON}` }
-        } else if (t === "--raw-field" || t === "--field") {
-          if (!hasGet) {
-            return { deny: true, reason: `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}` }
-          }
-          sj++ // skip the flag's value token
-        } else if (t.startsWith("--raw-field=") || t.startsWith("--field=")) {
-          if (!hasGet) {
-            return { deny: true, reason: `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}` }
-          }
-        } else if (GH_VALUE_FLAGS.has(t)) {
-          sj++ // skip the flag's value token
-        } else if (isFieldToken(t)) {
-          if (!hasGet) {
-            return { deny: true, reason: `Blocked: gh api ${t} adds request parameters (gh auto-switches the method to POST). ${GH_API_REASON}` }
-          }
-          if (/[fF]$/.test(t)) sj++ // cluster ends in the field flag: value follows
-        }
-      }
-    }
-
-    // chmod 777: deny chmod with a 777-granting octal mode among its args in
-    // THIS segment (777, 0777, 1777, ... - any octal whose low 9 bits are
-    // 777; bounded so `chmod +x f && echo 777` can't false-trigger).
-    for (let si = 0; si < sn; si++) {
-      if (s[si] === "chmod") {
-        for (let sj = si + 1; sj < sn; sj++) {
-          if (/^[0-7]*777$/.test(s[sj])) {
-            return { deny: true, reason: `Blocked: chmod ${s[sj]} is not permitted. ${CHMOD_REASON}` }
-          }
-        }
-      }
-    }
-
-    // rm|rmdir|shred|unlink|trash with a protected path among their args in
-    // THIS segment. Flags are skipped so rearrangements (rm -rf, rm -r -f,
-    // rm -fr) all match the same. Paths are normalized before matching so
-    // //mnt/data, /mnt/./data, //, /./ are caught.
-    for (let si = 0; si < sn; si++) {
-      const verb = s[si]
-      if (DELETE_VERBS.has(verb)) {
-        for (let sj = si + 1; sj < sn; sj++) {
-          const a = s[sj]
-          if (a.startsWith("-")) continue
-          const norm = normalizePath(a)
-          if (norm.startsWith("/mnt/data")) {
-            return { deny: true, reason: `Blocked: ${verb} on a path under /mnt/data. ${MNT_REASON}` }
-          }
-          if (norm === "/" || norm === "/*") {
-            return { deny: true, reason: `Blocked: ${verb} on filesystem root. ${ROOT_REASON}` }
-          }
-          if (norm === "/mnt") {
-            return { deny: true, reason: `Blocked: ${verb} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}` }
-          }
-        }
-      }
-    }
-
-    // find with a protected search path AND -delete/-exec rm/-ok rm in THIS segment.
-    for (let si = 0; si < sn; si++) {
-      if (s[si] !== "find") continue
-      let searchPath = ""
-      let sj = si + 1
-      while (sj < sn) {
-        const a = s[sj]
-        if ((a.startsWith("-") && a.length >= 2) || a === "!" || a === "(" || a === ")") break
-        if (!searchPath) searchPath = a
-        sj++
-      }
-      const normPath = normalizePath(searchPath)
-      if (normPath.startsWith("/mnt/data")) {
-        for (let sk = si + 1; sk < sn; sk++) {
-          if (s[sk] === "-delete" || s[sk] === "--delete") {
-            return { deny: true, reason: `Blocked: find -delete on a path under /mnt/data. ${MNT_REASON}` }
-          }
-          if (s[sk] === "-exec" || s[sk] === "-execdir" || s[sk] === "-ok" || s[sk] === "-okdir") {
-            for (let sm = sk + 1; sm < sn && sm < sk + 6; sm++) {
-              if (s[sm] === "rm") {
-                return { deny: true, reason: `Blocked: find ${s[sk]} rm on a path under /mnt/data. ${MNT_REASON}` }
-              }
-            }
-          }
-        }
-      }
-      break
-    }
-  }
-
-  return allow
+  // Either view denying denies: the flattened view sees inside wrapper
+  // strings, the quoted view keeps quoted option values whole.
+  const reason = viewReason(flattenedView(command), env) ?? quotedReason(command, env, NESTED_COMMAND_DEPTH)
+  return reason ? { deny: true, reason } : { deny: false }
 }

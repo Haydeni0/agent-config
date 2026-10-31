@@ -662,6 +662,293 @@
         "gh\tapi repos/OWNER/REPO/issues -f title=x\t-X\tGET",
         "printf pre\u00a0sudo"
       ]
+    },
+    {
+      "name": "s3_global_option_deletes_blocked",
+      "label": "S3 delete behind aws global options blocked",
+      "expect": "deny",
+      "needle": "S3",
+      "commands": [
+        "aws --region r s3 rb s3://b",
+        "aws --profile p s3 rm s3://x",
+        "aws --profile p s3api delete-bucket --bucket b",
+        "aws --region r --profile p s3 sync --delete ./l s3://b",
+        "aws --cli-error-format json s3 rm s3://x",
+        "aws --prof p s3 rm s3://x",
+        "aws --reg r s3 rb s3://b",
+        "aws --endpoint u s3 rm s3://x",
+        "aws -- s3 rm s3://x"
+      ]
+    },
+    {
+      "name": "s3_command_option_deletes_blocked",
+      "label": "S3 delete behind options after s3/s3api blocked",
+      "expect": "deny",
+      "needle": "S3",
+      "commands": [
+        "aws s3 --profile p rm s3://x",
+        "aws s3api --region r delete-bucket --bucket b",
+        "aws s3 sync ./l s3://b --delet",
+        "aws s3 -- rm s3://x",
+        "aws s3api -- delete-bucket --bucket b"
+      ]
+    },
+    {
+      "name": "s3_global_option_reads_allowed",
+      "label": "S3 reads behind aws options allowed",
+      "expect": "allow",
+      "commands": [
+        "aws --region r s3 ls s3://b",
+        "aws --profile p s3api list-objects --bucket b",
+        "aws -- s3 ls"
+      ]
+    },
+    {
+      "name": "find_root_delete_blocked",
+      "label": "deleting find on filesystem root blocked",
+      "expect": "deny",
+      "needle": "root",
+      "commands": [
+        "find / -delete"
+      ]
+    },
+    {
+      "name": "find_any_operand_mnt_data_blocked",
+      "label": "deleting find naming /mnt/data anywhere blocked",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "find /tmp /mnt/data -delete",
+        "find /tmp -newer /mnt/data/ref -delete",
+        "find -L /mnt/data -delete",
+        "find -H /tmp /mnt/data -exec rm {} +",
+        "find -- /mnt/data -delete",
+        "find -L -- /mnt/data -delete",
+        "find -name x /mnt/data -delete",
+        "find -f /mnt/data -delete",
+        "find -HL /mnt/data -delete"
+      ]
+    },
+    {
+      "name": "find_mnt_parent_blocked",
+      "label": "deleting find on /mnt blocked",
+      "expect": "deny",
+      "needle": "/mnt",
+      "commands": [
+        "find /mnt -exec rm {} +"
+      ]
+    },
+    {
+      "name": "find_unprotected_or_read_only_allowed",
+      "label": "deleting find off protected paths, read-only find on them, allowed",
+      "expect": "allow",
+      "commands": [
+        "find /tmp -name x -delete",
+        "find /mnt/data -name x"
+      ]
+    },
+    {
+      "name": "kubectl_rollout_value_flag_blocked",
+      "label": "kubectl rollout action behind a value flag blocked",
+      "expect": "deny",
+      "needle": "kubectl",
+      "commands": [
+        "kubectl rollout -n ns restart deploy/x"
+      ]
+    },
+    {
+      "name": "mkfs_lookalikes_allowed",
+      "label": "mkfs-prefixed words that are not mkfs allowed",
+      "expect": "allow",
+      "commands": [
+        "echo mkfs_tool",
+        "ls mkfsx"
+      ]
+    },
+    {
+      "name": "mkfs_variants_blocked",
+      "label": "mkfs word-boundary variants blocked",
+      "expect": "deny",
+      "needle": "mkfs",
+      "commands": [
+        "echo mkfs-foo"
+      ]
+    },
+    {
+      "name": "git_carriage_return_gate_blocked",
+      "label": "carriage return between git and push still gated",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git -c a=b\r push origin main"
+      ]
+    },
+    {
+      "name": "quoted_option_value_s3_deletes_blocked",
+      "label": "quoted aws option values do not hide an S3 delete",
+      "expect": "deny",
+      "needle": "S3",
+      "commands": [
+        "aws --query \"a b\" s3 rm s3://x",
+        "aws s3 --query \"a b\" rm s3://x"
+      ]
+    },
+    {
+      "name": "quoted_option_value_gates_blocked",
+      "label": "quoted git/gh option values do not hide a gated subcommand",
+      "expect": "deny",
+      "needle": "AUTHORISED",
+      "commands": [
+        "git -c \"a=b c\" push origin main",
+        "gh -R \"o r\" pr merge 1"
+      ]
+    },
+    {
+      "name": "quoted_option_value_kubectl_blocked",
+      "label": "quoted kubectl option values do not hide a mutation",
+      "expect": "deny",
+      "needle": "kubectl",
+      "commands": [
+        "kubectl -n \"a b\" delete pod x"
+      ]
+    },
+    {
+      "name": "quoted_option_value_reads_allowed",
+      "label": "quoted option values on read commands allowed",
+      "expect": "allow",
+      "commands": [
+        "git -c \"user.name=A B\" status",
+        "aws --query \"Buckets[].Name\" s3api list-buckets",
+        "gh api -X GET search/issues -f \"q=is:open label:x\""
+      ]
+    },
+    {
+      "name": "mnt_path_spellings_blocked",
+      "label": "trailing slash, .., glob and brace spellings of /mnt and /mnt/data blocked",
+      "expect": "deny",
+      "needle": "/mnt",
+      "commands": [
+        "rm -rf /mnt/",
+        "rm -rf /mnt/*",
+        "rm -rf /tmp/../mnt/data",
+        "find /mnt/ -delete",
+        "find /mnt/* -delete",
+        "rm -rf /mnt/d?ta",
+        "rm -rf /mnt/{data,x}",
+        "find /mnt/{data,x} -delete"
+      ]
+    },
+    {
+      "name": "root_path_spellings_blocked",
+      "label": "dot, .., glob and brace spellings of filesystem root blocked",
+      "expect": "deny",
+      "needle": "root",
+      "commands": [
+        "rm -rf /.",
+        "rm -rf /..",
+        "rm -rf /m*",
+        "rm -rf /*/",
+        "find /. -delete",
+        "rm -rf /{mnt,tmp}",
+        "rm -rf /{tmp,var}/x"
+      ]
+    },
+    {
+      "name": "unprotected_path_spellings_allowed",
+      "label": "globs and dot forms off protected paths allowed",
+      "expect": "allow",
+      "commands": [
+        "rm -rf /tmp/*",
+        "rm -rf /.cache",
+        "rm -rf /tmp/a/..",
+        "ls /mnt/*",
+        "find /tmp -name '*' -delete",
+        "rm -rf /tmp/{a,b}"
+      ]
+    },
+    {
+      "name": "find_exec_delete_verbs_blocked",
+      "label": "find exec with any delete verb, by basename, blocked",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "find /mnt/data -exec /bin/rm {} +",
+        "find /mnt/data -exec unlink {} ;",
+        "find /mnt/data -exec shred {} ;",
+        "find /mnt/data -execdir rmdir {} ;"
+      ]
+    },
+    {
+      "name": "s3_option_forms_blocked",
+      "label": "debug flag, attached option value and quoted service name do not hide an S3 delete",
+      "expect": "deny",
+      "needle": "S3",
+      "commands": [
+        "aws --debug s3 rb s3://b",
+        "aws --profile=p s3 rb s3://b",
+        "aws --profile=p s3api delete-bucket --bucket b",
+        "aws --region=r s3api delete-bucket --bucket b",
+        "aws --debug s3 sync --delete ./l s3://b",
+        "aws \"s3\" rb s3://b"
+      ]
+    },
+    {
+      "name": "path_qualified_deletes_blocked",
+      "label": "path-qualified delete verbs and find match by basename",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "/bin/rm -rf /mnt/data",
+        "/usr/bin/unlink /mnt/data/x",
+        "/usr/bin/find /mnt/data -delete"
+      ]
+    },
+    {
+      "name": "path_qualified_tools_blocked",
+      "label": "path-qualified tool names match by basename",
+      "expect": "deny",
+      "needle": "Blocked",
+      "commands": [
+        "/usr/bin/sudo true",
+        "/usr/bin/kubectl delete pod x",
+        "/usr/local/bin/aws s3 rm s3://x",
+        "/usr/bin/git push origin main"
+      ]
+    },
+    {
+      "name": "attached_redirection_blocked",
+      "label": "a redirection operator attached to a word does not hide it",
+      "expect": "deny",
+      "needle": "Blocked",
+      "commands": [
+        "rm -rf /mnt>/dev/null",
+        "git push>/dev/null",
+        "aws s3 rm>log s3://x",
+        "kubectl delete>log pod x"
+      ]
+    },
+    {
+      "name": "nested_quoted_values_blocked",
+      "label": "quoted option values inside a wrapper string do not hide the subcommand",
+      "expect": "deny",
+      "needle": "Blocked",
+      "commands": [
+        "sh -c \"aws --query 'a b' s3 rm s3://x\"",
+        "bash -c 'git -c \"a=b c\" push origin main'",
+        "sh -c \"kubectl -n 'a b' delete pod x\""
+      ]
+    },
+    {
+      "name": "parser_widening_lookalikes_allowed",
+      "label": "path-qualified reads, redirections, wrappers and a trailing mkfs-like word allowed",
+      "expect": "allow",
+      "commands": [
+        "/usr/bin/git status",
+        "ls /usr/bin/git",
+        "echo hi>/tmp/log",
+        "sh -c \"echo 'a b'\"",
+        "rm x; echo mkfs_tool"
+      ]
     }
   ]
 }
