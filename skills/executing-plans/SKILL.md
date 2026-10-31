@@ -37,7 +37,9 @@ Load plan, review critically, execute all tasks, report when complete.
 Pick the next task from the plan's frontier, not by reading order: load the
 work-package skill and run its graph tool on the directory holding the plan
 file - `frontier <dir> | jq '.[0]'` - then repeat after each task completes.
-A plan with no `Blocked by` lines anywhere is legacy: execute tasks in order.
+The tool reads the work-package layout's `plan.md`; a plan with no `Blocked
+by` lines anywhere, or saved under any other name or location, is legacy:
+execute tasks in order.
 
 For each task:
 1. Mark as in_progress

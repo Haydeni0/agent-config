@@ -39,6 +39,7 @@ class TaskNode:
     title: str
     blocked_by: list[str] = field(default_factory=list)
     has_field: bool = False
+    n_fields: int = 0
     n_boxes: int = 0
     n_checked: int = 0
 
@@ -82,8 +83,12 @@ def _unfenced(text: str) -> list[str]:
     return out
 
 
-def parse_plan(text: str) -> list[TaskNode]:
+def parse_plan(text: str) -> tuple[list[TaskNode], list[str]]:
+    """Tasks in file order plus parse-level findings. Any heading other than a
+    Task heading ends the current task, so trailing sections never leak
+    checkboxes or edges into it."""
     tasks: list[TaskNode] = []
+    findings: list[str] = []
     cur: TaskNode | None = None
     for raw in _unfenced(text):
         m = TASK_HEADING_RE.match(raw)
@@ -91,20 +96,28 @@ def parse_plan(text: str) -> list[TaskNode]:
             cur = TaskNode(num=int(m.group(1)), title=m.group(2).strip())
             tasks.append(cur)
             continue
-        if cur is None:
+        if raw.startswith("#"):
+            cur = None
             continue
         bm = BLOCKED_BY_PLAN_RE.match(raw)
         if bm:
-            cur.has_field = True
-            val = bm.group(1).strip()
-            cur.blocked_by = [] if val == "None" else [t.strip() for t in val.split(",")]
+            if cur is None:
+                findings.append("plan.md: Blocked by line outside any task heading")
+                continue
+            cur.n_fields += 1
+            if cur.n_fields == 1:
+                cur.has_field = True
+                val = bm.group(1).strip()
+                cur.blocked_by = [] if val == "None" else [t.strip() for t in val.split(",")]
+            continue
+        if cur is None:
             continue
         cm = CHECKBOX_RE.match(raw)
         if cm:
             cur.n_boxes += 1
             if cm.group(1) != " ":
                 cur.n_checked += 1
-    return tasks
+    return tasks, findings
 
 
 def _parse_refs(refs: list[str]) -> tuple[list[tuple[str, int]], list[str]]:
@@ -134,6 +147,8 @@ def _check_plan(tasks: list[TaskNode]) -> list[str]:
     for t in tasks:
         if opted_in and not t.has_field:
             f.append(f"plan.md: {t.id} lacks a Blocked by line (plan has opted in)")
+        if t.n_fields > 1:
+            f.append(f"plan.md: {t.id} has more than one Blocked by line")
         if opted_in and t.n_boxes == 0:
             f.append(f"plan.md: {t.id} has no checkboxes, so it can never close")
     closed = {n: t.closed for n, t in by_num.items()}
@@ -183,7 +198,9 @@ def check_pkg(pkg: Path) -> list[str]:
     findings: list[str] = []
     plan = pkg / "plan.md"
     if plan.exists():
-        findings += _check_plan(parse_plan(plan.read_text()))
+        tasks, parse_findings = parse_plan(plan.read_text())
+        findings += parse_findings
+        findings += _check_plan(tasks)
     decisions = pkg / "decisions.md"
     if decisions.exists():
         qs, resolved = parse_decisions(decisions.read_text())
@@ -192,15 +209,26 @@ def check_pkg(pkg: Path) -> list[str]:
 
 
 def parse_decisions(text: str) -> tuple[list[QNode], set[int]]:
-    """Returns every Q entry (open and struck, in file order) plus the set of
-    Q nums some `Resolves Q<n>` citation closes."""
+    """Q entries live only under an `## Open questions` heading, and only
+    D-entry lines carry `Resolves Q<n>` closure citations - a Q id or a
+    Resolves mention anywhere else (a review finding, a nit) is prose, not
+    graph state."""
     qs: list[QNode] = []
     resolved: set[int] = set()
     cur: QNode | None = None
+    section = ""
     for raw in _unfenced(text):
-        rm = RESOLVES_RE.search(raw)
-        if rm:
-            resolved.add(int(rm.group(1)))
+        if raw.startswith("## "):
+            section = raw[3:].strip().lower()
+            cur = None
+            continue
+        stripped = raw.lstrip()
+        if stripped.startswith("- D") or stripped.startswith("- ~~D"):
+            rm = RESOLVES_RE.search(raw)
+            if rm:
+                resolved.add(int(rm.group(1)))
+        if section != "open questions":
+            continue
         m = Q_RE.match(raw)
         if m:
             struck = m.group(1) is not None
@@ -289,14 +317,14 @@ def frontier_pkg(pkg: Path) -> list[dict]:
     """Open items whose blockers are all closed, in file order: plan tasks in
     plan order, then Q entries in decisions order. Raises GraphFindings when
     check_pkg reports anything - never a partial frontier. Task titles are
-    the full heading title; Q titles are the entry's first sentence (D30)."""
+    the full heading title; Q titles are the entry's first sentence."""
     findings = check_pkg(pkg)
     if findings:
         raise GraphFindings(findings)
     items: list[dict] = []
     plan = pkg / "plan.md"
     if plan.exists():
-        tasks = parse_plan(plan.read_text())
+        tasks, _ = parse_plan(plan.read_text())
         by_num = {t.num: t for t in tasks}
         for t in tasks:
             if t.closed or not t.has_field:

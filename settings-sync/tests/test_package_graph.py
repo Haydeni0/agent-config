@@ -232,3 +232,49 @@ def test_frontier_title_first_sentence(graph: types.ModuleType, tmp_path: Path):
     decisions = "state: grill\n\n## Open questions\n\n- Q1. How does X work? More context here.\n"
     items = graph.frontier_pkg(make_pkg(tmp_path, decisions=decisions))
     assert items[0]["title"] == "How does X work?"
+
+
+def test_trailing_section_checkboxes_do_not_reopen_task(graph, tmp_path):
+    plan = (
+        "### Task 1: A\n**Blocked by:** None\n- [x] s\n"
+        "## Notes\n- [ ] leftover idea\n"
+    )
+    assert graph.frontier_pkg(make_pkg(tmp_path, plan=plan)) == []
+
+
+def test_second_blocked_by_line_is_finding(graph, tmp_path):
+    plan = "### Task 1: A\n**Blocked by:** None\n**Blocked by:** Task 2\n- [ ] s\n"
+    findings = check(graph, tmp_path, plan=plan)
+    assert any("more than one Blocked by" in f for f in findings)
+
+
+def test_blocked_by_outside_task_is_finding(graph, tmp_path):
+    plan = "## Preamble\n**Blocked by:** None\n### Task 1: A\n**Blocked by:** None\n- [ ] s\n"
+    findings = check(graph, tmp_path, plan=plan)
+    assert any("outside any task" in f for f in findings)
+
+
+def test_q_duplication_from_other_sections_not_flagged(graph, tmp_path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n- Q1. Real?\n\n"
+        "## Review findings\n\n- Q1 mention inside a finding\n"
+    )
+    assert check(graph, tmp_path, decisions=decisions) == []
+
+
+def test_resolves_only_counts_on_d_entries(graph, tmp_path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n- Q1. A? Blocked by: Q5\n\n"
+        "## Review nits\n\n- nit: Resolves Q5 was mentioned in chat\n"
+    )
+    assert any("Q5" in f for f in check(graph, tmp_path, decisions=decisions))
+
+
+def test_frontier_tasks_then_qs(graph, tmp_path):
+    plan = (
+        "### Task 1: A\n**Blocked by:** None\n- [ ] s\n"
+        "### Task 2: B\n**Blocked by:** Task 1\n- [ ] s\n"
+    )
+    decisions = "state: grill\n\n## Open questions\n\n- Q1. First?\n- Q2. Second? Blocked by: Q1\n"
+    items = graph.frontier_pkg(make_pkg(tmp_path, plan=plan, decisions=decisions))
+    assert [i["id"] for i in items] == ["Task 1", "Q1"]

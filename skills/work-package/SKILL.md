@@ -17,7 +17,7 @@ Reference contract for `.agents/work/<slug>/` packages. This file is the single 
 | `context.md` | inputs gathered (sources, facts, prior art) - not decisions |
 | `scenarios.md` | test scenarios, when a test plan is made |
 | `requirements.md` | R entries |
-| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X); a full dev cycle appends `## Outcome`, `## Deviation log` (implement stage's filed copy of the implementer's returned log), `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), `## Review nits`, and `## Contract mode` (contract-mode notes when a cycle runs in a repo with a requirements contract) |
+| `decisions.md` | sections: Decisions (D), Open questions (Q), Deferred, Friction (X), plus the chart-pass sections `## Destination` and `## Not yet specified` (written when a design effort opens; the destination seeds a dev cycle's launch-gate outcome); a full dev cycle appends `## Outcome`, `## Deviation log` (implement stage's filed copy of the implementer's returned log), `## Review findings` (code-review stage's scored findings, consumed and dispositioned by verify-fix), `## Review nits`, and `## Contract mode` (contract-mode notes when a cycle runs in a repo with a requirements contract) |
 | `<topic>.md` | optional deep-dive notes; forks found there go into `decisions.md` as Q |
 | `spec.md` | the spec produced by a cycle's spec stage; carries `Reviewed:` footer markers |
 | `plan.md` | the checkbox-tracked implementation plan; carries `Reviewed:` footer markers and the `Implemented` footer line |
@@ -112,9 +112,11 @@ edges only: plan tasks block plan tasks, Q entries block Q entries.
 - `check` - findings, one per line, exit 1 on findings: a reference that
   resolves to no task and to no open/struck/`Resolves`-cited Q; a cycle; a
   closed plan task with an open blocker; an opted-in task missing the field;
-  an opted-in task with no checkboxes (it could never close); a duplicate
-  task or Q ID; a cross-file reference; an unparseable reference; an unknown
-  type tag.
+  a second `Blocked by` line on one task; a `Blocked by` line outside any
+  task heading; an opted-in task with no checkboxes (it could never close);
+  a duplicate task or Q ID; a cross-file reference; an unparseable
+  reference; an unknown type tag. Q entries parse only under an
+  `## Open questions` heading, and only D entries carry `Resolves` closure.
 - `frontier` - the open items whose blockers are all closed, as a JSON array
   in file order (plan tasks in plan order, then Qs in decisions order), each
   `{id, kind: task|q, type, title, blocked_by}`; plan-task items carry
