@@ -26,6 +26,7 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 - Use `--force`, including selected-step force, only after inspecting the conflicting generated file and its backup path.
 - When running inside `local-codex`, `CODEX_HOME` points to a temporary runtime. Pass the real native home explicitly, for example `agent-config --codex-dir "$HOME/.codex" check codex`.
 - Launcher changes owned by another source repo stay there. For example, `local-codex` changes belong in the `slurm-llm` checkout, not here.
+- Before teaching sync to write a new machine-local path, check what `~/.dotfiles` (chezmoi) manages: chezmoi-managed paths belong to dotfiles (never sync targets), deliberately unmanaged paths like `~/.local/bin` are fine. Ownership rows in `settings-sync/README.md` record each boundary.
 - Nested `AGENTS.md` files are authoritative for the directories they cover. Keep the root file source-scoped rather than duplicating subproject rules.
 - The README skill map is generated: declare cross-skill dependencies in each skill's `deps:` frontmatter, regenerate with `uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py --write`, and commit the result. verify.sh fails on a stale graph. Vendored skills are never edited; they appear as nodes only.
 - Requirements live in `docs/requirements.md` (ID / Requirement / Verification tables). Update it with or before any behavior change it covers, cite entries as ID plus one-line meaning, and never mark work complete without running the cited verification.

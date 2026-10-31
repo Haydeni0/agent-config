@@ -41,6 +41,7 @@
 ### Environment
 
 - For `zsh: command not found` errors, check `$PATH` and `~/.zshenv`.
+- Shell and home config is chezmoi-managed from `~/.dotfiles`. Never hand-edit a chezmoi-managed file (`~/.zshrc`, `~/.zprofile`, `~/.gitconfig`, ...) - edit the source under `~/.dotfiles` and run `chezmoi apply`, or the change is lost on the next apply. A tool that self-modifies shell rc files gets the same treatment: redirect its output to the dotfiles source. `~/.local/bin` is deliberately unmanaged (machine-specific binaries) - installing launchers there is the expected pattern.
 
 ### Fetching repo content
 
