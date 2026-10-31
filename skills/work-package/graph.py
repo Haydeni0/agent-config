@@ -13,9 +13,14 @@ Usage:
   graph.py check <package-dir>     findings, one per line; exit 1 if any
   graph.py frontier <package-dir>  JSON array of open unblocked items
 """
+import json
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
+
+import typer
 
 Q_TYPES = ("grill", "research", "prototype", "task")
 TASK_HEADING_RE = re.compile(r"^### Task (\d+): (.*)$")
@@ -266,3 +271,88 @@ def _check_decisions(qs: list[QNode], resolved: set[int]) -> list[str]:
             if got:
                 f.append(f"decisions.md: dependency cycle: {got}")
     return f
+
+
+class GraphFindings(Exception):
+    def __init__(self, findings: list[str]):
+        super().__init__("; ".join(findings))
+        self.findings = findings
+
+
+def _first_sentence(title: str) -> str:
+    ends = [title.find(e) for e in (".", "?", "!")]
+    hits = [i for i in ends if i != -1]
+    return title[: min(hits) + 1].strip() if hits else title.strip()
+
+
+def frontier_pkg(pkg: Path) -> list[dict]:
+    """Open items whose blockers are all closed, in file order: plan tasks in
+    plan order, then Q entries in decisions order. Raises GraphFindings when
+    check_pkg reports anything - never a partial frontier. Task titles are
+    the full heading title; Q titles are the entry's first sentence (D30)."""
+    findings = check_pkg(pkg)
+    if findings:
+        raise GraphFindings(findings)
+    items: list[dict] = []
+    plan = pkg / "plan.md"
+    if plan.exists():
+        tasks = parse_plan(plan.read_text())
+        by_num = {t.num: t for t in tasks}
+        for t in tasks:
+            if t.closed or not t.has_field:
+                continue
+            parsed, _ = _parse_refs(t.blocked_by)
+            if all(kind == "task" and by_num[num].closed for kind, num in parsed):
+                items.append({"id": t.id, "kind": "task", "type": None,
+                              "title": t.title, "blocked_by": t.blocked_by})
+    decisions = pkg / "decisions.md"
+    if decisions.exists():
+        qs, resolved = parse_decisions(decisions.read_text())
+        for q in qs:
+            if q.num in resolved or q.struck:
+                continue
+            blocked_open = False
+            for r in q.blocked_by:
+                m = Q_REF_RE.match(r)
+                if not m:
+                    continue
+                num = int(m.group(1))
+                if num not in resolved and not any(o.num == num and o.struck for o in qs):
+                    blocked_open = True
+            if not blocked_open:
+                items.append({"id": q.id, "kind": "q", "type": q.qtype or "grill",
+                              "title": _first_sentence(q.title), "blocked_by": q.blocked_by})
+    return items
+
+
+app = typer.Typer()
+
+
+@app.command()
+def check(
+    package_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False,
+                                                help="Package directory to lint")],
+) -> None:
+    """Dependency-edge findings, one per line. Exit 1 on findings."""
+    findings = check_pkg(package_dir)
+    for f_ in findings:
+        print(f_)
+    raise typer.Exit(1 if findings else 0)
+
+
+@app.command()
+def frontier(
+    package_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False,
+                                                help="Package directory to read")],
+) -> None:
+    """Open unblocked items as a JSON array. Exit 1, no array, on findings."""
+    findings = check_pkg(package_dir)
+    if findings:
+        for f_ in findings:
+            print(f_, file=sys.stderr)
+        raise typer.Exit(1)
+    print(json.dumps(frontier_pkg(package_dir), indent=2))
+
+
+if __name__ == "__main__":
+    app()

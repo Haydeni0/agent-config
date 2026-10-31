@@ -167,3 +167,68 @@ def test_q_title_excludes_blocked_by_text(graph: types.ModuleType, tmp_path: Pat
     )
     assert qs[0].title == "What is it?"
     assert qs[0].blocked_by == ["Q2"]
+
+
+def test_f1_frontier_order_and_task_type_null(graph: types.ModuleType, tmp_path: Path):
+    plan = (
+        "### Task 1: A\n**Blocked by:** None\n- [x] s\n"
+        "### Task 2: B\n**Blocked by:** Task 1\n- [ ] s\n"
+        "### Task 3: C\n**Blocked by:** Task 2\n- [ ] s\n"
+        "### Task 4: D\n**Blocked by:** None\n- [ ] s\n"
+    )
+    items = graph.frontier_pkg(make_pkg(tmp_path, plan=plan))
+    assert [i["id"] for i in items] == ["Task 2", "Task 4"]
+    assert all(i["type"] is None and i["kind"] == "task" for i in items)
+    assert items[0]["blocked_by"] == ["Task 1"]
+    assert items[0]["title"] == "B"
+
+
+def test_f2_frontier_q_fields(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Decisions\n\n- D1. **X.** Resolves Q7.\n\n"
+        "## Open questions\n\n- Q4. What next? Blocked by: Q7\n- Q9. Untagged?\n"
+    )
+    items = graph.frontier_pkg(make_pkg(tmp_path, decisions=decisions))
+    by_id = {i["id"]: i for i in items}
+    assert by_id["Q4"]["type"] == "grill" and by_id["Q4"]["kind"] == "q"
+    assert by_id["Q9"]["type"] == "grill"
+    assert all(set(i) == {"id", "kind", "type", "title", "blocked_by"} for i in items)
+
+
+def test_f3_cli_frontier_finds_no_array(graph: types.ModuleType, tmp_path: Path):
+    from typer.testing import CliRunner
+    runner = CliRunner()
+    pkg = make_pkg(tmp_path, plan="### Task 1: A\n**Blocked by:** Task 9\n- [ ] s\n")
+    result = runner.invoke(graph.app, ["frontier", str(pkg)])
+    assert result.exit_code != 0
+    assert result.stdout.strip() == ""
+
+
+def test_f4_cli_frontier_json(graph: types.ModuleType, tmp_path: Path):
+    from typer.testing import CliRunner
+    runner = CliRunner()
+    plan = (
+        "### Task 1: A\n**Blocked by:** None\n- [x] s\n"
+        "### Task 2: B\n**Blocked by:** Task 1\n- [ ] s\n"
+    )
+    result = runner.invoke(graph.app, ["frontier", str(make_pkg(tmp_path, plan=plan))])
+    assert result.exit_code == 0
+    items = json.loads(result.stdout)
+    assert items[0]["id"] == "Task 2"
+
+
+def test_typed_q_in_frontier(graph: types.ModuleType, tmp_path: Path):
+    decisions = (
+        "state: grill\n\n## Open questions\n\n- Q1 [research]. External fact? Blocked by: Q9\n"
+        "- Q2 [prototype]. How should it look?\n- ~~Q9. Old?~~ Done.\n"
+    )
+    items = graph.frontier_pkg(make_pkg(tmp_path, decisions=decisions))
+    by_id = {i["id"]: i for i in items}
+    assert by_id["Q1"]["type"] == "research"
+    assert by_id["Q2"]["type"] == "prototype"
+
+
+def test_frontier_title_first_sentence(graph: types.ModuleType, tmp_path: Path):
+    decisions = "state: grill\n\n## Open questions\n\n- Q1. How does X work? More context here.\n"
+    items = graph.frontier_pkg(make_pkg(tmp_path, decisions=decisions))
+    assert items[0]["title"] == "How does X work?"
