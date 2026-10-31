@@ -107,6 +107,8 @@ const FIND_EXEC_ACTIONS = new Set(["-exec", "-execdir", "-ok", "-okdir"])
 const NESTED_COMMAND_DEPTH = 3
 // Brace expansions examined per path before the path counts as protected.
 const MAX_BRACE_EXPANSIONS = 64
+// Bash sequence expression inside a brace: {a..c}, {1..10}, {1..10..2}.
+const BRACE_SEQUENCE = /\{[^{},/]*\.\.[^{},/]*\}/g
 // fd-duplicating redirections (2>&1, >&2, <&0, >&-, &>, &>>): their & is not
 // a command separator.
 const FD_REDIRECT = /\d*[<>]&(?:\d+|-)?|&>>?/g
@@ -192,10 +194,11 @@ function expandBraces(p) {
 }
 
 // Whether one glob path component can match `name`. A bracket expression
-// counts as any one character, and a POSIX class ([[:alpha:]]) makes the whole
-// component match, so the answer only errs toward matching.
+// counts as any one character; one holding `[` or `\\` (POSIX, equivalence and
+// collating classes), or followed later by another `]` (an escaped `]` whose
+// backslash the lexer removed), makes the whole component match, so the
+// answer only errs toward matching.
 function globComponentMatches(pattern, name) {
-  if (pattern.includes("[:")) return true
   let source = ""
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i]
@@ -203,6 +206,7 @@ function globComponentMatches(pattern, name) {
     if (c === "*") source += ".*"
     else if (c === "?") source += "."
     else if (classEnd !== -1) {
+      if (/[[\\]/.test(pattern.slice(i + 1, classEnd)) || pattern.includes("]", classEnd + 1)) return true
       source += "."
       i = classEnd
     } else source += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -211,13 +215,15 @@ function globComponentMatches(pattern, name) {
 }
 
 // Reason for an absolute glob or brace pattern that can name /mnt or a path
-// at or under /mnt/data; null when it cannot or is not a pattern.
+// at or under /mnt/data; null when it cannot or is not a pattern. A sequence
+// expression ({a..c}, {1..9..2}) counts as `*`; each expansion is checked
+// with `..` resolved.
 function globReason(label, norm) {
   if (!norm.startsWith("/") || !/[*?[{]/.test(norm)) return null
-  const expansions = expandBraces(norm)
+  const expansions = expandBraces(norm.replace(BRACE_SEQUENCE, "*"))
   if (expansions === null) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
   for (const expansion of expansions) {
-    const path = normalizePath(expansion)
+    const path = resolveDotDot(normalizePath(expansion))
     if (!/[*?[]/.test(path)) {
       const reason = expansion === norm ? null : protectedReason(label, path)
       if (reason) return reason
