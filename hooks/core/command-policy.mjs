@@ -12,8 +12,8 @@
 //   COMMIT_UNAUTHORISED/PUSH_UNAUTHORISED deny despite a set authorise var.
 //   Protected paths: /mnt/data and everything under it, filesystem root,
 //             and /mnt, in any literal absolute spelling (//, /./, trailing
-//             /, .. resolved lexically, a glob or brace expansion within / or
-//             /mnt). Deletes on them are blocked for the delete verbs (rm,
+//             /, .. resolved lexically, a glob or brace pattern that can name
+//             /mnt or /mnt/data). Deletes on them are blocked for the delete verbs (rm,
 //             rmdir, shred, unlink, trash) and for a find carrying a delete
 //             action (-delete, or -exec/-execdir/-ok/-okdir with a delete
 //             verb). Reads/writes allowed.
@@ -25,6 +25,8 @@
 //     (git -c "a b" push) cannot shift the subcommand position, and re-lexes
 //     quoted words holding a blank as nested commands.
 //   - Tool names match by basename (/usr/bin/git is git).
+//   - fd-duplicating redirections (2>&1, >&2, &>) are blanked before
+//     segmenting, so their & does not split a command from its own flags.
 //   - Flattened view: command-token guards (sudo, dd, mkfs, kubectl, S3) flatten shell
 //     separators + quote/subshell chars so wrapped forms (bash -c "...",
 //     $(...), a && b) still match.
@@ -49,10 +51,9 @@
 //   - A deleting find that merely mentions a protected path as an operand of
 //     a test (find /tmp -newer /mnt/data/ref -delete) is denied on the safe
 //     side.
-//   - An absolute glob or brace whose first wildcard sits in the top-level
-//     directory counts as filesystem root even when it cannot reach a
-//     protected path (rm -rf /tmp*, rm -rf /{tmp,var}/x) - denied on the safe
-//     side.
+//   - A glob pattern is matched per path component against mnt and data, so
+//     one that names a different directory with the same spelling (/m* also
+//     names /media) is denied on the safe side.
 
 const S3_REASON =
   "S3 deletes are not permitted for the agent - run them yourself outside the agent. (policy: command)"
@@ -104,6 +105,11 @@ const KUBECTL_ROLLOUT_DENY = new Set(["restart", "undo", "pause", "resume"])
 const FIND_EXEC_ACTIONS = new Set(["-exec", "-execdir", "-ok", "-okdir"])
 // Wrapper-string levels the quoted view re-lexes, one per wrapper (sh -c "..." is 1).
 const NESTED_COMMAND_DEPTH = 3
+// Brace expansions examined per path before the path counts as protected.
+const MAX_BRACE_EXPANSIONS = 64
+// fd-duplicating redirections (2>&1, >&2, <&0, >&-, &>, &>>): their & is not
+// a command separator.
+const FD_REDIRECT = /\d*[<>]&(?:\d+|-)?|&>>?/g
 // find exec delete: a delete verb must appear within this many tokens after the action
 // (covers `-exec sh -c rm ...`-style wrappers without scanning the whole line).
 const FIND_EXEC_RM_WINDOW = 5
@@ -156,13 +162,73 @@ function normalizePath(p) {
   return collapsed.length > 1 ? collapsed.replace(/\/$/, "") : collapsed
 }
 
-// Directory an absolute glob or brace expansion expands within: the path up to
-// the last / before the first wildcard or brace (/mnt/* -> /mnt, /m* -> /,
-// /mnt/{data,x} -> /mnt). null for a non-glob or a relative path.
-function globBase(norm) {
-  const wildcard = norm.search(/[*?[{]/)
-  if (wildcard === -1 || !norm.startsWith("/")) return null
-  return norm.slice(0, norm.lastIndexOf("/", wildcard)) || "/"
+// Bash brace expansion of `p` ({a,b} and nesting; a brace without a top-level
+// comma stays literal). null past MAX_BRACE_EXPANSIONS, which callers treat as
+// protected.
+function expandBraces(p) {
+  const open = p.indexOf("{")
+  if (open === -1) return [p]
+  let depth = 0
+  let close = -1
+  const commas = []
+  for (let i = open; i < p.length && close === -1; i++) {
+    if (p[i] === "{") depth++
+    else if (p[i] === "}" && --depth === 0) close = i
+    else if (p[i] === "," && depth === 1) commas.push(i)
+  }
+  if (close === -1 || commas.length === 0) return [p]
+  const head = p.slice(0, open)
+  const tail = p.slice(close + 1)
+  const out = []
+  let start = open + 1
+  for (const end of [...commas, close]) {
+    const expanded = expandBraces(head + p.slice(start, end) + tail)
+    if (expanded === null) return null
+    out.push(...expanded)
+    if (out.length > MAX_BRACE_EXPANSIONS) return null
+    start = end + 1
+  }
+  return out
+}
+
+// Whether one glob path component can match `name`. A bracket expression
+// counts as any one character, and a POSIX class ([[:alpha:]]) makes the whole
+// component match, so the answer only errs toward matching.
+function globComponentMatches(pattern, name) {
+  if (pattern.includes("[:")) return true
+  let source = ""
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]
+    const classEnd = c === "[" ? pattern.indexOf("]", i + 2) : -1
+    if (c === "*") source += ".*"
+    else if (c === "?") source += "."
+    else if (classEnd !== -1) {
+      source += "."
+      i = classEnd
+    } else source += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  }
+  return new RegExp(`^${source}$`).test(name)
+}
+
+// Reason for an absolute glob or brace pattern that can name /mnt or a path
+// at or under /mnt/data; null when it cannot or is not a pattern.
+function globReason(label, norm) {
+  if (!norm.startsWith("/") || !/[*?[{]/.test(norm)) return null
+  const expansions = expandBraces(norm)
+  if (expansions === null) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
+  for (const expansion of expansions) {
+    const path = normalizePath(expansion)
+    if (!/[*?[]/.test(path)) {
+      const reason = expansion === norm ? null : protectedReason(label, path)
+      if (reason) return reason
+      continue
+    }
+    const [first, second] = path.split("/").slice(1)
+    if (!globComponentMatches(first, "mnt")) continue
+    if (second === undefined) return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
+    if (globComponentMatches(second, "data")) return `Blocked: ${label} on a path under /mnt/data. ${MNT_REASON}`
+  }
+  return null
 }
 
 // Index of the first token at or after `start` that is neither an option nor
@@ -211,14 +277,13 @@ function protectedPathReason(label, arg) {
   return protectedReason(label, norm) ?? protectedReason(label, resolveDotDot(norm))
 }
 
-// Protected: /mnt/data and below, filesystem root, /mnt, and any absolute glob
-// that expands directly within / or /mnt (so it can match /mnt or /mnt/data).
+// Protected: /mnt/data and below, filesystem root (/ and /*), /mnt, and any
+// absolute glob or brace pattern that can name /mnt or /mnt/data.
 function protectedReason(label, norm) {
-  const base = globBase(norm)
   if (norm.startsWith("/mnt/data")) return `Blocked: ${label} on a path under /mnt/data. ${MNT_REASON}`
-  if (norm === "/" || base === "/") return `Blocked: ${label} on filesystem root. ${ROOT_REASON}`
-  if (norm === "/mnt" || base === "/mnt") return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
-  return null
+  if (norm === "/" || norm === "/*") return `Blocked: ${label} on filesystem root. ${ROOT_REASON}`
+  if (norm === "/mnt") return `Blocked: ${label} on /mnt (parent of /mnt/data). ${MNT_PARENT_REASON}`
+  return globReason(label, norm)
 }
 
 // ---------- command-token guards: (tokens, env) -> reason | null ----------
@@ -542,7 +607,7 @@ export function decide(command, env = process.env) {
   // Collapse backslash-newline continuations BEFORE segmenting, so
   // `gh api -X \<newline> DELETE` can't split a flag from its value across a
   // segment boundary.
-  command = command.replace(/\\\n/g, " ")
+  command = command.replace(/\\\n/g, " ").replace(FD_REDIRECT, " ")
   // Either view denying denies: the flattened view sees inside wrapper
   // strings, the quoted view keeps quoted option values whole.
   const reason = viewReason(flattenedView(command), env) ?? quotedReason(command, env, NESTED_COMMAND_DEPTH)

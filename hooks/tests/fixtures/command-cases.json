@@ -835,22 +835,24 @@
         "find /mnt/* -delete",
         "rm -rf /mnt/d?ta",
         "rm -rf /mnt/{data,x}",
-        "find /mnt/{data,x} -delete"
+        "find /mnt/{data,x} -delete",
+        "rm -rf /m*",
+        "rm -rf /{mnt,tmp}",
+        "rm -rf /*/data",
+        "rm -rf /[m]nt",
+        "rm -rf /[[:alpha:]]nt"
       ]
     },
     {
       "name": "root_path_spellings_blocked",
-      "label": "dot, .., glob and brace spellings of filesystem root blocked",
+      "label": "dot and .. spellings of filesystem root blocked",
       "expect": "deny",
       "needle": "root",
       "commands": [
         "rm -rf /.",
         "rm -rf /..",
-        "rm -rf /m*",
         "rm -rf /*/",
-        "find /. -delete",
-        "rm -rf /{mnt,tmp}",
-        "rm -rf /{tmp,var}/x"
+        "find /. -delete"
       ]
     },
     {
@@ -863,7 +865,14 @@
         "rm -rf /tmp/a/..",
         "ls /mnt/*",
         "find /tmp -name '*' -delete",
-        "rm -rf /tmp/{a,b}"
+        "rm -rf /tmp/{a,b}",
+        "rm -rf /{tmp,var}/x",
+        "rm -rf /tmp*",
+        "rm -rf /*/cache",
+        "rm -f \"$OUT\"/*.tmp",
+        "rm -rf \"$dir\"/build*",
+        "rm -rf \"${dir}\"/{a,b}",
+        "rm -rf $(pwd)/dist*"
       ]
     },
     {
@@ -948,6 +957,30 @@
         "echo hi>/tmp/log",
         "sh -c \"echo 'a b'\"",
         "rm x; echo mkfs_tool"
+      ]
+    },
+    {
+      "name": "fd_redirection_does_not_split_blocked",
+      "label": "an fd-duplicating redirection does not split a command from its flags",
+      "expect": "deny",
+      "needle": "Blocked",
+      "commands": [
+        "gh api repos/o/r 2>&1 -X DELETE",
+        "rm -rf 2>&1 /mnt/data",
+        "git 2>&1 push origin main",
+        "chmod 2>&1 777 f",
+        "rm -rf &>/dev/null /mnt/data"
+      ]
+    },
+    {
+      "name": "fd_redirection_reads_allowed",
+      "label": "fd-duplicating redirections on read commands allowed",
+      "expect": "allow",
+      "commands": [
+        "gh api repos/o/r 2>&1 | head",
+        "ls /mnt/data 2>&1",
+        "git status >&2",
+        "make test &> log && echo done"
       ]
     }
   ]

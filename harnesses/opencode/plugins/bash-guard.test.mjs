@@ -23,8 +23,8 @@ const CASES_PATH = path.resolve(__dirname, "../../../hooks/tests/fixtures/comman
 const CASES = JSON.parse(readFileSync(CASES_PATH, "utf8"))
 
 // -- shared corpus (parametrized from command-cases.json) -------------
-// Add a command to the JSON and it flows into both this test and the Claude
-// hook test. The loop below is the thin harness; the corpus is the source of
+// Add a command to the JSON and it flows into both this test (opencode
+// adapter) and hooks/tests/command.test.mjs (shared core). The loop below is the thin harness; the corpus is the source of
 // truth for what's blocked/allowed.
 
 for (const g of CASES.groups) {
