@@ -191,7 +191,9 @@
       "label": "brace-expanded git push --force still denies",
       "expect": "deny",
       "needle": "force",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "{git,push} --force origin main"
       ]
@@ -209,7 +211,9 @@
       "name": "brace_subcommand_allowed",
       "label": "authorized brace-expanded push and ungated braces pass",
       "expect": "allow",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git {push,p} origin main",
         "git {status,st}",
@@ -241,7 +245,10 @@
       "name": "brace_pr_merge_allowed",
       "label": "brace-expanded gh pr merge passes with both vars",
       "expect": "allow",
-      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1",
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "{gh,pr} merge 1"
       ]
@@ -278,7 +285,9 @@
       "label": "/mnt/data quoted-message denied (safe)",
       "expect": "deny",
       "needle": "/mnt/data",
-      "env": { "COMMIT_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1"
+      },
       "commands": [
         "git commit -m \"rm the /mnt/data scratch dir\"",
         "echo \"rm -rf /mnt/data is blocked\" >> notes.md"
@@ -473,7 +482,9 @@
       "name": "commit_gate_allowed",
       "label": "Commit-family command allowed with COMMIT_AUTHORISED",
       "expect": "allow",
-      "env": { "COMMIT_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1"
+      },
       "commands": [
         "git commit -m wip",
         "git -C /repo commit -am wip",
@@ -521,7 +532,9 @@
       "name": "push_gate_allowed",
       "label": "git push allowed with PUSH_AUTHORISED",
       "expect": "allow",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git push",
         "git push origin main",
@@ -534,7 +547,9 @@
       "label": "force push still blocked with PUSH_AUTHORISED",
       "expect": "deny",
       "needle": "force",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git push --force origin main",
         "git push -f origin main",
@@ -552,32 +567,13 @@
       ]
     },
     {
-      "name": "push_force_with_lease_allowed",
-      "label": "-f short clusters pass when a lease flag is present",
-      "expect": "allow",
-      "env": { "PUSH_AUTHORISED": "1" },
-      "commands": [
-        "git push -f --force-with-lease origin main",
-        "git push --force-with-lease -f origin main",
-        "git push -fq --force-with-lease origin main",
-        "git push --force-with-lease origin main"
-      ]
-    },
-    {
-      "name": "push_force_with_lease_still_gated",
-      "label": "lease-neutralized -f still needs PUSH_AUTHORISED",
-      "expect": "deny",
-      "needle": "PUSH_AUTHORISED",
-      "commands": [
-        "git push -f --force-with-lease origin main"
-      ]
-    },
-    {
       "name": "commit_wrong_var_blocked",
       "label": "PUSH_AUTHORISED does not authorize a commit",
       "expect": "deny",
       "needle": "COMMIT_AUTHORISED",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git commit -m wip",
         "git merge feature"
@@ -588,7 +584,9 @@
       "label": "COMMIT_AUTHORISED does not authorize a push",
       "expect": "deny",
       "needle": "PUSH_AUTHORISED",
-      "env": { "COMMIT_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1"
+      },
       "commands": [
         "git push origin main",
         "git commit -m \"reminder: git push after review\""
@@ -599,7 +597,10 @@
       "label": "COMMIT_UNAUTHORISED denies despite COMMIT_AUTHORISED",
       "expect": "deny",
       "needle": "UNAUTHORISED",
-      "env": { "COMMIT_AUTHORISED": "1", "COMMIT_UNAUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1",
+        "COMMIT_UNAUTHORISED": "1"
+      },
       "commands": [
         "git commit -m wip",
         "git pull origin main"
@@ -610,7 +611,10 @@
       "label": "PUSH_UNAUTHORISED denies despite PUSH_AUTHORISED",
       "expect": "deny",
       "needle": "UNAUTHORISED",
-      "env": { "PUSH_AUTHORISED": "1", "PUSH_UNAUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1",
+        "PUSH_UNAUTHORISED": "1"
+      },
       "commands": [
         "git push"
       ]
@@ -630,7 +634,9 @@
       "name": "git_alias_push_allowed",
       "label": "authorized alias push passes; harmless aliases untouched",
       "expect": "allow",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git -c alias.x=push x origin main",
         "git -c 'alias.x=push' x",
@@ -642,7 +648,9 @@
       "label": "alias push force flags denied despite authorization",
       "expect": "deny",
       "needle": "force",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git -c alias.x=\"push --force\" x",
         "git -c 'alias.x=push --force' x",
@@ -665,7 +673,9 @@
       "name": "git_alias_commit_allowed",
       "label": "authorized alias commit passes",
       "expect": "allow",
-      "env": { "COMMIT_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1"
+      },
       "commands": [
         "git -c alias.ci=commit ci -m wip",
         "git -c alias.commit=z commit -m wip"
@@ -676,10 +686,14 @@
       "label": "shell and env-sourced alias values deny even when authorized",
       "expect": "deny",
       "needle": "alias",
-      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1",
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git -c 'alias.x=!git push' x",
-        "git --config-env alias.x=V x"
+        "git --config-env alias.x=V x",
+        "git --config-env=alias.x=V x origin main"
       ]
     },
     {
@@ -695,10 +709,13 @@
       "name": "git_alias_builtin_key_allowed",
       "label": "builtin-K bindings never fire (builtins outrank aliases)",
       "expect": "allow",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git -c 'alias.push=!x' push",
-        "git -c 'alias.tag=!x' tag"
+        "git -c 'alias.tag=!x' tag",
+        "git -c alias.Status=push status"
       ]
     },
     {
@@ -719,7 +736,9 @@
       "label": "gh pr merge blocked with only COMMIT_AUTHORISED",
       "expect": "deny",
       "needle": "PUSH_AUTHORISED",
-      "env": { "COMMIT_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1"
+      },
       "commands": [
         "gh pr merge 5"
       ]
@@ -728,7 +747,10 @@
       "name": "pr_merge_allowed",
       "label": "gh pr merge allowed with both vars",
       "expect": "allow",
-      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1",
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "gh pr merge 5",
         "gh pr merge 5 --squash"
@@ -738,7 +760,10 @@
       "name": "git_plain_push_allowed",
       "label": "plain git push allowed (no force flags in push's own segment)",
       "expect": "allow",
-      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "env": {
+        "COMMIT_AUTHORISED": "1",
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "git push",
         "git push -q",
@@ -820,7 +845,9 @@
       "name": "benign_allowed",
       "label": "benign command allowed",
       "expect": "allow",
-      "env": { "PUSH_AUTHORISED": "1" },
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
       "commands": [
         "",
         "ls -la",
@@ -1357,6 +1384,161 @@
         "ls /mnt/data 2>&1",
         "git status >&2",
         "make test &> log && echo done"
+      ]
+    },
+    {
+      "name": "push_force_with_lease_blocked",
+      "label": "force overrides --force-with-lease: -f with a lease still denies",
+      "expect": "deny",
+      "needle": "force",
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
+      "commands": [
+        "git push -f --force-with-lease origin main",
+        "git push --force-with-lease -f origin main",
+        "git push -fq --force-with-lease origin main"
+      ]
+    },
+    {
+      "name": "push_plain_lease_allowed",
+      "label": "--force-with-lease alone passes under PUSH_AUTHORISED",
+      "expect": "allow",
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
+      "commands": [
+        "git push --force-with-lease origin main"
+      ]
+    },
+    {
+      "name": "git_env_config_alias_push_blocked",
+      "label": "GIT_CONFIG env-assignment aliases hit the push gate",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.x GIT_CONFIG_VALUE_0=push git x origin main"
+      ]
+    },
+    {
+      "name": "git_env_config_alias_force_blocked",
+      "label": "GIT_CONFIG env-assignment force alias denied despite authorization",
+      "expect": "deny",
+      "needle": "force",
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
+      "commands": [
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.x GIT_CONFIG_VALUE_0='push --force' git x origin main"
+      ]
+    },
+    {
+      "name": "git_env_config_alias_unverifiable_blocked",
+      "label": "invoked GIT_CONFIG alias key without its value token denies",
+      "expect": "deny",
+      "needle": "alias",
+      "commands": [
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.x git x"
+      ]
+    },
+    {
+      "name": "git_env_config_nonalias_allowed",
+      "label": "non-alias pairs, uninvoked keys, count-gated indices, and countless spellings pass",
+      "expect": "allow",
+      "commands": [
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.defaultBranch GIT_CONFIG_VALUE_0=main git status",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.x GIT_CONFIG_VALUE_0=push git status",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_1=alias.x GIT_CONFIG_VALUE_1=push git x",
+        "GIT_CONFIG_KEY_0=alias.x GIT_CONFIG_VALUE_0=push git x"
+      ]
+    },
+    {
+      "name": "git_alias_chain_blocked",
+      "label": "alias chains resolve to the gated verb",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git -c alias.x=push -c alias.y=x y origin main",
+        "git -c alias.x='--paginate y' -c alias.y=push y origin main"
+      ]
+    },
+    {
+      "name": "git_alias_chain_force_blocked",
+      "label": "alias chain with force denied despite authorization",
+      "expect": "deny",
+      "needle": "force",
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
+      "commands": [
+        "git -c alias.x=push -c alias.y=x y --force origin main"
+      ]
+    },
+    {
+      "name": "git_alias_ungated_chain_allowed",
+      "label": "chains resolving to ungated commands, and cycles, pass",
+      "expect": "allow",
+      "commands": [
+        "git -c alias.x=status -c alias.y=x y",
+        "git -c alias.x=y -c alias.y=x x"
+      ]
+    },
+    {
+      "name": "git_alias_case_insensitive_blocked",
+      "label": "git config keys are case-insensitive: Alias.x and alias.Status fire",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git -c Alias.x=push x origin main",
+        "git -c alias.Status=push STATUS"
+      ]
+    },
+    {
+      "name": "git_alias_attached_forms_blocked",
+      "label": "attached -c form hits the gate",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git -calias.x=push x origin main"
+      ]
+    },
+    {
+      "name": "git_alias_force_with_lease_blocked",
+      "label": "alias push with -f and a lease still denies (force overrides lease)",
+      "expect": "deny",
+      "needle": "force",
+      "env": {
+        "PUSH_AUTHORISED": "1"
+      },
+      "commands": [
+        "git -c alias.x=push x -f --force-with-lease origin main"
+      ]
+    },
+    {
+      "name": "git_alias_pull_blocked",
+      "label": "alias pull hits the commit gate",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "commands": [
+        "git -c alias.p=pull p"
+      ]
+    },
+    {
+      "name": "git_alias_quoted_ff_only_pinned",
+      "label": "quoted alias value with internal blanks denies safe-side (flattened view truncates the binding)",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "commands": [
+        "git -c 'alias.x=pull --ff-only' x"
+      ]
+    },
+    {
+      "name": "brace_over_cap_denied",
+      "label": "a brace token past the examined limit denies",
+      "expect": "deny",
+      "needle": "examined limit",
+      "commands": [
+        "{rm,f0,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18,f19,f20,f21,f22,f23,f24,f25,f26,f27,f28,f29,f30,f31,f32,f33,f34,f35,f36,f37,f38,f39,f40,f41,f42,f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63} /mnt/data/x"
       ]
     }
   ]

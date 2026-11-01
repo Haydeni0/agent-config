@@ -69,11 +69,11 @@
 //     names /media) is denied on the safe side.
 //   - A glob component that can match . or .. (.*, .?) is also read as them,
 //     so rm -rf "$DIR"/.* (flattened to /.*) is denied as filesystem root.
-//   - A quoted | inside a path argument (rm "/tmp/cache|/mnt/data/old") was
-//     already split into segments by the flattened view; the pipeline guard
-//     now marks that boundary as a data-carrying pipe and denies on the
-//     inherited path - safe-side, same accepted class as the quoted-value
-//     limitations above.
+//   - A | inside a quoted or escaped token (rm "/tmp/cache|/mnt/data/old",
+//     echo /mnt/data \| xargs rm) splits segments in the lexer views; the
+//     pipeline guard denies on the inherited protected path even though bash
+//     runs one command. Safe-side, same accepted class as the quoted-value
+//     limitations above - the user rewords if hit.
 
 const S3_REASON =
   "S3 deletes are not permitted for the agent - run them yourself outside the agent. (policy: command)"
@@ -97,6 +97,8 @@ const GH_API_REASON =
   "gh api write methods are not permitted for the agent - run them yourself outside the agent. (policy: command)"
 const GIT_ALIAS_REASON =
   "git alias with unverifiable value is not permitted - use the direct spelling yourself. (policy: command)"
+const BRACE_CAP_REASON =
+  "a brace pattern too large to examine is not permitted for the agent - run it yourself outside the agent. (policy: command)"
 const KUBECTL_REASON =
   "kubectl mutation verbs are not permitted for the agent - run them yourself outside the agent. (policy: command)"
 const GIT_GATE_TAIL =
@@ -594,11 +596,13 @@ function isDeleteOptionPrefix(t) {
 
 // ---------- segment guards: (segment tokens, env) -> reason | null ----------
 
-// git push --force (exact --force and +refspec always; short clusters
-// containing f unless a lease flag shares the segment), then the push/commit
-// gate. --ff-only pull is exempt. alias.K=V bindings whose K is the invoked
-// subcommand (and not a git builtin) are checked as their direct spelling;
-// !-shell and --config-env values deny as unverifiable.
+// git push --force (exact --force, short clusters containing f, +refspec -
+// --force overrides --force-with-lease in real git, so a lease flag never
+// neutralizes any force spelling), then the push/commit gate. --ff-only pull
+// is exempt. alias.K=V bindings (from -c/--config-env and GIT_CONFIG_* env
+// assignments) whose K is the invoked subcommand and not a git builtin are
+// checked as their direct spelling, chains resolved; !-shell and
+// environment-sourced values deny as unverifiable.
 function gitGuard(s, env) {
   for (let i = 0; i < s.length; i++) {
     if (toolName(s[i]) !== "git") continue
@@ -614,7 +618,8 @@ function gitGuard(s, env) {
 }
 
 // alias.K=V bindings from git's option zone (-c/--config-env, attached and
-// separate forms). Returns [{key, value, fromEnv}] for alias.* keys only.
+// separate forms). Config keys are case-insensitive in git, so K is compared
+// lowercased. Returns [{key, value, fromEnv}] for alias.* keys only.
 function gitAliasBindings(s, i) {
   const bindings = []
   let k = i + 1
@@ -622,7 +627,9 @@ function gitAliasBindings(s, i) {
     const t = s[k]
     const take = (raw, fromEnv) => {
       const eq = raw.indexOf("=")
-      if (raw.startsWith("alias.") && eq > 6) bindings.push({ key: raw.slice(6, eq), value: raw.slice(eq + 1), fromEnv })
+      if (eq > 6 && raw.slice(0, 6).toLowerCase() === "alias.") {
+        bindings.push({ key: raw.slice(6, eq).toLowerCase(), value: raw.slice(eq + 1), fromEnv })
+      }
     }
     if (t === "-c") { take(s[++k] ?? "", false); k++; continue }
     if (t === "--config-env") { take(s[++k] ?? "", true); k++; continue }
@@ -634,32 +641,95 @@ function gitAliasBindings(s, i) {
   return bindings
 }
 
-// A gated alias is checked exactly as its direct spelling: force flags over
-// the value's tokens plus the args after the alias subcommand, then the env
-// gate. Bindings whose key is a git builtin never fire (builtins outrank
-// aliases); !-shell and env-sourced values cannot be verified and deny.
-function gitAliasReason(s, i, candidates, env) {
-  for (const b of gitAliasBindings(s, i)) {
-    if (GIT_BUILTINS.has(b.key)) continue
-    const j = candidates.find((c) => s[c] === b.key)
-    if (j === undefined) continue
-    if (b.fromEnv) return `Blocked: git alias ${b.key} reads its value from the environment. ${GIT_ALIAS_REASON}`
-    if (b.value.startsWith("!")) return `Blocked: git alias ${b.key} runs a shell string. ${GIT_ALIAS_REASON}`
-    const valueTokens = b.value.split(/[ \t]+/).filter(Boolean)
-    const verb = valueTokens[0]
-    if (verb === "push") {
-      const args = [...valueTokens.slice(1), ...s.slice(j + 1)]
-      const lease = args.some((t) => t === "--force-with-lease" || t.startsWith("--force-with-lease="))
-      for (const t of args) {
-        if (t === "--force" || t.startsWith("+")) return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
-        if (!lease && !t.startsWith("--") && t.startsWith("-") && t.includes("f")) return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
+// Resolve an invoked alias binding to the gated verb it runs: git resolves
+// alias chains (cycle-safe via the hop cap - a loop is a git error and runs
+// nothing), leading option tokens are skipped (--paginate y resolves to y).
+// Returns {shell}, {fromEnv}, {cycle}, or {verb, verbArgs}.
+function resolveAlias(bindings, b) {
+  if (b.fromEnv) return { fromEnv: true }
+  if (b.value.startsWith("!")) return { shell: b.key }
+  let current = b
+  let verbArgs = []
+  for (let hop = 0; hop < 4; hop++) {
+    const valueTokens = current.value.split(/[ \t]+/).filter(Boolean)
+    const verbIndex = valueTokens.findIndex((t) => !t.startsWith("-"))
+    if (verbIndex === -1) return {}
+    const verb = valueTokens[verbIndex]
+    verbArgs = [...valueTokens.slice(verbIndex + 1), ...verbArgs]
+    const target = bindings.get(verb.toLowerCase())
+    if (!target || target === current) return { verb, verbArgs }
+    if (target.fromEnv) return { fromEnv: true }
+    if (target.value.startsWith("!")) return { shell: verb }
+    current = target
+  }
+  return { cycle: true }
+}
+
+// The invoked alias binding is checked exactly as its direct spelling: force
+// flags over the resolved value's args plus the tokens after the alias
+// subcommand, then the env gate. Only an exact builtin name outranks an
+// alias (case-sensitive: STATUS is not the status builtin); config keys
+// compare case-insensitively otherwise.
+function gatedAliasReason(bindings, env, b, trailingArgs) {
+  const resolved = resolveAlias(bindings, b)
+  if (resolved.cycle) return null
+  if (resolved.fromEnv) return `Blocked: git alias ${b.key} resolves to a --config-env value. ${GIT_ALIAS_REASON}`
+  if (resolved.shell) return `Blocked: git alias ${resolved.shell} runs a shell string. ${GIT_ALIAS_REASON}`
+  if (resolved.verb === undefined) return null
+  const args = [...(resolved.verbArgs ?? []), ...trailingArgs]
+  if (resolved.verb === "push") {
+    for (const t of args) {
+      if (t === "--force" || t.startsWith("+") || (!t.startsWith("--") && t.startsWith("-") && t.includes("f"))) {
+        return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
       }
-      return gitGateReason(env, "git push", "push")
     }
-    if (COMMIT_SUBCOMMANDS.has(verb)) return gitGateReason(env, `git ${verb}`, "commit")
-    if (verb === "pull" && !s.slice(j + 1).includes("--ff-only") && !valueTokens.includes("--ff-only")) {
-      return gitGateReason(env, "git pull", "commit")
+    return gitGateReason(env, "git push", "push")
+  }
+  if (COMMIT_SUBCOMMANDS.has(resolved.verb)) return gitGateReason(env, `git ${resolved.verb}`, "commit")
+  if (resolved.verb === "pull" && !args.includes("--ff-only")) return gitGateReason(env, "git pull", "commit")
+  return null
+}
+
+// A gated alias is checked exactly as its direct spelling. Bindings whose key
+// is a git builtin never fire (builtins outrank aliases); !-shell and
+// environment-sourced values cannot be verified and deny.
+function gitAliasReason(s, i, candidates, env) {
+  const bindings = new Map(gitAliasBindings(s, i).map((b) => [b.key, b]))
+  for (const b of bindings.values()) {
+    const j = candidates.find((c) => s[c].toLowerCase() === b.key)
+    if (j === undefined || GIT_BUILTINS.has(s[j])) continue
+    const reason = gatedAliasReason(bindings, env, b, s.slice(j + 1))
+    if (reason) return reason
+  }
+  return gitEnvConfigAliasReason(s, candidates, env, bindings)
+}
+
+// GIT_CONFIG_KEY_n=alias.* / GIT_CONFIG_VALUE_n=... assignment pairs carry
+// inline config into git (only under a valid GIT_CONFIG_COUNT, and only for
+// indices below it); an alias among them is gated like a -c binding. An
+// invoked alias KEY whose VALUE token is absent from the command denies as
+// unverifiable - the value may live in environment the guard cannot see.
+function gitEnvConfigAliasReason(s, candidates, env, bindings) {
+  const countToken = s.find((t) => /^GIT_CONFIG_COUNT=\d+$/.test(t))
+  if (!countToken) return null
+  const count = Number(countToken.slice("GIT_CONFIG_COUNT=".length))
+  const values = new Map()
+  for (const t of s) {
+    const m = t.match(/^GIT_CONFIG_VALUE_(\d+)=(.*)$/)
+    if (m) values.set(m[1], m[2])
+  }
+  for (const t of s) {
+    const m = t.match(/^GIT_CONFIG_KEY_(\d+)=alias\.(.+)$/i)
+    if (!m || Number(m[1]) >= count) continue
+    const key = m[2].toLowerCase()
+    const j = candidates.find((c) => s[c].toLowerCase() === key)
+    if (j === undefined || GIT_BUILTINS.has(s[j])) continue
+    const value = values.get(m[1])
+    if (value === undefined) {
+      return `Blocked: git alias ${key} is declared via GIT_CONFIG_KEY without its value in the command. ${GIT_ALIAS_REASON}`
     }
+    const reason = gatedAliasReason(bindings, env, { key, value, fromEnv: false }, s.slice(j + 1))
+    if (reason) return reason
   }
   return null
 }
@@ -667,15 +737,11 @@ function gitAliasReason(s, i, candidates, env) {
 function gitSubcommandReason(s, j, env) {
   const sub = s[j]
   if (sub === "push") {
-    const args = s.slice(j + 1)
-    // A lease flag makes a short -f cluster lease-protected; explicit --force
-    // and +refspecs always deny.
-    const lease = args.some((t) => t === "--force-with-lease" || t.startsWith("--force-with-lease="))
-    for (const t of args) {
-      if (t === "--force" || t.startsWith("+")) {
-        return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
-      }
-      if (!lease && !t.startsWith("--") && t.startsWith("-") && t.includes("f")) {
+    // --force overrides --force-with-lease in real git (lab-verified from a
+    // stale clone: the lease rejects, -f --force-with-lease force-updates), so
+    // every force spelling denies regardless of a lease flag.
+    for (const t of s.slice(j + 1)) {
+      if (t === "--force" || t.startsWith("+") || (!t.startsWith("--") && t.startsWith("-") && t.includes("f"))) {
         return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
       }
     }
@@ -871,7 +937,7 @@ function viewReason({ tokens, segments, pipeToNext }, env) {
     const reason = firstReason(SEGMENT_GUARDS, s, env)
     if (reason) return reason
   }
-  return pipelineDeleteGuard(segments, pipeToNext ?? segments.map(() => false))
+  return pipelineDeleteGuard(segments, pipeToNext)
 }
 
 // Split on separator runs, flattening each segment with `flatten`, recording
@@ -905,14 +971,30 @@ function flattenedView(command) {
 
 // Bash brace tokens expand in place before name matching: {git,push} --force
 // reads as [git, push, --force]. Runs on the flattened view's original
-// segments only - never on the quoted view's re-lexed words - and a token
-// past the brace cap skips expansion (the unexpanded views still run).
+// segments only - never on the quoted view's re-lexed words. A token past
+// the brace cap denies outright rather than being treated as a literal -
+// the same rule as over-cap path globs (over-cap = protected).
 const expandToken = (t) => (t.includes("{") ? expandBraces(t) ?? [t] : [t])
 
 function expandedView(command) {
   const { segments, pipeToNext } = splitSegments(command, SEG_FLATTEN)
   const expanded = segments.map((s) => s.flatMap(expandToken))
   return { tokens: expanded.flat(), segments: expanded, pipeToNext }
+}
+
+// A brace token with more alternatives than the examined limit cannot be
+// expanded; deny rather than read it as a literal ({rm,<65 fillers>} would
+// otherwise run rm unseen).
+function braceOverCapReason(command) {
+  for (const s of splitSegments(command, SEG_FLATTEN).segments) {
+    for (const t of s) {
+      if (t.includes("{") && expandBraces(t) === null) {
+        const head = t.length > 20 ? t.slice(0, 20) + "..." : t
+        return `Blocked: ${head} expands past the examined limit. ${BRACE_CAP_REASON}`
+      }
+    }
+  }
+  return null
 }
 
 // Quoted view of the command, then of every quoted word holding a blank,
@@ -1001,6 +1083,7 @@ export function decide(command, env = process.env) {
   const reason =
     viewReason(flattenedView(command), env) ??
     viewReason(expandedView(command), env) ??
+    braceOverCapReason(command) ??
     quotedReason(command, env, NESTED_COMMAND_DEPTH)
   return reason ? { deny: true, reason } : { deny: false }
 }
