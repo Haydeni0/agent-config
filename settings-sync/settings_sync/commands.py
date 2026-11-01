@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from settings_sync.frontmatter import parse
+from settings_sync.frontmatter import dump, parse
 from settings_sync.sync import Outcome, Status
 from settings_sync.ownership import prune_generated, sync_generated_file
 
@@ -13,10 +13,8 @@ def _build_skill_stub(skill_md: Path) -> str | None:
     description = frontmatter.get("description", "")
     if not name:
         return None
-    return (
-        f"---\ndescription: {description}\n---\n\n"
-        f"Invoke the `skill` tool with name \"{name}\" to load and apply it. $ARGUMENTS\n"
-    )
+    body = f'Invoke the `skill` tool with name "{name}" to load and apply it. $ARGUMENTS\n'
+    return dump({"description": description}, body)
 
 
 def sync_commands(

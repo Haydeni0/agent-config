@@ -110,3 +110,30 @@ def test_real_command_not_overwritten_by_skill_stub(tmp_path: pathlib.Path):
     outcomes = sync_commands(target, source, skills)
 
     assert (target / "shared.md").read_text() == (source / "shared.md").read_text()
+
+
+@pytest.mark.parametrize("description", [
+    "Use when: x", '"quoted" start', "'single' start", "- leading dash", "# leading hash",
+    "[bracket", "{brace", "ends with colon:", "a: b # c", "line one\nline two",
+])
+def test_skill_stub_frontmatter_round_trips(tmp_path: pathlib.Path, description: str) -> None:
+    import json
+
+    import yaml
+
+    skills = tmp_path / "claude" / "skills"
+    skill = skills / "grill-me"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\n"
+        "name: grill-me\n"
+        f"description: {json.dumps(description)}\n"
+        "---\nBody.\n"
+    )
+    target = tmp_path / "config" / "opencode" / "commands"
+    (tmp_path / "claude" / "commands").mkdir(parents=True)
+    sync_commands(target, tmp_path / "claude" / "commands", skills)
+    stub = (target / "grill-me.md").read_text()
+    frontmatter_text = stub.split("---\n")[1]
+    assert yaml.safe_load(frontmatter_text)["description"] == description
+    assert "$ARGUMENTS" in stub
