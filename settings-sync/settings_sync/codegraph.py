@@ -17,7 +17,7 @@ from pathlib import Path
 
 from settings_sync.merging import sync_json_defaults
 from settings_sync.paths import Paths
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 CODEGRAPH_VERSION = "v1.6.2"
 CODEGRAPH_REPO = "colbymchenry/codegraph"

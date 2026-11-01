@@ -6,7 +6,7 @@ from settings_sync.ownership import sync_generated_file, sync_generated_json
 
 from settings_sync.agents_md import build_agents_md
 from settings_sync.merging import sync_json_defaults
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 
 def sync_pi_config(target: Path, template: Path, dry_run: bool = False, *, source_root: Path | None = None, runtime_home: Path | None = None) -> Outcome:

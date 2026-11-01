@@ -5,7 +5,7 @@ import shutil
 
 from settings_sync.paths import Paths
 from settings_sync.registry import Harness, run_harness
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 
 def doctor(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Outcome]:

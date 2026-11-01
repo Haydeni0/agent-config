@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from settings_sync.claude import sync_claude_config
 from settings_sync.cli import agent_config_app
 from settings_sync.paths import resolve_paths
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 
 def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated_home: Path):

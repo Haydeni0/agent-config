@@ -3,7 +3,7 @@ import pathlib
 import pytest
 
 from settings_sync.skills import validate_skills
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def _make_skill(

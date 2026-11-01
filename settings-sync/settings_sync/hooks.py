@@ -10,7 +10,8 @@ from typing import Literal
 from settings_sync.merging import install_merged, merge_defaults
 from settings_sync.ownership import OwnershipStore, sync_generated_json
 from settings_sync.paths import Paths, state_home
-from settings_sync.sync import Outcome, Status, write_text_atomic
+from settings_sync.actions import Outcome, Status
+from settings_sync.sync import write_text_atomic
 
 
 HookGroups = dict[str, list[dict[str, object]]]

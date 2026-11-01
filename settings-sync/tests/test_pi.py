@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 
 from settings_sync.cli import app
 from settings_sync.pi import sync_pi_config, sync_pi_context, sync_pi_keybindings
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 @pytest.fixture

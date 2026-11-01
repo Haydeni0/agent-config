@@ -2,8 +2,10 @@
 
 from pathlib import Path
 
+from settings_sync.actions import Outcome
 from settings_sync.frontmatter import dump, parse
-from settings_sync.sync import Outcome, sync_dir_files
+from settings_sync.ownership import prune_generated, sync_generated_file
+from settings_sync.sync import sync_dir_files
 
 CLAUDE_TO_OPENCODE_TOOLS: dict[str, str] = {
     "Read": "read",
@@ -71,11 +73,15 @@ def transform_agent(markdown: str) -> tuple[str, list[str]]:
 
 
 def sync_agents_dir(target_dir: Path, source_dir: Path, force: bool = False, dry_run: bool = False) -> list[Outcome]:
-    return sync_dir_files(
+    outcomes = sync_dir_files(
         target_dir,
         source_dir,
         pattern="*.md",
         force=force,
         dry_run=dry_run,
         transform=lambda p: transform_agent(p.read_text()),
+        sync_fn=sync_generated_file,
     )
+    expected = {p.name for p in source_dir.glob("*.md") if p.is_file()}
+    outcomes.extend(prune_generated(target_dir, expected, dry_run))
+    return outcomes

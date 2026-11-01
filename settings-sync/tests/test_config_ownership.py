@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 
 from settings_sync.cli import app
 from settings_sync.merging import sync_json_defaults
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 @pytest.mark.parametrize("harness,step,source,target", [

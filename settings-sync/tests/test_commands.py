@@ -3,7 +3,7 @@ import pathlib
 import pytest
 
 from settings_sync.commands import sync_commands
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def _make_skill(skills_dir: pathlib.Path, name: str, description: str = "desc") -> None:

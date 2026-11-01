@@ -9,12 +9,12 @@ import typer
 from settings_sync.paths import Paths, resolve_paths
 from settings_sync.registry import HARNESSES, Harness, run_all_tools, run_harness, run_opencode, select_harnesses
 from settings_sync.skills import validate_skills
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 app = typer.Typer(add_completion=False, no_args_is_help=False)
 
 
-_FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE, Status.WOULD_SKIP}
+_FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE}
 
 
 def exit_code(sync_outcomes: list[Outcome]) -> int:

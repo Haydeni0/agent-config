@@ -3,7 +3,7 @@ import pathlib
 import pytest
 
 from settings_sync.agents_md import sync_agents_md
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def test_sync_appends_rules_md_when_present(tmp_path: pathlib.Path):

@@ -4,7 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from settings_sync.sync import Outcome, Status, sync_yaml
+from settings_sync.actions import Outcome, Status
+from settings_sync.sync import sync_yaml
 
 
 def merge_yaml(base: dict, overlay: dict) -> dict:

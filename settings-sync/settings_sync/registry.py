@@ -20,7 +20,7 @@ from settings_sync.paths import Paths, config_home
 from settings_sync.pi import sync_pi_config, sync_pi_context, sync_pi_keybindings
 from settings_sync.plugins import sync_plugins
 from settings_sync.skills import validate_skills
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from settings_sync.cli import app, run_all_tools
 from settings_sync.paths import Paths
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 @pytest.mark.parametrize("harness,step", [("pi", "config"), ("goose", "config"), ("agy", "settings"), ("no-mistakes", "config"), ("opencode", "config")])

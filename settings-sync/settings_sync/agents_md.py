@@ -5,7 +5,7 @@ from pathlib import Path
 
 from settings_sync.ownership import sync_generated_file
 
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 SKILLS_REF = re.compile(r"@skills/([a-zA-Z0-9_-]+)")
 

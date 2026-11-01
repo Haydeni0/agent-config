@@ -12,7 +12,7 @@ from settings_sync.codegraph import (
     sync_codegraph_binary,
 )
 from settings_sync.paths import Paths, resolve_paths
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def _paths(tmp_path: Path, **overrides) -> Paths:

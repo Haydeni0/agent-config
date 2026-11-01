@@ -6,7 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from settings_sync.sync import Outcome, Status, install_text
+from settings_sync.actions import Outcome, Status
+from settings_sync.sync import install_text
 
 
 def merge_defaults(target: MutableMapping[str, object], source: Mapping[str, object]) -> None:

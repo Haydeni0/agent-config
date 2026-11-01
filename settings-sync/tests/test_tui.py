@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 from settings_sync.config import sync_tui
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 TUI_SCHEMA = "https://opencode.ai/tui.json"
 

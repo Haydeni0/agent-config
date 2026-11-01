@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 from settings_sync.merging import merge_defaults, sync_json_defaults
 
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"

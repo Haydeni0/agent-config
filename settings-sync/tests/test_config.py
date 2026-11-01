@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 from settings_sync.config import sync_config
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def test_creates_config_from_base(tmp_path: pathlib.Path):

@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 from settings_sync.plugins import resolve_superpowers_js, sync_superpowers
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def _make_version(cache_root: pathlib.Path, version: str) -> pathlib.Path:

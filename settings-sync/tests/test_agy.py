@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
 from settings_sync.cli import Paths, app
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def test_sync_agy_settings(tmp_path: pathlib.Path):
@@ -80,6 +80,33 @@ def test_sync_agy_skills_dry_run_does_not_create_dir(tmp_path: pathlib.Path):
     assert not target_dir.exists()
     assert len(outcomes) == 1
     assert outcomes[0].status == Status.WOULD_CREATE
+
+
+def test_sync_agy_skills_missing_source_dir(tmp_path: pathlib.Path):
+    source_dir = tmp_path / "nonexistent"
+    target_dir = tmp_path / "dst"
+    target_dir.mkdir(parents=True)
+    (target_dir / "existing-file").write_text("keep me")
+    outcomes = sync_agy_skills(target_dir, source_dir, force=True)
+    assert len(outcomes) == 1
+    assert outcomes[0].status == Status.NO_SOURCE
+    assert (target_dir / "existing-file").exists()
+
+
+def test_sync_agy_skills_prunes_orphans(tmp_path: pathlib.Path):
+    source_dir = tmp_path / "src"
+    (source_dir / "skill-a").mkdir(parents=True)
+    (source_dir / "skill-b").mkdir(parents=True)
+    target_dir = tmp_path / "dst"
+    target_dir.mkdir(parents=True)
+    (target_dir / "orphan-skill").mkdir(parents=True)
+    sync_agy_skills(target_dir, source_dir)
+    (source_dir / "skill-a").rmdir()
+    outcomes = sync_agy_skills(target_dir, source_dir, force=True)
+    assert (target_dir / "orphan-skill").is_dir()
+    assert not (target_dir / "skill-a").is_symlink()
+    assert (target_dir / "skill-b").is_symlink()
+    assert any(o.path.name == "skill-a" and o.status == Status.REPLACED for o in outcomes)
 
 
 runner = CliRunner()

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from settings_sync.frontmatter import parse
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 

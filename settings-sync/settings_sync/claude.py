@@ -8,7 +8,7 @@ from pathlib import Path
 from settings_sync.hooks import expand_command_hooks, has_command_placeholder, hook_groups, sync_hook_config
 from settings_sync.ownership import prune_generated, sync_generated_symlink
 from settings_sync.paths import Paths, config_home
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 
 def claude_home(paths: Paths) -> Path:

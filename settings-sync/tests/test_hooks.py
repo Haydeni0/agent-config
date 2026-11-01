@@ -8,7 +8,7 @@ import pytest
 from settings_sync.claude import sync_claude_config
 from settings_sync.hooks import sync_command_hooks, sync_hook_config
 from settings_sync.paths import Paths
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 
 def group(command: str) -> dict[str, object]:

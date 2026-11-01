@@ -22,7 +22,7 @@ def test_sync_agents_md_writes_expanded_content(tmp_path: pathlib.Path):
     from settings_sync.agents_md import sync_agents_md
     outcome = sync_agents_md(target, claude)
 
-    from settings_sync.sync import Status
+    from settings_sync.actions import Status
     assert outcome.status == Status.CREATED
     assert "the `uv` skill" in target.read_text()
 
@@ -36,7 +36,7 @@ def test_sync_agents_md_skips_diverging_without_force(tmp_path: pathlib.Path):
     target.write_text("hand-edited\n")
 
     from settings_sync.agents_md import sync_agents_md
-    from settings_sync.sync import Status
+    from settings_sync.actions import Status
     outcome = sync_agents_md(target, claude)
 
     assert outcome.status == Status.SKIPPED

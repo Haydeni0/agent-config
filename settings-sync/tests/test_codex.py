@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 import settings_sync.codex as codex
 from settings_sync.cli import app
 from settings_sync.codex import sync_codex_agents_md, sync_codex_config
-from settings_sync.sync import Status
+from settings_sync.actions import Status
 
 CONFIG_TEMPLATE = '[features]\nhooks = true\n'
 

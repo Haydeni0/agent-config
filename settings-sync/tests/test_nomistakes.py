@@ -7,7 +7,8 @@ from typer.testing import CliRunner
 
 from settings_sync.cli import app
 from settings_sync.nomistakes import merge_yaml, sync_nomistakes_config
-from settings_sync.sync import Status, sync_yaml
+from settings_sync.actions import Status
+from settings_sync.sync import sync_yaml
 
 
 @pytest.fixture

@@ -5,8 +5,9 @@ import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from settings_sync.actions import Outcome, Status
 from settings_sync.cli import app
-from settings_sync.sync import Outcome, Status, sync_json, sync_text, sync_yaml
+from settings_sync.sync import sync_yaml
 
 
 def test_jsonc_survives_conflicting_destination(tmp_path: Path):
@@ -35,7 +36,7 @@ def test_preview_does_not_create_directories(tmp_path: Path, flag: str):
     assert not target.exists()
 
 
-@pytest.mark.parametrize("writer,original,replacement", [(sync_text, "before", "after"), (sync_json, '{"a":1}', '{"a":2}'), (sync_yaml, "a: 1", "a: 2")])
+@pytest.mark.parametrize("writer,original,replacement", [(sync_yaml, "a: 1", "a: 2")])
 def test_failed_replace_preserves_original(tmp_path: Path, mocker: MockerFixture, writer: Callable[..., Outcome], original: str, replacement: str):
     target = tmp_path / "config"
     target.write_text(original)
@@ -53,7 +54,7 @@ def test_regular_output_rejects_symlink(tmp_path: Path):
     source.write_text("keep")
     target = tmp_path / "target"
     target.symlink_to(source)
-    result = sync_text(target, "replacement", force=True)
+    result = sync_yaml(target, "a: 1", force=True)
     assert result.status == Status.FAILED
     assert source.read_text() == "keep"
 

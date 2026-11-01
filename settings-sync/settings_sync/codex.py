@@ -10,7 +10,7 @@ from tomlkit.exceptions import ParseError
 
 from settings_sync.agents_md import build_agents_md
 from settings_sync.merging import merge_defaults, install_merged
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 
 CODEX_SQLITE_HOME_MODE = 0o700
 

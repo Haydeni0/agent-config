@@ -13,7 +13,8 @@ from typing import Literal
 from uuid import uuid4
 
 from settings_sync.paths import state_home
-from settings_sync.sync import Outcome, Status, install_text, sync_symlink, write_text_atomic
+from settings_sync.actions import Outcome, Status
+from settings_sync.sync import install_text, sync_symlink, write_text_atomic
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from settings_sync.frontmatter import dump, parse
-from settings_sync.sync import Outcome, Status
+from settings_sync.actions import Outcome, Status
 from settings_sync.ownership import prune_generated, sync_generated_file
 
 

@@ -174,7 +174,7 @@ def test_run_opencode_pure_returns_outcomes(tmp_path: pathlib.Path):
     sync_outcomes, skills_outcomes = run_opencode(paths, force=False, dry_run=False)
 
     statuses = {o.status for o in sync_outcomes}
-    from settings_sync.sync import Status
+    from settings_sync.actions import Status
 
     assert Status.CREATED in statuses
 
