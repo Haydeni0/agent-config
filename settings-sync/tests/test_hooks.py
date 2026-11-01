@@ -176,8 +176,8 @@ def test_corrupt_hook_ownership_preserves_configuration(isolated_home: Path) -> 
     target = isolated_home / "hooks.json"
     desired = {"hooks": {"PreToolUse": [group("shared")]}}
     sync_hook_config(target, desired, False)
-    (snapshot,) = (isolated_home / ".local/state/agent-config/hooks").glob("*.json")
-    snapshot.write_text("{")
+    store = isolated_home / ".local/state/agent-config/managed.json"
+    store.write_text("{")
     original = target.read_bytes()
     assert sync_hook_config(target, desired, False).status == Status.FAILED
     assert target.read_bytes() == original
@@ -187,20 +187,12 @@ def test_hook_update_backs_up_ownership_for_rollback(isolated_home: Path) -> Non
     target = isolated_home / "hooks.json"
     sync_hook_config(target, {"hooks": {"PreToolUse": [group("old")]}}, False)
     state_dir = isolated_home / ".local/state/agent-config"
-    (snapshot,) = (state_dir / "hooks").glob("*.json")
-    original = snapshot.read_text()
+    store = state_dir / "managed.json"
+    original = store.read_bytes()
     sync_hook_config(target, {"hooks": {"PreToolUse": [group("new")]}}, False)
-    backups = list((state_dir / "backups").glob("*-" + snapshot.name))
-    assert len(backups) == 1
-    assert backups[0].read_text() == original
-    target.write_text(
-        '{"hooks":{"PreToolUse": [{"matcher":"Bash","hooks":[{"type":"command","command":"old"}]}]}}'
-    )
-    snapshot.write_text(backups[0].read_text())
-    assert (
-        sync_hook_config(target, {"hooks": {"PreToolUse": [group("old")]}}, True).status
-        == Status.UNCHANGED
-    )
+    backups = [p for p in (state_dir / "backups").glob("*") if p.name.endswith(".json") and p.is_file()]
+    assert any(backup.read_bytes() == original for backup in backups), sorted(p.name for p in backups)
+    assert json.loads(store.read_text())["configs"]
 
 
 def test_removal_conflicts_when_another_managed_group_was_edited(

@@ -1,6 +1,5 @@
 """Reconcile managed hook groups while preserving native registrations."""
 
-import hashlib
 import json
 from pathlib import Path
 import shlex
@@ -9,9 +8,8 @@ from typing import Literal
 
 from settings_sync.merging import install_merged, merge_defaults
 from settings_sync.ownership import OwnershipStore, sync_generated_json
-from settings_sync.paths import Paths, state_home
+from settings_sync.paths import Paths
 from settings_sync.actions import Outcome, Status
-from settings_sync.sync import write_text_atomic
 
 
 HookGroups = dict[str, list[dict[str, object]]]
@@ -87,24 +85,7 @@ def sync_hook_config(
             if not isinstance(config, dict):
                 raise ValueError("hook configuration must be an object")
             destination = str(target.absolute())
-            snapshot = (
-                state_home()
-                / "hooks"
-                / (hashlib.sha256(destination.encode()).hexdigest() + ".json")
-            )
-            state = (
-                json.loads(snapshot.read_text())
-                if snapshot.exists()
-                else {"version": 1, "target": destination, "hooks": {}}
-            )
-            if (
-                not isinstance(state, dict)
-                or state.get("version") != 1
-                or state.get("target") != destination
-            ):
-                raise ValueError(
-                    "invalid hook ownership snapshot; restore it before syncing"
-                )
+            record = store.hooks_of(destination)
             desired = hook_groups(defaults.get(hook_key, {}))
             current = config.get(hook_key, {})
             enabled = {}
@@ -119,9 +100,7 @@ def sync_hook_config(
                 current = {
                     key: value for key, value in current.items() if key != "enabled"
                 }
-            reconciled = reconcile_hooks(
-                hook_groups(current), hook_groups(state.get("hooks")), desired
-            )
+            reconciled = reconcile_hooks(hook_groups(current), record, desired)
             before = json.dumps(config, sort_keys=True)
             merge_defaults(
                 config,
@@ -134,8 +113,6 @@ def sync_hook_config(
                 if existing is not None and json.dumps(config, sort_keys=True) == before
                 else json.dumps(config, indent=2) + "\n"
             )
-            if not dry_run and snapshot.exists() and state["hooks"] != desired:
-                store.backup(snapshot)
             backup = (
                 store.backup(target)
                 if not dry_run and existing is not None and content != existing
@@ -144,15 +121,8 @@ def sync_hook_config(
             outcome = install_merged(target, content, existing, dry_run)
             if backup is not None:
                 outcome.detail += f"; backup: {backup}"
-            if not dry_run and outcome.status in (
-                Status.CREATED,
-                Status.REPLACED,
-                Status.UNCHANGED,
-            ):
-                state = {"version": 1, "target": destination, "hooks": desired}
-                rendered = json.dumps(state, indent=2) + "\n"
-                if not snapshot.exists() or snapshot.read_text() != rendered:
-                    write_text_atomic(snapshot, rendered)
+            if not dry_run and outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
+                store.record_hooks(destination, "json", desired)
             return outcome
     except (OSError, ValueError) as exc:
         return Outcome(target, Status.FAILED, f"could not sync hooks: {exc}")

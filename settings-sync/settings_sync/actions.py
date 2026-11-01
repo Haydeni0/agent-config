@@ -24,6 +24,12 @@ class Status(StrEnum):
     WOULD_MERGE = "would_merge"
 
 
+class Mode(StrEnum):
+    APPLY = "apply"
+    FORCE = "force"
+    DRY_RUN = "dry_run"
+
+
 @dataclass(slots=True)
 class Outcome:
     """Result of one sync action: what happened at a path."""
