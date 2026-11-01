@@ -19,15 +19,14 @@ from settings_sync.skills import validate_skills
 from settings_sync.paths import Paths
 from settings_sync.pi import plan_pi_config, plan_pi_keybindings
 from settings_sync.plugins import plan_plugins
-from settings_sync.actions import Action, Mode, Outcome, Report, Status
+from settings_sync.actions import Action, Outcome, Report, Status
 
 
 @dataclass(frozen=True, slots=True)
 class Step:
     name: str
-    run: Callable[[Paths, bool, bool], list[Outcome]] | None = None
+    plan: Callable[[Paths], list[Action]]
     required_sources: tuple[str, ...] = ()
-    plan: Callable[[Paths], list[Action]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,34 +101,3 @@ def select_harnesses(name: str | None) -> tuple[Harness, ...]:
         if harness.name == name:
             return (harness,)
     raise ValueError(f"unknown harness {name!r}; choose {', '.join(h.name for h in HARNESSES)}")
-
-
-def run_harness(harness: Harness, paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] | None = None) -> list[Outcome]:
-    if not harness.available(paths):
-        return []
-    from settings_sync.ownership import OwnershipStore
-    store = OwnershipStore()
-    store.load(Mode.DRY_RUN if dry_run else Mode.APPLY)
-    selected = harness.steps if steps is None else tuple(step for step in harness.steps if step.name in steps)
-    if steps is not None and set(steps) - {step.name for step in selected}:
-        raise ValueError(f"unknown step for {harness.name}: {steps}")
-    outcomes: list[Outcome] = []
-    for step in selected:
-        missing = [paths.source_dir / name for name in step.required_sources if not (paths.source_dir / name).exists()]
-        if missing:
-            outcomes.extend(Outcome(path, Status.FAILED, f"required source missing for {harness.name} {step.name}; restore it in the source checkout") for path in missing)
-            continue
-        try:
-            if step.plan is not None:
-                from settings_sync.executor import execute
-                mode = Mode.DRY_RUN if dry_run else (Mode.FORCE if force else Mode.APPLY)
-                outcomes.extend(execute(step.plan(paths), mode, store))
-            else:
-                outcomes.extend(step.run(paths, force, dry_run))
-        except (OSError, ValueError) as exc:
-            outcomes.append(Outcome(paths.source_dir, Status.FAILED, f"{harness.name} {step.name}: {exc}"))
-    return outcomes
-
-
-def run_all_tools(paths: Paths, force: bool, dry_run: bool) -> tuple[list[Outcome], list[Outcome]]:
-    return [outcome for harness in HARNESSES for outcome in run_harness(harness, paths, force, dry_run)], []

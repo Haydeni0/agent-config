@@ -1,4 +1,3 @@
-from collections.abc import Callable
 import json
 from pathlib import Path
 
@@ -6,9 +5,8 @@ import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from settings_sync.actions import Outcome, Status
+from settings_sync.actions import Status
 from settings_sync.cli import agent_config_app
-from settings_sync.sync import sync_yaml
 
 
 def test_jsonc_survives_conflicting_destination(source_home: Path, isolated_home: Path):
@@ -52,29 +50,6 @@ def test_preview_does_not_create_directories(tmp_path: Path, command: list[str])
     assert not target.exists()
 
 
-@pytest.mark.parametrize("writer,original,replacement", [(sync_yaml, "a: 1", "a: 2")])
-def test_failed_replace_preserves_original(tmp_path: Path, mocker: MockerFixture, writer: Callable[..., Outcome], original: str, replacement: str):
-    target = tmp_path / "config"
-    target.write_text(original)
-    target.chmod(0o640)
-    mocker.patch("pathlib.Path.replace", side_effect=OSError("disk unavailable"))
-    result = writer(target, replacement, force=True)
-    assert result.status == Status.FAILED
-    assert target.read_text() == original
-    assert target.stat().st_mode & 0o777 == 0o640
-    assert list(tmp_path.iterdir()) == [target]
-
-
-def test_regular_output_rejects_symlink(tmp_path: Path):
-    source = tmp_path / "source"
-    source.write_text("keep")
-    target = tmp_path / "target"
-    target.symlink_to(source)
-    result = sync_yaml(target, "a: 1", force=True)
-    assert result.status == Status.FAILED
-    assert source.read_text() == "keep"
-
-
 def test_jsonc_preview_includes_migration(tmp_path: Path):
     source = tmp_path / "source"
     (source / "harnesses/opencode").mkdir(parents=True)
@@ -104,16 +79,20 @@ def test_nonregular_jsonc_preserved(source_home: Path, isolated_home: Path, kind
     assert not target.with_suffix(".json").exists()
 
 
-def test_symlink_replace_failure_preserves_old_link(tmp_path: Path, mocker: MockerFixture):
-    from settings_sync.sync import sync_symlink
-    old = tmp_path / "old"
+def test_symlink_replace_failure_preserves_old_link(isolated_home: Path, mocker: MockerFixture) -> None:
+    from settings_sync.actions import Mode, Symlink
+    from settings_sync.executor import execute
+    from settings_sync.ownership import OwnershipStore
+
+    old = isolated_home / "old"
     old.mkdir()
-    new = tmp_path / "new"
+    new = isolated_home / "new"
     new.mkdir()
-    target = tmp_path / "target"
+    target = isolated_home / "target"
     target.symlink_to(old)
     mocker.patch("pathlib.Path.replace", side_effect=OSError("disk unavailable"))
-    result = sync_symlink(target, new, force=True)
-    assert result.status == Status.FAILED
-    assert target.resolve() == old
-    assert set(tmp_path.iterdir()) == {old, new, target}
+    store = OwnershipStore()
+    store.load(Mode.FORCE)
+    outcome = execute([Symlink(target, new)], Mode.FORCE, store)[0]
+    assert outcome.status == Status.FAILED
+    assert target.resolve() == old.resolve()

@@ -54,8 +54,8 @@ def release_url(version: str = CODEGRAPH_VERSION) -> str:
 def download_and_extract(url: str, version_dir: Path) -> None:
     """Download the release tarball and extract it into version_dir, stripping
     the single top-level directory. Fails as ValueError with url and dest, no
-    partial state outside the temp dir (run_harness converts ValueError to
-    FAILED, but tar/subprocess errors would otherwise escape its catch)."""
+    partial state outside the temp dir (run converts ValueError to a FAILED
+    outcome, but tar/subprocess errors would otherwise escape its catch)."""
     with tempfile.TemporaryDirectory() as tmp:
         tarball = Path(tmp) / "cg.tar.gz"
         try:

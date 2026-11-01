@@ -67,4 +67,5 @@ def test_foreign_shared_skill_collision_preserved(source_home: Path, isolated_ho
     existing.write_text("personal")
     result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "claude", "links", "--force"])
     assert result.exit_code == 1
+    assert "failed" in result.output
     assert existing.read_text() == "personal"

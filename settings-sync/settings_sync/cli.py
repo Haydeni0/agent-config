@@ -9,7 +9,7 @@ import typer
 from settings_sync.paths import Paths, resolve_paths
 from settings_sync.actions import Mode
 from settings_sync.executor import run as run_engine
-from settings_sync.registry import Harness, run_all_tools, select_harnesses
+from settings_sync.registry import Harness, select_harnesses
 from settings_sync.actions import Outcome, Status
 
 

@@ -16,7 +16,7 @@ from settings_sync.hooks import hook_groups, reconcile_hooks
 from settings_sync.merging import Codec, canonicalize, merge_defaults, strip_jsonc
 from settings_sync.ownership import ManagedEntry, OwnershipStore
 from settings_sync.paths import Paths
-from settings_sync.sync import write_text_atomic
+from settings_sync.fsutil import write_text_atomic
 
 if TYPE_CHECKING:
     from settings_sync.registry import Harness

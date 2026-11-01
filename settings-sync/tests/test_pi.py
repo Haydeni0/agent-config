@@ -140,11 +140,11 @@ def test_pi_keybindings_creates_from_source(tmp_path: pathlib.Path, pi_keybindin
 
     outcome = _apply(plan_pi_keybindings, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.MERGED
+    assert outcome.status == Status.CREATED
     assert json.loads(target.read_text())["app.tree.foldOrUp"] == ["alt+left"]
 
 
-def test_pi_keybindings_merges_local_edits(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
+def test_pi_keybindings_preserves_local_edits(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
     paths = _pi_paths(tmp_path)
     target = paths.pi_dir / "keybindings.json"
     target.parent.mkdir(parents=True)
@@ -152,10 +152,8 @@ def test_pi_keybindings_merges_local_edits(tmp_path: pathlib.Path, pi_keybinding
 
     outcome = _apply(plan_pi_keybindings, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.MERGED
-    installed = json.loads(target.read_text())
-    assert installed["hand"] == "edited"
-    assert installed["app.tree.foldOrUp"] == ["alt+left"]
+    assert outcome.status == Status.SKIPPED
+    assert json.loads(target.read_text()) == {"hand": "edited"}
 
 
 def test_pi_keybindings_unchanged_when_identical(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
@@ -169,7 +167,7 @@ def test_pi_keybindings_unchanged_when_identical(tmp_path: pathlib.Path, pi_keyb
     assert outcome.status == Status.UNCHANGED
 
 
-@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.MERGED)])
+@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.CREATED)])
 def test_pi_keybindings_dry_run_creates_nothing(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path, dry_status: tuple[bool, Status]):
     dry_run, expected = dry_status
     paths = _pi_paths(tmp_path)

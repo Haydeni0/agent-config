@@ -29,15 +29,15 @@ def test_preview_preserves_home(source_home: Path, isolated_home: Path, installe
 
 
 def test_repository_checkout_sync_and_check(isolated_home: Path):
-    import os
-    import subprocess
-    import sys
+    from typer.testing import CliRunner
+    from settings_sync.cli import agent_config_app
     source = Path(__file__).resolve().parents[2]
     sentinel = isolated_home / ".codex/sessions/preserved"
     sentinel.parent.mkdir(parents=True)
     sentinel.write_text("local session")
-    base = [sys.executable, "-c", "from settings_sync.cli import agent_config_main; agent_config_main()", "--source", str(source)]
-    for command in ("sync", "sync", "check", "doctor"):
-        result = subprocess.run([*base, command], env=os.environ.copy(), capture_output=True, text=True)
-        assert result.returncode == 0, result.stdout + result.stderr
+    runner = CliRunner()
+    args = ["--source", str(source)]
+    for command in (["sync"], ["sync"], ["check"], ["doctor"]):
+        result = runner.invoke(agent_config_app, [*args, *command])
+        assert result.exit_code == 0, f"{command}: {result.output}"
         assert sentinel.read_text() == "local session"

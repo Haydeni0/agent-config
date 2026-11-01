@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from settings_sync.actions import Action, MergedConfig, Report, Status
+from settings_sync.actions import Action, File, MergedConfig, Report, Status
 from settings_sync.merging import JsonCodec
 from settings_sync.paths import Paths
 
@@ -22,4 +22,4 @@ def plan_pi_keybindings(paths: Paths) -> list[Action]:
     target = paths.target("pi") / "keybindings.json"
     if not source.is_file():
         return [Report(target, Status.NO_SOURCE, f"keybindings source not found: {source}")]
-    return [MergedConfig(path=target, codec=JsonCodec(), keys=json.loads(source.read_text()))]
+    return [File(target, source.read_text())]

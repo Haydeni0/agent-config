@@ -15,7 +15,7 @@ from uuid import uuid4
 from settings_sync.actions import Mode, Outcome, Status
 from settings_sync.merging import canonicalize
 from settings_sync.paths import state_home
-from settings_sync.sync import install_text, sync_symlink, write_text_atomic
+from settings_sync.fsutil import write_text_atomic
 
 HookGroups = dict[str, list[dict[str, object]]]
 _RESTORE = "restore managed.json or the named snapshot from the backups directory before syncing"
@@ -184,10 +184,7 @@ class OwnershipStore:
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         write_text_atomic(self.path, json.dumps(data, indent=2) + "\n")
 
-    # -- interim unified view (files + symlinks); Task 16 deletes it --
-
-    def entries(self) -> dict[Path, ManagedEntry]:
-        return {**self.files, **self.symlinks}
+    # -- records --
 
     def get(self, destination: Path) -> ManagedEntry | None:
         key = Path(os.path.abspath(destination))
@@ -271,96 +268,3 @@ class OwnershipStore:
 
 
 _lock_state = threading.local()
-
-
-def sync_generated_text(target: Path, source_id: str, content: str, store: OwnershipStore | None = None, force: bool = False, dry_run: bool = False) -> Outcome:
-    """Update adopted output; preserve local edits unless explicitly backed up."""
-    try:
-        store = store if store is not None else OwnershipStore()
-        with store.lock(dry_run):
-            if target.is_symlink() or target.is_dir():
-                return Outcome(target, Status.FAILED, "expected a generated regular file; preserve this entry and resolve its ownership")
-            existing = target.read_text() if target.exists() else None
-            entry = store.get(target)
-            managed = entry is not None and entry.source_id == source_id and existing is not None and fingerprint(target) == entry.fingerprint
-            conflict = existing is not None and existing != content and not managed
-            if conflict and not force:
-                return Outcome(target, Status.SKIPPED, "unmanaged or locally edited output; use --force on this step to back up and replace", existing, content)
-            if existing == content:
-                outcome = Outcome(target, Status.UNCHANGED, "identical")
-            elif dry_run:
-                return Outcome(target, Status.WOULD_CREATE if existing is None else Status.WOULD_REPLACE, "generated output differs", existing, content)
-            else:
-                backup = store.backup(target) if conflict else None
-                outcome = install_text(target, content, existing)
-                if backup is not None:
-                    outcome.detail += f"; original backed up to {backup}"
-            if not dry_run and outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
-                store.record_file(ManagedEntry(source_id, Path(os.path.abspath(target)), fingerprint(target)))
-            return outcome
-    except (OSError, ValueError) as exc:
-        return Outcome(target, Status.FAILED, f"could not sync generated output: {exc}")
-
-
-def sync_generated_file(target: Path, content: str, force: bool = False, dry_run: bool = False) -> Outcome:
-    return sync_generated_text(target, f"{target.parent.name}/{target.name}", content, force=force, dry_run=dry_run)
-
-
-def sync_generated_json(target: Path, content: str, force: bool = False, dry_run: bool = False) -> Outcome:
-    try:
-        json.loads(content)
-    except ValueError as exc:
-        return Outcome(target, Status.FAILED, f"invalid generated JSON: {exc}")
-    return sync_generated_file(target, content, force, dry_run)
-
-
-def sync_generated_symlink(target: Path, source: Path, force: bool = False, dry_run: bool = False) -> Outcome:
-    try:
-        store = OwnershipStore()
-        with store.lock(dry_run):
-            if target.is_dir() and not target.is_symlink():
-                return Outcome(target, Status.SKIPPED, "real directory preserved; inventory its contents before migrating")
-            entry = store.get(target)
-            exists = target.exists() or target.is_symlink()
-            matching = target.is_symlink() and target.resolve() == source.resolve()
-            managed = entry is not None and target.is_symlink() and fingerprint(target) == entry.fingerprint
-            if exists and not matching and not managed and not force:
-                return Outcome(target, Status.SKIPPED, "foreign link/file preserved; resolve ownership before replacing")
-            backup = store.backup(target) if exists and not matching and not managed and force and not dry_run else None
-            outcome = sync_symlink(target, source, force=managed or force, dry_run=dry_run)
-            if backup is not None:
-                outcome.detail += f"; original backed up to {backup}"
-            if not dry_run and outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
-                store.record_symlink(ManagedEntry(f"{target.parent.name}/{target.name}", Path(os.path.abspath(target)), fingerprint(target)))
-            return outcome
-    except (OSError, ValueError) as exc:
-        return Outcome(target, Status.FAILED, f"could not sync generated link: {exc}")
-
-
-def prune_generated(target_dir: Path, expected_names: set[str], dry_run: bool = False) -> list[Outcome]:
-    """Remove only unchanged owned entries no longer produced by their source."""
-    outcomes: list[Outcome] = []
-    try:
-        store = OwnershipStore()
-        with store.lock(dry_run):
-            recorded = list(store.files.items()) + list(store.symlinks.items())
-            for target, entry in recorded:
-                if target.parent != Path(os.path.abspath(target_dir)) or target.name in expected_names:
-                    continue
-                if not target.exists() and not target.is_symlink():
-                    if not dry_run:
-                        store.forget(target)
-                    continue
-                is_link = target.is_symlink()
-                if target.is_dir() and not is_link or is_link != (target in store.symlinks) or fingerprint(target) != entry.fingerprint:
-                    outcomes.append(Outcome(target, Status.WARNED, "obsolete managed output has local changes; preserved"))
-                    continue
-                if dry_run:
-                    outcomes.append(Outcome(target, Status.WOULD_REPLACE, "would remove unchanged managed output"))
-                    continue
-                target.unlink()
-                store.forget(target)
-                outcomes.append(Outcome(target, Status.REPLACED, "removed unchanged managed output"))
-    except (OSError, ValueError) as exc:
-        outcomes.append(Outcome(target_dir, Status.FAILED, f"could not clean generated outputs: {exc}"))
-    return outcomes
