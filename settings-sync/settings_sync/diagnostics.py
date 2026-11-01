@@ -27,8 +27,6 @@ def doctor(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Outcome]:
             if outcome.status not in (Status.UNCHANGED, Status.NO_SOURCE, Status.FAILED):
                 outcome.detail += f"; run agent-config sync {harness.name}"
             outcomes.append(outcome)
-        if harness.validate_skills:
-            outcomes.extend(harness.validate_skills(paths.source_dir / "skills"))
     skills = paths.source_dir / "skills"
     if skills.is_dir():
         for path in skills.rglob("*"):

@@ -4,7 +4,7 @@ import pathlib
 
 from typer.testing import CliRunner
 
-from settings_sync.cli import Paths, agent_config_app, run_opencode
+from settings_sync.cli import agent_config_app
 
 
 def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -166,19 +166,6 @@ def test_opencode_config_only(tmp_path: pathlib.Path):
     assert result.exit_code == 0
     assert (opencode / "opencode.json").is_file()
     assert not (opencode / "AGENTS.md").exists()
-
-
-def test_run_opencode_pure_returns_outcomes(tmp_path: pathlib.Path):
-    claude = _make_claude_home(tmp_path)
-    opencode = tmp_path / "config" / "opencode"
-    paths = Paths(source_dir=claude, opencode_dir=opencode)
-
-    sync_outcomes, skills_outcomes = run_opencode(paths, force=False, dry_run=False)
-
-    statuses = {o.status for o in sync_outcomes}
-    from settings_sync.actions import Status
-
-    assert Status.CREATED in statuses
 
 
 def test_subcommand_flags_after_group(tmp_path: pathlib.Path):

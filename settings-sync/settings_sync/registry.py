@@ -19,7 +19,6 @@ from settings_sync.ownership import sync_generated_symlink
 from settings_sync.paths import Paths, config_home
 from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.plugins import sync_plugins
-from settings_sync.skills import validate_skills
 from settings_sync.actions import Outcome, Status
 
 
@@ -36,7 +35,6 @@ class Harness:
     steps: tuple[Step, ...]
     destination: Callable[[Paths], Path | None]
     host: str
-    validate_skills: Callable[[Path], list[Outcome]] | None = None
 
     def available(self, paths: Paths) -> bool:
         return self.destination(paths) is not None
@@ -61,7 +59,7 @@ HARNESSES = (
         Step("agents", lambda p, f, d: sync_agents_dir(p.opencode_dir / "agents", p.source_dir / "agents", f, d), ("agents",)),
         Step("commands", lambda p, f, d: sync_commands(p.opencode_dir / "commands", p.source_dir / "commands", p.source_dir / "skills", f, d), ("commands",)),
         Step("plugins", lambda p, f, d: sync_plugins(p.opencode_dir / "plugins", p.source_dir / "harnesses/opencode/plugins", (p.claude_home or Path.home() / ".claude") / "plugins/cache", f, d), ("harnesses/opencode/plugins",)),
-    ), lambda p: p.opencode_dir, "opencode", validate_skills),
+    ), lambda p: p.opencode_dir, "opencode"),
     Harness("pi", (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),
         Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=claude_home(p))], ("harnesses/pi/settings.json",)),
@@ -128,7 +126,3 @@ def run_harness(harness: Harness, paths: Paths, force: bool, dry_run: bool, step
 
 def run_all_tools(paths: Paths, force: bool, dry_run: bool) -> tuple[list[Outcome], list[Outcome]]:
     return [outcome for harness in HARNESSES for outcome in run_harness(harness, paths, force, dry_run)], []
-
-
-def run_opencode(paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] | None = None) -> tuple[list[Outcome], list[Outcome]]:
-    return run_harness(select_harnesses("opencode")[0], paths, force, dry_run, steps), []

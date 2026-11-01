@@ -7,11 +7,8 @@ from typing import Any
 import typer
 
 from settings_sync.paths import Paths, resolve_paths
-from settings_sync.registry import HARNESSES, Harness, run_all_tools, run_harness, run_opencode, select_harnesses
-from settings_sync.skills import validate_skills
+from settings_sync.registry import Harness, run_all_tools, run_harness, select_harnesses
 from settings_sync.actions import Outcome, Status
-
-app = typer.Typer(add_completion=False, no_args_is_help=False)
 
 
 _FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE}
@@ -19,15 +16,6 @@ _FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CR
 
 def exit_code(sync_outcomes: list[Outcome]) -> int:
     return 1 if any(o.status in _FAILURE_STATES for o in sync_outcomes) else 0
-
-
-def _run_skills(ctx: typer.Context) -> int:
-    """Run validate_skills and report. One exit-code policy for all skills invocations."""
-    paths = _ctx_paths(ctx)
-    _, _, _, verbose = _ctx_flags(ctx)
-    outcomes = validate_skills(paths.source_dir / "skills")
-    report([], outcomes, verbose=True)
-    return 1 if any(o.status == Status.WARNED for o in outcomes) else 0
 
 
 def _format_diff(outcome: Outcome) -> str:
@@ -71,26 +59,6 @@ def _ctx_flags(ctx: typer.Context) -> tuple[bool, bool, bool, bool]:
     return obj["force"], obj["dry_run"], obj["check"], obj["verbose"]
 
 
-def _run_steps(ctx: typer.Context, tool: str, steps: tuple[str, ...]) -> int:
-    paths = _ctx_paths(ctx)
-    force, dry_run, check, verbose = _ctx_flags(ctx)
-    effective_dry = dry_run or check
-    sync_outcomes = run_harness(select_harnesses(tool)[0], paths, force, effective_dry, steps)
-    skills_outcomes: list[Outcome] = []
-    report(sync_outcomes, skills_outcomes, verbose)
-    return exit_code(sync_outcomes) or (1 if any(o.status == Status.WARNED for o in skills_outcomes) else 0)
-
-
-def _run_all(ctx: typer.Context) -> int:
-    paths = _ctx_paths(ctx)
-    force, dry_run, check, verbose = _ctx_flags(ctx)
-    effective_dry = dry_run or check
-    sync_outcomes, skills_outcomes = run_all_tools(paths, force, effective_dry)
-    report(sync_outcomes, skills_outcomes, verbose)
-    return exit_code(sync_outcomes) or (1 if any(o.status == Status.WARNED for o in skills_outcomes) else 0)
-
-
-@app.callback(invoke_without_command=True)
 def callback(
     ctx: typer.Context,
     force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
@@ -114,9 +82,6 @@ def callback(
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     ctx.obj = {"paths": paths, "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
-    if ctx.invoked_subcommand is None:
-        typer.echo("Syncing: " + ", ".join(h.name for h in HARNESSES))
-        raise typer.Exit(_run_all(ctx))
 
 
 def _update_ctx_flags(
@@ -136,73 +101,6 @@ def _update_ctx_flags(
         ctx.obj["check"] = True
     if verbose:
         ctx.obj["verbose"] = True
-
-
-def _make_step_cmd(tool: str, steps: tuple[str, ...]):
-    def cmd(
-        ctx: typer.Context,
-        force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-        dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-        check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-    ) -> None:
-        _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-        raise typer.Exit(_run_steps(ctx, tool, steps))
-
-    return cmd
-
-
-def _make_skills_cmd():
-    def cmd(
-        ctx: typer.Context,
-        force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-        dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-        check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-    ) -> None:
-        _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-        raise typer.Exit(_run_skills(ctx))
-
-    return cmd
-
-
-@app.command()
-def all(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-) -> None:
-    """Sync opencode, pi, goose, agy, codex, and no-mistakes."""
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, check=check, verbose=verbose)
-    typer.echo("Syncing: " + ", ".join(h.name for h in HARNESSES))
-    raise typer.Exit(_run_all(ctx))
-
-
-def _make_group_callback(harness: Harness):
-    def group(
-        ctx: typer.Context,
-        force: bool = typer.Option(False, "--force"),
-        dry_run: bool = typer.Option(False, "--dry-run"),
-        check: bool = typer.Option(False, "--check"),
-        verbose: bool = typer.Option(False, "--verbose", "-v"),
-    ) -> None:
-        _update_ctx_flags(ctx, force, dry_run, check, verbose)
-        if ctx.invoked_subcommand is None:
-            raise typer.Exit(_run_steps(ctx, harness.name, tuple(step.name for step in harness.steps)))
-    return group
-
-
-for harness in HARNESSES:
-    group = typer.Typer(add_completion=False, no_args_is_help=False, help=f"Sync {harness.name} configuration.")
-    group.callback(invoke_without_command=True)(_make_group_callback(harness))
-    for step in harness.steps:
-        group.command(step.name)(_make_step_cmd(harness.name, (step.name,)))
-    if harness.validate_skills is not None:
-        group.command("skills")(_make_skills_cmd())
-    app.add_typer(group, name=harness.name)
-
 
 
 agent_config_app = typer.Typer(add_completion=False, no_args_is_help=True, help="Manage shared agent configuration.")
@@ -256,7 +154,6 @@ def doctor_command(ctx: typer.Context, harness: str | None = typer.Argument(None
     raise typer.Exit(exit_code(outcomes))
 
 
-
 @agent_config_app.command("bootstrap")
 def bootstrap_command(ctx: typer.Context, harness: str | None = typer.Argument(None), dry_run: bool = typer.Option(False, "--dry-run")) -> None:
     import os
@@ -283,9 +180,3 @@ def bootstrap_command(ctx: typer.Context, harness: str | None = typer.Argument(N
 def agent_config_main() -> None:
     agent_config_app()
 
-def main() -> None:
-    app()
-
-
-if __name__ == "__main__":
-    main()
