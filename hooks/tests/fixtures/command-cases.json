@@ -420,7 +420,8 @@
       "commands": [
         "git push",
         "git push origin main",
-        "git push -q origin main"
+        "git push -q origin main",
+        "git -c color.ui=auto push origin main"
       ]
     },
     {
@@ -507,6 +508,92 @@
       "env": { "PUSH_AUTHORISED": "1", "PUSH_UNAUTHORISED": "1" },
       "commands": [
         "git push"
+      ]
+    },
+    {
+      "name": "git_alias_push_blocked",
+      "label": "git -c alias push spellings hit the push gate",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git -c alias.x=push x origin main",
+        "git -c 'alias.x=push' x",
+        "git -c alias.x=\"push origin\" x"
+      ]
+    },
+    {
+      "name": "git_alias_push_allowed",
+      "label": "authorized alias push passes; harmless aliases untouched",
+      "expect": "allow",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git -c alias.x=push x origin main",
+        "git -c 'alias.x=push' x",
+        "git -c alias.st=status st"
+      ]
+    },
+    {
+      "name": "git_alias_force_blocked",
+      "label": "alias push force flags denied despite authorization",
+      "expect": "deny",
+      "needle": "force",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git -c alias.x=\"push --force\" x",
+        "git -c 'alias.x=push --force' x",
+        "git -c alias.x=push x --force origin main",
+        "git -c alias.x=push x +main"
+      ]
+    },
+    {
+      "name": "git_alias_commit_blocked",
+      "label": "alias commit spellings hit the commit gate; builtin-K bindings run the builtin",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "commands": [
+        "git -c alias.ci=commit ci -m wip",
+        "git -c alias.x=commit x",
+        "git -c alias.commit=z commit -m wip"
+      ]
+    },
+    {
+      "name": "git_alias_commit_allowed",
+      "label": "authorized alias commit passes",
+      "expect": "allow",
+      "env": { "COMMIT_AUTHORISED": "1" },
+      "commands": [
+        "git -c alias.ci=commit ci -m wip",
+        "git -c alias.commit=z commit -m wip"
+      ]
+    },
+    {
+      "name": "git_alias_unverifiable_blocked",
+      "label": "shell and env-sourced alias values deny even when authorized",
+      "expect": "deny",
+      "needle": "alias",
+      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git -c 'alias.x=!git push' x",
+        "git --config-env alias.x=V x"
+      ]
+    },
+    {
+      "name": "git_alias_not_invoked_allowed",
+      "label": "a binding whose key is not the invoked subcommand never fires",
+      "expect": "allow",
+      "commands": [
+        "git -c alias.x=push status",
+        "git --config-env alias.x=V status"
+      ]
+    },
+    {
+      "name": "git_alias_builtin_key_allowed",
+      "label": "builtin-K bindings never fire (builtins outrank aliases)",
+      "expect": "allow",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git -c 'alias.push=!x' push",
+        "git -c 'alias.tag=!x' tag"
       ]
     },
     {

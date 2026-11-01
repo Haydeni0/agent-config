@@ -11,6 +11,9 @@
 //   revert, rebase, am, pull without --ff-only) need COMMIT_AUTHORISED,
 //   push and gh pr merge need PUSH_AUTHORISED (pr merge needs both);
 //   COMMIT_UNAUTHORISED/PUSH_UNAUTHORISED deny despite a set authorise var.
+//   git -c alias.K=V bindings whose K is the invoked subcommand (and not a
+//   git builtin) are checked as their direct spelling; !-shell and
+//   --config-env values deny as unverifiable.
 //   Protected paths: /mnt/data and everything under it, filesystem root,
 //             and /mnt, in any literal absolute spelling (//, /./, trailing
 //             /, .. resolved lexically, a glob or brace pattern that can name
@@ -89,11 +92,170 @@ const GIT_FORCE_REASON =
   "git push --force is not permitted for the agent - use --force-with-lease, or run it yourself outside the agent. (policy: command)"
 const GH_API_REASON =
   "gh api write methods are not permitted for the agent - run them yourself outside the agent. (policy: command)"
+const GIT_ALIAS_REASON =
+  "git alias with unverifiable value is not permitted - use the direct spelling yourself. (policy: command)"
 const KUBECTL_REASON =
   "kubectl mutation verbs are not permitted for the agent - run them yourself outside the agent. (policy: command)"
 const GIT_GATE_TAIL =
   "The user sets it in their session - run it yourself outside the agent if it must happen now. (policy: command)"
 const COMMIT_SUBCOMMANDS = new Set(["commit", "merge", "cherry-pick", "revert", "rebase", "am"])
+// git builtin command names - snapshot of `git --list-cmds=builtins`
+// at git 2.55.0 (149 commands). A builtin key outranks any
+// alias, so a binding whose K is in this set never fires; refresh the
+// snapshot deliberately on git upgrades (both error directions are
+// behavior-visible: too wide skips real aliases, too narrow false-denies
+// benign builtin-keyed bindings).
+const GIT_BUILTINS = new Set([
+  "add",
+  "am",
+  "annotate",
+  "apply",
+  "archive",
+  "backfill",
+  "bisect",
+  "blame",
+  "branch",
+  "bugreport",
+  "bundle",
+  "cat-file",
+  "check-attr",
+  "check-ignore",
+  "check-mailmap",
+  "check-ref-format",
+  "checkout",
+  "checkout--worker",
+  "checkout-index",
+  "cherry",
+  "cherry-pick",
+  "clean",
+  "clone",
+  "column",
+  "commit",
+  "commit-graph",
+  "commit-tree",
+  "config",
+  "count-objects",
+  "credential",
+  "credential-cache",
+  "credential-cache--daemon",
+  "credential-store",
+  "describe",
+  "diagnose",
+  "diff",
+  "diff-files",
+  "diff-index",
+  "diff-pairs",
+  "diff-tree",
+  "difftool",
+  "fast-export",
+  "fast-import",
+  "fetch",
+  "fetch-pack",
+  "fmt-merge-msg",
+  "for-each-ref",
+  "for-each-repo",
+  "format-patch",
+  "format-rev",
+  "fsck",
+  "fsck-objects",
+  "fsmonitor--daemon",
+  "gc",
+  "get-tar-commit-id",
+  "grep",
+  "hash-object",
+  "help",
+  "history",
+  "hook",
+  "index-pack",
+  "init",
+  "init-db",
+  "interpret-trailers",
+  "last-modified",
+  "log",
+  "ls-files",
+  "ls-remote",
+  "ls-tree",
+  "mailinfo",
+  "mailsplit",
+  "maintenance",
+  "merge",
+  "merge-base",
+  "merge-file",
+  "merge-index",
+  "merge-ours",
+  "merge-recursive",
+  "merge-recursive-ours",
+  "merge-recursive-theirs",
+  "merge-subtree",
+  "merge-tree",
+  "mktag",
+  "mktree",
+  "multi-pack-index",
+  "mv",
+  "name-rev",
+  "notes",
+  "pack-objects",
+  "pack-redundant",
+  "pack-refs",
+  "patch-id",
+  "pickaxe",
+  "prune",
+  "prune-packed",
+  "pull",
+  "push",
+  "range-diff",
+  "read-tree",
+  "rebase",
+  "receive-pack",
+  "reflog",
+  "refs",
+  "remote",
+  "remote-ext",
+  "remote-fd",
+  "repack",
+  "replace",
+  "replay",
+  "repo",
+  "rerere",
+  "reset",
+  "restore",
+  "rev-list",
+  "rev-parse",
+  "revert",
+  "rm",
+  "send-pack",
+  "shortlog",
+  "show",
+  "show-branch",
+  "show-index",
+  "show-ref",
+  "sparse-checkout",
+  "stage",
+  "stash",
+  "status",
+  "stripspace",
+  "submodule--helper",
+  "switch",
+  "symbolic-ref",
+  "tag",
+  "unpack-file",
+  "unpack-objects",
+  "update-index",
+  "update-ref",
+  "update-server-info",
+  "upload-archive",
+  "upload-archive--writer",
+  "upload-pack",
+  "url-parse",
+  "var",
+  "verify-commit",
+  "verify-pack",
+  "verify-tag",
+  "version",
+  "whatchanged",
+  "worktree",
+  "write-tree",
+])
 
 // Command tokens: segments (split on separator runs first) flattened per
 // segment, so wrapped/compound forms (bash -c "...", $(...), a && b, \rm)
@@ -429,14 +591,71 @@ function isDeleteOptionPrefix(t) {
 
 // ---------- segment guards: (segment tokens, env) -> reason | null ----------
 
-// git push --force/-f (exact --force, not --force-with-lease; short clusters
-// containing f; +refspec), then the push/commit gate. --ff-only pull is exempt.
+// git push --force (exact --force and +refspec always; short clusters
+// containing f unless a lease flag shares the segment), then the push/commit
+// gate. --ff-only pull is exempt. alias.K=V bindings whose K is the invoked
+// subcommand (and not a git builtin) are checked as their direct spelling;
+// !-shell and --config-env values deny as unverifiable.
 function gitGuard(s, env) {
   for (let i = 0; i < s.length; i++) {
     if (toolName(s[i]) !== "git") continue
-    for (const j of subcommandCandidates(s, i + 1, GIT_OPTIONS)) {
+    const candidates = subcommandCandidates(s, i + 1, GIT_OPTIONS)
+    const aliasReason = gitAliasReason(s, i, candidates, env)
+    if (aliasReason) return aliasReason
+    for (const j of candidates) {
       const reason = gitSubcommandReason(s, j, env)
       if (reason) return reason
+    }
+  }
+  return null
+}
+
+// alias.K=V bindings from git's option zone (-c/--config-env, attached and
+// separate forms). Returns [{key, value, fromEnv}] for alias.* keys only.
+function gitAliasBindings(s, i) {
+  const bindings = []
+  let k = i + 1
+  while (k < s.length) {
+    const t = s[k]
+    const take = (raw, fromEnv) => {
+      const eq = raw.indexOf("=")
+      if (raw.startsWith("alias.") && eq > 6) bindings.push({ key: raw.slice(6, eq), value: raw.slice(eq + 1), fromEnv })
+    }
+    if (t === "-c") { take(s[++k] ?? "", false); k++; continue }
+    if (t === "--config-env") { take(s[++k] ?? "", true); k++; continue }
+    if (t.startsWith("--config-env=")) { take(t.slice(13), true); k++; continue }
+    if (t.startsWith("-c") && t.length > 2) { take(t.slice(2), false); k++; continue }
+    if (t.startsWith("-")) { k += GIT_OPTIONS.value.has(t) ? 2 : 1; continue }
+    break
+  }
+  return bindings
+}
+
+// A gated alias is checked exactly as its direct spelling: force flags over
+// the value's tokens plus the args after the alias subcommand, then the env
+// gate. Bindings whose key is a git builtin never fire (builtins outrank
+// aliases); !-shell and env-sourced values cannot be verified and deny.
+function gitAliasReason(s, i, candidates, env) {
+  for (const b of gitAliasBindings(s, i)) {
+    if (GIT_BUILTINS.has(b.key)) continue
+    const j = candidates.find((c) => s[c] === b.key)
+    if (j === undefined) continue
+    if (b.fromEnv) return `Blocked: git alias ${b.key} reads its value from the environment. ${GIT_ALIAS_REASON}`
+    if (b.value.startsWith("!")) return `Blocked: git alias ${b.key} runs a shell string. ${GIT_ALIAS_REASON}`
+    const valueTokens = b.value.split(/[ \t]+/).filter(Boolean)
+    const verb = valueTokens[0]
+    if (verb === "push") {
+      const args = [...valueTokens.slice(1), ...s.slice(j + 1)]
+      const lease = args.some((t) => t === "--force-with-lease" || t.startsWith("--force-with-lease="))
+      for (const t of args) {
+        if (t === "--force" || t.startsWith("+")) return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
+        if (!lease && !t.startsWith("--") && t.startsWith("-") && t.includes("f")) return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
+      }
+      return gitGateReason(env, "git push", "push")
+    }
+    if (COMMIT_SUBCOMMANDS.has(verb)) return gitGateReason(env, `git ${verb}`, "commit")
+    if (verb === "pull" && !s.slice(j + 1).includes("--ff-only") && !valueTokens.includes("--ff-only")) {
+      return gitGateReason(env, "git pull", "commit")
     }
   }
   return null
