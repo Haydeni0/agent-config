@@ -69,6 +69,9 @@ certification: [Claude launcher](https://github.com/kunchenguid/no-mistakes/blob
 ## Install and update
 
 Use Node.js 22+ for every command-hook harness, Claude included.
+`hooks/herdr-agent-state.sh` is owned by herdr: herdr rewrites it through the
+`~/.claude/hooks` link, so agents must not move or edit it - moving it only makes
+herdr write a fresh copy through the symlink.
 Command-hook sync records the available Node executable and absolute checkout
 path, quoted for spaces. Rerun sync after moving the checkout or Node executable.
 Opencode/Pi use their own JavaScript runtimes.
@@ -126,7 +129,7 @@ behavior, not protection. Re-run probes after relevant host upgrades.
 
 ## Remaining lifecycle work
 
-Caveman activation/tracking, Worktrunk status and vendor Herdr handlers retain
+Caveman activation, Worktrunk status and vendor Herdr handlers retain
 their native registrations. Cross-harness lifecycle parity needs a separate
 choice of session-scoped mode state and multi-session marker ownership; this
 branch consolidates safety policy and deployment first. Existing Claude
