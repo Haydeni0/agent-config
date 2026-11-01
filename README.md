@@ -47,7 +47,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 | `skills/`, `commands/`, `agents/` | Shared agent resources |
 | `harnesses/<harness>/` | Per-harness settings templates and resources |
 | `hooks/` | Shared command-safety policy and native adapters |
-| `custom/` | Claude hook scripts; pinned plugin submodules under `custom/plugins/` |
+| `vendor/plugins/` | Pinned plugin submodules |
 | `settings-sync/` | The `agent-config` CLI |
 | `opencode-resume/` | Opencode-session-to-Claude transcript converter |
 | `scripts/` | `verify.sh`, `bootstrap.sh`, skill and package lints |
@@ -164,7 +164,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 <details>
 <summary><b>Vendored</b></summary>
 
-Symlinks into `custom/plugins/*` submodules, never edited here: `caveman`, `caveman-commit`, `caveman-compress`, `caveman-help`, `caveman-review`, `jupyter-to-marimo`, `marimo-notebook`, `marimo-pair`, `worktrunk`, `wt-switch-create`.
+Symlinks into `vendor/plugins/*` submodules, never edited here: `caveman`, `caveman-commit`, `caveman-compress`, `caveman-help`, `caveman-review`, `jupyter-to-marimo`, `marimo-notebook`, `marimo-pair`, `worktrunk`, `wt-switch-create`.
 
 </details>
 

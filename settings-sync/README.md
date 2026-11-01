@@ -12,7 +12,7 @@ Shared `harnesses/claude/settings.json` merges into the native settings file. `r
 
 | Alias | Source target | Reason |
 |---|---|---|
-| `custom`, `hooks` | same-named source directories | Hook commands and plugin imports |
+| `vendor`, `claude-hooks`, `hooks` | `vendor/`, `harnesses/claude/hooks/`, `hooks/` | Hook commands and plugin imports |
 | `statusline-command.sh` | `harnesses/claude/statusline-command.sh` | Native statusline command |
 | `pi`, `opencode`, `codex`, `goose`, `gemini`, `no-mistakes` | corresponding `harnesses/` directories | Launchers and source references |
 | `settings-sync`, `opencode-resume` | same-named source directories | Tool invocations |

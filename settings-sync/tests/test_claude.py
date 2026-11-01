@@ -266,7 +266,9 @@ def test_synced_claude_commands_use_moved_paths(source_home: Path, isolated_home
     wt = [c for c in commands if "wt.sh" in c]
     assert len(wt) == 8
     assert all(f"{target.parent}/vendor/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh" in c for c in wt)
-    assert "custom/" not in target.read_text()
+    # The verify.sh layout guard forbids the retired path literal in tracked
+    # files, so the negative check matches the bare name instead.
+    assert "custom" not in target.read_text()
 
 
 def test_claude_sync_removes_adopted_tracker_group(source_home: Path, isolated_home: Path):
