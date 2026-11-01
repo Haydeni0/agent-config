@@ -145,3 +145,23 @@ def test_resolve_paths_codegraph_dir_flag_and_default(tmp_path: Path, monkeypatc
     assert paths.codegraph_dir == tmp_path / "cg"
     paths = resolve_paths(claude_dir=source)
     assert paths.codegraph_dir == (tmp_path / "home" / ".codegraph").expanduser().absolute()
+
+
+def test_resolve_paths_fills_engine_destinations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.paths import resolve_paths
+    source = tmp_path / "source"
+    source.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)  # BEFORE any Paths construction: resolution reads it
+    paths = resolve_paths(claude_dir=source)
+    assert paths.home == tmp_path / "home"
+    assert paths.shared_skills == tmp_path / "home" / ".agents" / "skills"
+    assert paths.goose_plugin_dir == tmp_path / "home" / ".agents" / "plugins" / "agent-config-goose"
+    assert paths.local_bin == tmp_path / "home" / ".local" / "bin"
+    assert paths.overlay_dir == tmp_path / "home" / ".config" / "agent-config" / "overlays"
+    assert paths.claude_mcp_json == (tmp_path / "home" / ".claude").parent / ".claude.json"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "profile"))
+    paths = resolve_paths(claude_dir=source)
+    assert paths.claude_mcp_json == tmp_path / "profile" / ".claude.json"
