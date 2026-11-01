@@ -45,6 +45,9 @@
 //   - A delete-class consumer segment inherits the tokens of every
 //     pipe-connected segment (single | or |&); ||, &, &&, ;, newline join
 //     segments that stay isolated.
+//   - Brace tokens expand in place (bash word-stream semantics) as a third
+//     view: {git,push} --force is checked as git push --force. Comma-less
+//     braces stay literal; a token past the cap skips expansion.
 //   - Subcommands are found past global options: a value-taking option skips
 //     its value token too. aws also accepts unambiguous option-name prefixes
 //     (--prof p) and options between s3/s3api and the subcommand, so both
@@ -900,6 +903,18 @@ function flattenedView(command) {
   return { tokens: segments.flat(), segments, pipeToNext }
 }
 
+// Bash brace tokens expand in place before name matching: {git,push} --force
+// reads as [git, push, --force]. Runs on the flattened view's original
+// segments only - never on the quoted view's re-lexed words - and a token
+// past the brace cap skips expansion (the unexpanded views still run).
+const expandToken = (t) => (t.includes("{") ? expandBraces(t) ?? [t] : [t])
+
+function expandedView(command) {
+  const { segments, pipeToNext } = splitSegments(command, SEG_FLATTEN)
+  const expanded = segments.map((s) => s.flatMap(expandToken))
+  return { tokens: expanded.flat(), segments: expanded, pipeToNext }
+}
+
 // Quoted view of the command, then of every quoted word holding a blank,
 // re-lexed as a nested command (sh -c "aws --query 'a b' s3 rm ..."), down to
 // `depth` levels. The flattened view already reads those words as commands, so
@@ -981,7 +996,11 @@ export function decide(command, env = process.env) {
   command = command.replace(/\\\n/g, " ").replace(FD_REDIRECT, " ")
   while (EXTGLOB_GROUP.test(command)) command = command.replace(EXTGLOB_GROUP, "*")
   // Either view denying denies: the flattened view sees inside wrapper
-  // strings, the quoted view keeps quoted option values whole.
-  const reason = viewReason(flattenedView(command), env) ?? quotedReason(command, env, NESTED_COMMAND_DEPTH)
+  // strings, the expanded view reads brace tokens as their bash expansions,
+  // the quoted view keeps quoted option values whole.
+  const reason =
+    viewReason(flattenedView(command), env) ??
+    viewReason(expandedView(command), env) ??
+    quotedReason(command, env, NESTED_COMMAND_DEPTH)
   return reason ? { deny: true, reason } : { deny: false }
 }

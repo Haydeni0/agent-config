@@ -169,6 +169,111 @@
       ]
     },
     {
+      "name": "brace_rm_tool_denied",
+      "label": "brace-expanded rm still deletes",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "{rm,rmdir} /mnt/data/x"
+      ]
+    },
+    {
+      "name": "brace_sudo_denied",
+      "label": "brace-expanded sudo still escalates",
+      "expect": "deny",
+      "needle": "sudo",
+      "commands": [
+        "{sudo,true} true"
+      ]
+    },
+    {
+      "name": "brace_force_push_denied",
+      "label": "brace-expanded git push --force still denies",
+      "expect": "deny",
+      "needle": "force",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "{git,push} --force origin main"
+      ]
+    },
+    {
+      "name": "brace_subcommand_gated",
+      "label": "brace-expanded git subcommand hits the push gate",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git {push,p} origin main"
+      ]
+    },
+    {
+      "name": "brace_subcommand_allowed",
+      "label": "authorized brace-expanded push and ungated braces pass",
+      "expect": "allow",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git {push,p} origin main",
+        "git {status,st}",
+        "{ls,cat} /mnt/data",
+        "git push origin '{main}'"
+      ]
+    },
+    {
+      "name": "brace_gated_verbs_denied",
+      "label": "brace expansions join every gated-verb pool",
+      "expect": "deny",
+      "needle": "COMMIT_AUTHORISED",
+      "commands": [
+        "{git,revert} HEAD~1",
+        "{git,merge} -m x",
+        "{gh,pr} merge 1"
+      ]
+    },
+    {
+      "name": "brace_kubectl_delete_denied",
+      "label": "brace-expanded kubectl delete mutates",
+      "expect": "deny",
+      "needle": "mutates",
+      "commands": [
+        "{kubectl,delete} pods"
+      ]
+    },
+    {
+      "name": "brace_pr_merge_allowed",
+      "label": "brace-expanded gh pr merge passes with both vars",
+      "expect": "allow",
+      "env": { "COMMIT_AUTHORISED": "1", "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "{gh,pr} merge 1"
+      ]
+    },
+    {
+      "name": "brace_quoted_message_denied",
+      "label": "braces in quoted words deny like their un-braced quoted forms",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "git tag -m \"{rm,rmdir} /mnt/data/x\""
+      ]
+    },
+    {
+      "name": "brace_quoted_force_denied",
+      "label": "quoted brace push message denies as force",
+      "expect": "deny",
+      "needle": "force",
+      "commands": [
+        "git tag -m \"{git,push} --force\""
+      ]
+    },
+    {
+      "name": "brace_pipeline_consumer_denied",
+      "label": "R2 x R4: brace expansion feeds pipeline inheritance",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "ls /mnt/data | xargs {rm,ls}"
+      ]
+    },
+    {
       "name": "mnt_data_quoted_denied",
       "label": "/mnt/data quoted-message denied (safe)",
       "expect": "deny",
