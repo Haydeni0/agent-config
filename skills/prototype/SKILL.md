@@ -35,7 +35,7 @@ The artifact's form follows its purpose: rendered output for visuals, worked usa
 
 **The record outlives the round.** Start light: the design question at the top of the artifact is all that persists. Promote to a work-package (the work-package skill owns the layout) at first suspend or handoff, whichever comes first. The handoff record: user-facing requirements as R entries - what the user observes, never how (no module shape, no code, no tech choice); taste verdicts and rejected alternatives as D entries, rejections named so taste is never relitigated; unsettled mechanism as Q entries.
 
-**Then settle what pixels cannot.** Once taste is settled, interrogate the rest - flags, defaults, semantics, naming, edge-case behaviour - and file what the human ruled on into the record's R and D entries. The next step is a design grill (grill-me) that consumes the entries; a spec comes only after the grill has settled design, because a spec is for settled design and would drag implementation decisions in too early.
+**Then settle what pixels cannot.** Once taste is settled, interrogate the rest - flags, defaults, semantics, naming, edge-case behaviour - and file what the human ruled on into the record's R and D entries. The next step after handoff is a design grill (grill-me) that consumes the entries; a spec comes only after the grill has settled design, because a spec is for settled design and would drag implementation decisions in too early.
 
 ## Anti-patterns
 
