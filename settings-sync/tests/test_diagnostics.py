@@ -53,7 +53,7 @@ def test_shared_skill_root_preserves_foreign_entries(source_home: Path, isolated
 
 def test_doctor_reports_required_missing_and_broken_link(source_home: Path, isolated_home: Path):
     (source_home / "harnesses/codex/config.toml").unlink()
-    (source_home / "skills/broken").symlink_to(source_home / "custom/uninitialized")
+    (source_home / "skills/broken").symlink_to(source_home / "vendor/uninitialized")
     before = snapshot(isolated_home)
     result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "doctor", "codex"])
     assert result.exit_code == 1

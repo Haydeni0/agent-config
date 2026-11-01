@@ -292,7 +292,7 @@ def test_claude_sync_installs_the_mailbox_stop_guard_alongside_the_wt_marker(
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'bash "$HOME/.claude/custom/plugins/worktrunk/hooks/wt.sh" '
+                                    "command": 'bash "$HOME/.claude/vendor/plugins/worktrunk/hooks/wt.sh" '
                                     '-C "$CLAUDE_PROJECT_DIR" config state marker set x || true',
                                 }
                             ]

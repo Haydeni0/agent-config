@@ -28,7 +28,7 @@ def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated
     (source / "harnesses/claude").mkdir(parents=True)
     (source / "harnesses/claude/settings.json").write_text('{"permissions":{"allow":["shared"]}}')
     (source / "harnesses/claude/statusline-command.sh").write_text("echo status\n")
-    for directory in ("skills/example", "commands", "agents", "custom", "hooks"):
+    for directory in ("skills/example", "commands", "agents", "hooks"):
         (source / directory).mkdir(parents=True)
     skill = source / "skills/example/SKILL.md"
     skill.write_text("Shared skill")
@@ -61,10 +61,10 @@ def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated
 
 def test_custom_claude_home_runs_its_source_hook(source_home: Path, isolated_home: Path):
     import subprocess
-    script = source_home / "custom/hook.sh"
+    script = source_home / "hooks/hook.sh"
     script.write_text("echo selected-hook\n")
     settings = source_home / "harnesses/claude/settings.json"
-    settings.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": 'bash "$HOME/.claude/custom/hook.sh"'}]}]}, "statusLine": {"type": "command", "command": "bash ~/.claude/custom/hook.sh"}}))
+    settings.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": 'bash "$HOME/.claude/hooks/hook.sh"'}]}]}, "statusLine": {"type": "command", "command": "bash ~/.claude/hooks/hook.sh"}}))
     custom = isolated_home / "custom claude home"
     result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "--claude-home", str(custom), "sync", "claude"])
     assert result.exit_code == 0, result.output
