@@ -374,6 +374,37 @@
       ]
     },
     {
+      "name": "force_push_reason_names_lease",
+      "label": "force-push deny reason names the lease spelling",
+      "expect": "deny",
+      "needle": "force-with-lease",
+      "commands": [
+        "git push --force origin main",
+        "git push -f origin main"
+      ]
+    },
+    {
+      "name": "push_force_with_lease_allowed",
+      "label": "-f short clusters pass when a lease flag is present",
+      "expect": "allow",
+      "env": { "PUSH_AUTHORISED": "1" },
+      "commands": [
+        "git push -f --force-with-lease origin main",
+        "git push --force-with-lease -f origin main",
+        "git push -fq --force-with-lease origin main",
+        "git push --force-with-lease origin main"
+      ]
+    },
+    {
+      "name": "push_force_with_lease_still_gated",
+      "label": "lease-neutralized -f still needs PUSH_AUTHORISED",
+      "expect": "deny",
+      "needle": "PUSH_AUTHORISED",
+      "commands": [
+        "git push -f --force-with-lease origin main"
+      ]
+    },
+    {
       "name": "commit_wrong_var_blocked",
       "label": "PUSH_AUTHORISED does not authorize a commit",
       "expect": "deny",

@@ -77,7 +77,7 @@ const MKFS_REASON =
 const CHMOD_REASON =
   "chmod 777 is not permitted for the agent - permission weakening. (policy: command)"
 const GIT_FORCE_REASON =
-  "git push --force is not permitted for the agent - run it yourself outside the agent. (policy: command)"
+  "git push --force is not permitted for the agent - use --force-with-lease, or run it yourself outside the agent. (policy: command)"
 const GH_API_REASON =
   "gh api write methods are not permitted for the agent - run them yourself outside the agent. (policy: command)"
 const KUBECTL_REASON =
@@ -437,8 +437,15 @@ function gitGuard(s, env) {
 function gitSubcommandReason(s, j, env) {
   const sub = s[j]
   if (sub === "push") {
-    for (const t of s.slice(j + 1)) {
-      if (t === "--force" || (!t.startsWith("--") && t.startsWith("-") && t.includes("f")) || t.startsWith("+")) {
+    const args = s.slice(j + 1)
+    // A lease flag makes a short -f cluster lease-protected; explicit --force
+    // and +refspecs always deny.
+    const lease = args.some((t) => t === "--force-with-lease" || t.startsWith("--force-with-lease="))
+    for (const t of args) {
+      if (t === "--force" || t.startsWith("+")) {
+        return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
+      }
+      if (!lease && !t.startsWith("--") && t.startsWith("-") && t.includes("f")) {
         return `Blocked: git push --force is not permitted. ${GIT_FORCE_REASON}`
       }
     }
