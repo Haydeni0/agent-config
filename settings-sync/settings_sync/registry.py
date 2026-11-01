@@ -16,6 +16,7 @@ from settings_sync.goose import sync_goose_config, sync_goose_providers
 from settings_sync.hooks import sync_command_hooks
 from settings_sync.nomistakes import sync_nomistakes_config
 from settings_sync.ownership import sync_generated_symlink
+from settings_sync.skills import validate_skills
 from settings_sync.paths import Paths, config_home
 from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.plugins import sync_plugins
@@ -59,6 +60,7 @@ HARNESSES = (
         Step("agents", lambda p, f, d: sync_agents_dir(p.opencode_dir / "agents", p.source_dir / "agents", f, d), ("agents",)),
         Step("commands", lambda p, f, d: sync_commands(p.opencode_dir / "commands", p.source_dir / "commands", p.source_dir / "skills", f, d), ("commands",)),
         Step("plugins", lambda p, f, d: sync_plugins(p.opencode_dir / "plugins", p.source_dir / "harnesses/opencode/plugins", (p.claude_home or Path.home() / ".claude") / "plugins/cache", f, d), ("harnesses/opencode/plugins",)),
+        Step("skills", lambda p, f, d: validate_skills(p.source_dir / "skills"), ()),
     ), lambda p: p.opencode_dir, "opencode"),
     Harness("pi", (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),

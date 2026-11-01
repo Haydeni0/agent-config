@@ -60,10 +60,11 @@ def test_opencode_installs_shared_plugins_preserving_external_ones(source_home: 
 def test_standalone_harness_installs_shared_skill(source_home: Path, isolated_home: Path, harness: str):
     skill = source_home / "skills/example/SKILL.md"
     skill.parent.mkdir()
-    skill.write_text("Shared skill")
+    content = "---\nname: example\ndescription: Shared skill\n---\nShared skill\n"
+    skill.write_text(content)
     result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", harness])
     assert result.exit_code == 0, result.output
-    assert (isolated_home / ".claude/skills/example/SKILL.md").read_text() == "Shared skill"
+    assert (isolated_home / ".claude/skills/example/SKILL.md").read_text() == content
 
 
 def test_pi_uses_selected_claude_runtime(source_home: Path, isolated_home: Path):

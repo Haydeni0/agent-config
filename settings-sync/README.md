@@ -122,14 +122,14 @@ agent-config bootstrap [harness]       # install external packages; --dry-run to
 |---|---|
 | codegraph | `binary`, `claude-mcp`, `telemetry` |
 | claude | `config`, `context`, `links` |
-| opencode | `resources`, `config`, `tui`, `agents-md`, `agents`, `commands`, `plugins` |
+| opencode | `resources`, `config`, `tui`, `agents-md`, `agents`, `commands`, `plugins`, `skills` |
 | pi | `resources`, `config`, `mcp`, `context`, `keybindings` |
 | goose | `hooks`, `resources`, `hints`, `config`, `providers` |
 | agy | `hooks`, `settings`, `mcp`, `agents-md`, `skills` |
 | codex | `hooks`, `skills`, `config`, `agents-md` |
 | no-mistakes | `config` |
 
-Path overrides: `--source` (alias `--claude-dir`), `--claude-home`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`, `--codegraph-dir`. The legacy `sync` entry point (`sync [harness] [step]`, flags accepted anywhere, `--check` as a flag) stays available; it alone carries the opencode skill lint, `sync opencode skills`.
+Path overrides: `--source` (alias `--claude-dir`), `--claude-home`, `--opencode-dir`, `--pi-dir`, `--goose-dir`, `--agy-dir`, `--agy-cli-dir`, `--nomistakes-dir`, `--codex-dir`, `--codegraph-dir`.
 
 Install with `uv tool install --editable ./settings-sync` from the repo root. Python dependency changes require refreshing the editable tool environment; lockfile alternative: `uv run --locked --directory settings-sync agent-config`.
 
@@ -151,7 +151,7 @@ The shared `~/.agents/skills` link points directly to the source checkout's `ski
 
 ## Adding a harness
 
-Add its adapter and one `Harness` declaration in `settings_sync/registry.py`, including ordered steps, required sources, destination, and host CLI. CLI selection, all-target runs, and diagnostics consume that declaration. Optional integration inputs belong outside required sources. Opencode skill lint runs explicitly through `sync opencode skills` or its doctor; config sync remains independent.
+Add its adapter and one `Harness` declaration in `settings_sync/registry.py`, including ordered steps, required sources, destination, and host CLI. CLI selection, all-target runs, and diagnostics consume that declaration. Optional integration inputs belong outside required sources. Opencode skill lint runs as opencode's own `skills` step, so every opencode sync and `doctor opencode` reports findings; config sync remains independent.
 
 ## Agent frontmatter transform (opencode only)
 

@@ -8,11 +8,25 @@ from settings_sync.paths import Paths
 from settings_sync.actions import Status
 
 
-@pytest.mark.parametrize("harness,step", [("pi", "config"), ("goose", "config"), ("agy", "settings"), ("no-mistakes", "config"), ("opencode", "config")])
-def test_config_independent_of_skill_lint(source_home: Path, harness: str, step: str):
-    (source_home / "skills/synced/container").mkdir(parents=True)
-    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", harness, step])
+@pytest.mark.parametrize("harness,steps", [
+    ("pi", []), ("goose", []), ("agy", []), ("codex", []), ("no-mistakes", []), ("opencode", ["config"]),
+])
+def test_config_independent_of_skill_lint(source_home: Path, harness: str, steps: list[str]):
+    (source_home / "skills/broken").mkdir(parents=True)
+    result = CliRunner().invoke(
+        agent_config_app, ["--source", str(source_home), "sync", harness, *steps]
+    )
     assert result.exit_code == 0, result.output
+
+
+def test_opencode_skills_step_reports_lint(source_home: Path, isolated_home: Path):
+    (source_home / "skills/broken").mkdir(parents=True)
+    result = CliRunner().invoke(
+        agent_config_app, ["--source", str(source_home), "sync", "opencode", "skills"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "broken" in result.output
+    assert not (isolated_home / ".config" / "opencode").exists()
 
 
 def test_missing_required_source_errors_and_other_targets_continue(source_home: Path, isolated_home: Path):
