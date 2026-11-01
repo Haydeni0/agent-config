@@ -316,3 +316,12 @@ def test_cli_all_includes_goose(tmp_path: pathlib.Path, source_home: pathlib.Pat
     assert result.exit_code == 0
     assert (goose_dir / ".goosehints").is_file()
     assert (goose_dir / "config.yaml").is_file()
+
+
+def test_goose_providers_invalid_json_fails_before_install(tmp_path: pathlib.Path, goose_providers: pathlib.Path):
+    paths = _goose_paths(tmp_path)
+    (paths.source_dir / "harnesses" / "goose" / "custom_providers" / "bad.json").write_text("{not json")
+
+    with pytest.raises(ValueError, match="invalid JSON"):
+        plan_goose_providers(paths)
+    assert not (paths.goose_dir / "custom_providers" / "bad.json").exists()

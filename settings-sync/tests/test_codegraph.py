@@ -461,3 +461,47 @@ def test_telemetry_off_failure_becomes_valueerror(tmp_path: Path, monkeypatch: p
     outcome = _apply(plan_codegraph_telemetry, paths, Mode.APPLY)[0]
     assert outcome.status == Status.FAILED
     assert "telemetry" in outcome.detail
+
+
+def test_binary_failed_download_installs_no_dangling_links(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Finding 4: on a failed download the links are not installed dangling and
+    the already-installed version survives the prune."""
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
+    home = _fake_home(tmp_path, monkeypatch)
+    paths = _paths(tmp_path)
+    old = _install_fake_version(paths, "v0.9.0")
+
+    def failing_download(url: str, version_dir: Path) -> None:
+        raise ValueError("network down")
+
+    monkeypatch.setattr("settings_sync.codegraph.download_and_extract", failing_download)
+    outcomes = apply_binary(paths, Mode.APPLY)
+    assert any(o.status == Status.FAILED for o in outcomes)
+    assert not (paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph").exists()
+    assert not (paths.codegraph_dir / "current").exists()
+    assert old.is_file()
+
+
+def test_binary_prune_protects_targets_of_existing_links(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Finding 4: a version an installed (even unmanaged) link still points at
+    is not pruned, so a skipped link flip never dangles."""
+    monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
+    home = _fake_home(tmp_path, monkeypatch)
+    paths = _paths(tmp_path)
+    old = _install_fake_version(paths, "v0.9.0")
+    bin_dir = home / ".local" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "codegraph").symlink_to(old)
+    (paths.codegraph_dir / "current").symlink_to(old.parent.parent)
+
+    def fake_download(url: str, version_dir: Path) -> None:
+        launcher = version_dir / "bin" / "codegraph"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_text("#!/bin/sh\necho 1.6.2\n")
+        launcher.chmod(0o755)
+
+    monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fake_download)
+    outcomes = apply_binary(paths, Mode.APPLY)
+    assert any(o.status == Status.SKIPPED for o in outcomes)
+    assert old.is_file()
+    assert (paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph").is_file()

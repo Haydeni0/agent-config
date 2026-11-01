@@ -151,3 +151,22 @@ def test_opencode_config_carries_codegraph_entry(tmp_path: pathlib.Path):
     assert outcome.status == Status.MERGED
     entry = json.loads(target.read_text())["mcp"]["servers"]["codegraph"]
     assert entry == {"type": "local", "command": ["codegraph", "serve", "--mcp"], "disabled": False, "codemode": False}
+
+
+def test_jsonc_cleanup_retries_on_identical_target(tmp_path: pathlib.Path):
+    """Finding 3: remove_after runs on the UNCHANGED path too, so a legacy
+    opencode .jsonc is cleaned up even when the merged target is identical."""
+    base = tmp_path / "claude" / "opencode.json"
+    base.parent.mkdir(parents=True)
+    base.write_text(json.dumps({"model": "x"}))
+    target_dir = tmp_path / "config" / "opencode"
+    target_dir.mkdir(parents=True)
+    jsonc = target_dir / "opencode.jsonc"
+    jsonc.write_text(json.dumps({"$schema": "https://opencode.ai/config.json", "model": "x"}) + "\n")
+    target = target_dir / "opencode.json"
+    target.write_text(json.dumps(build_config(base), indent=2) + "\n")
+
+    outcome = apply_merged(merged_for(target, base), Mode.APPLY)
+
+    assert outcome.status == Status.UNCHANGED
+    assert not jsonc.exists()

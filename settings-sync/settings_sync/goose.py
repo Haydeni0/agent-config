@@ -1,5 +1,6 @@
 """Sync shared source config into ~/.config/goose (the goose harness)."""
 
+import json
 from pathlib import Path
 
 from settings_sync.actions import Action, File, MergedConfig, Prune, Report, Status
@@ -17,7 +18,14 @@ def plan_goose_providers(paths: Paths) -> list[Action]:
     target_dir = paths.target("goose") / "custom_providers"
     if not source_dir.is_dir():
         return [Report(target_dir, Status.NO_SOURCE, f"source dir not found: {source_dir}")]
-    actions = [File(target_dir / provider.name, provider.read_text())
-               for provider in sorted(source_dir.glob("*.json"), key=lambda p: p.name) if provider.is_file()]
-    actions.append(Prune(target_dir, frozenset(provider.name for provider in source_dir.glob("*.json") if provider.is_file())))
+    providers = sorted((p for p in source_dir.glob("*.json") if p.is_file()), key=lambda p: p.name)
+    actions: list[Action] = []
+    for provider in providers:
+        content = provider.read_text()
+        try:
+            json.loads(content)
+        except ValueError as exc:
+            raise ValueError(f"invalid JSON in {provider}: {exc}") from exc
+        actions.append(File(target_dir / provider.name, content))
+    actions.append(Prune(target_dir, frozenset(provider.name for provider in providers)))
     return actions

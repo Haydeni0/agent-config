@@ -167,3 +167,23 @@ def test_invalid_store_blocks_everything(source_home: Path, isolated_home: Path,
     # engine bookkeeping, not a write to any target.
     assert store.read_text() == store_text
     assert not (isolated_home / ".no-mistakes" / "config.yaml").exists()
+
+
+@pytest.mark.parametrize("entry", [
+    {"source_id": "x", "destination": "/tmp/ok", "kind": "socket", "fingerprint": "a"},
+    {"source_id": "x", "destination": "relative/path", "kind": "file", "fingerprint": "a"},
+    {"source_id": "x", "destination": "/tmp/../etc", "kind": "file", "fingerprint": "a"},
+])
+def test_invalid_v1_store_blocks_everything(source_home: Path, isolated_home: Path, entry: dict) -> None:
+    """Finding 2: a corrupt v1 store (unknown kind, relative or .. destination)
+    fails the run instead of being silently normalized or misfiled."""
+    text = json.dumps({"version": 1, "entries": [entry]})
+    store = isolated_home / ".local" / "state" / "agent-config" / "managed.json"
+    store.parent.mkdir(parents=True)
+    store.write_text(text)
+    (isolated_home / ".no-mistakes").mkdir()
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "no-mistakes"])
+    assert result.exit_code == 1
+    assert "restore" in result.output
+    assert store.read_text() == text
+    assert not (isolated_home / ".no-mistakes" / "config.yaml").exists()

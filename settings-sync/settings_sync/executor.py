@@ -52,10 +52,7 @@ def run(harnesses: tuple["Harness", ...], paths: Paths, mode: Mode, steps: tuple
                     if missing:
                         continue
                     try:
-                        if step.plan is not None:
-                            outcomes.extend(execute(step.plan(paths), mode, store))
-                        else:
-                            outcomes.extend(step.run(paths, mode is Mode.FORCE, mode is Mode.DRY_RUN))
+                        outcomes.extend(execute(step.plan(paths), mode, store))
                     except (OSError, ValueError) as exc:
                         outcomes.append(Outcome(paths.source_dir, Status.FAILED, f"{harness.name} {step.name}: {exc}"))
             return outcomes
@@ -161,6 +158,10 @@ def _apply_file(action: File, mode: Mode, store: OwnershipStore) -> Outcome:
 def _apply_symlink(action: Symlink, mode: Mode, store: OwnershipStore) -> Outcome:
     path, source = action.path, action.source
     desired_rel = os.path.relpath(source, path.parent)
+    # Applying must not install a dangling link: in DRY_RUN the source can
+    # legitimately be absent (an earlier Effect has not run), applying it may not.
+    if mode is not Mode.DRY_RUN and not source.exists():
+        return Outcome(path, Status.FAILED, f"symlink source missing: {source}")
     exists = path.exists() or path.is_symlink()
     if path.is_symlink() and _resolve_link_target(path) == source.resolve():
         if mode is not Mode.DRY_RUN and store.get(path) is None:
@@ -321,24 +322,25 @@ def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> li
         if existing_text is not None and not changed and _semantically_equal(codec, existing_text, rendered):
             rendered = existing_text
         if rendered == existing_text:
+            outcome = Outcome(path, Status.UNCHANGED, "identical")
             if mode is not Mode.DRY_RUN:
                 _record_config(store, path, codec, action, config)
-            if warned and mode is not Mode.FORCE:
-                return [Outcome(path, Status.UNCHANGED, "identical"), *_drop_warnings(path, warned)]
-            return [Outcome(path, Status.UNCHANGED, "identical")]
-        if mode is Mode.DRY_RUN:
-            outcomes = [Outcome(path, Status.WOULD_MERGE if existing_text is not None else Status.WOULD_CREATE,
-                                _merge_detail(changed, removed), old_content=existing_text, new_content=rendered)]
-            outcomes.extend(_drop_warnings(path, warned))
-            return outcomes
-        if legacy_conflict or forced_removal or (hooks_backup and existing_text is not None):
-            store.backup(path)
-        outcome = _atomic_write(path, rendered, existing_text)
-        if outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
-            outcome.status = Status.MERGED
-            outcome.detail = _merge_detail(changed, removed)
-            if mode is not Mode.DRY_RUN:
-                _record_config(store, path, codec, action, config)
+        else:
+            if mode is Mode.DRY_RUN:
+                outcomes = [Outcome(path, Status.WOULD_MERGE if existing_text is not None else Status.WOULD_CREATE,
+                                    _merge_detail(changed, removed), old_content=existing_text, new_content=rendered)]
+                outcomes.extend(_drop_warnings(path, warned))
+                return outcomes
+            if legacy_conflict or forced_removal or (hooks_backup and existing_text is not None):
+                store.backup(path)
+            outcome = _atomic_write(path, rendered, existing_text)
+            if outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
+                outcome.status = Status.MERGED
+                outcome.detail = _merge_detail(changed, removed)
+                if mode is not Mode.DRY_RUN:
+                    _record_config(store, path, codec, action, config)
+        # Runs on the identical-content path too: a failed legacy cleanup
+        # (remove_after) must be retried on the next sync, not frozen forever.
         if outcome.status in (Status.CREATED, Status.REPLACED, Status.MERGED, Status.UNCHANGED) and action.remove_after is not None:
             failed = _remove_after(action.remove_after, mode, action.migrate, store)
             if failed is not None:

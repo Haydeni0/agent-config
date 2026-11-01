@@ -135,9 +135,11 @@ class OwnershipStore:
         return ConfigRecord(Path(item["destination"]), item["codec"], tuple(keys), hooks)
 
     def _add_entry(self, entry: ManagedEntry, kind: str) -> None:
+        if kind not in ("file", "symlink"):
+            raise ValueError(f"invalid ownership kind: {kind}; {_RESTORE}")
+        if not entry.destination.is_absolute() or ".." in entry.destination.parts:
+            raise ValueError(f"invalid ownership destination: {entry.destination}; {_RESTORE}")
         destination = Path(os.path.abspath(entry.destination))
-        if not destination.is_absolute() or ".." in destination.parts:
-            raise ValueError(f"invalid ownership destination: {destination}; {_RESTORE}")
         table = self.files if kind == "file" else self.symlinks
         if destination in table or destination in (self.files if kind == "symlink" else self.symlinks):
             raise ValueError(f"duplicate ownership destination: {destination}; {_RESTORE}")

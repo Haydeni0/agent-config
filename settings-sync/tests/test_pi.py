@@ -250,3 +250,12 @@ def test_cli_pi_bare_writes_keybindings(tmp_path: pathlib.Path, pi_home: pathlib
     assert result.exit_code == 0
     assert (pi_dir / "keybindings.json").is_file()
     assert json.loads((pi_dir / "keybindings.json").read_text())["app.tree.unfoldOrDown"] == ["alt+right"]
+
+
+def test_pi_keybindings_invalid_json_fails_before_install(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
+    paths = _pi_paths(tmp_path)
+    (paths.source_dir / "harnesses" / "pi" / "keybindings.json").write_text("{not json")
+
+    with pytest.raises(ValueError, match="invalid JSON"):
+        plan_pi_keybindings(paths)
+    assert not (paths.target("pi") / "keybindings.json").exists()

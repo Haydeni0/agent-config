@@ -191,3 +191,16 @@ def test_no_adapter_rereads_home_after_resolution(source_home: Path, isolated_ho
     assert not any(o.status == Status.FAILED for o in outcomes), [o for o in outcomes if o.status == Status.FAILED]
     assert not other.exists()
     assert (original_home / ".local" / "state" / "agent-config" / "managed.json").is_file()
+
+
+def test_empty_env_var_falls_back_to_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from settings_sync.paths import resolve_paths
+    source = tmp_path / "source"
+    source.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    baseline = resolve_paths(HARNESSES, claude_dir=source)
+    for env_name in ("CODEX_HOME", "OPENCODE_CONFIG_DIR", "PI_CODING_AGENT_DIR", "CLAUDE_CONFIG_DIR"):
+        monkeypatch.setenv(env_name, "")
+        assert resolve_paths(HARNESSES, claude_dir=source) == baseline
+        monkeypatch.delenv(env_name)

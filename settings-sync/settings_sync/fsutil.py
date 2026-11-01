@@ -1,8 +1,7 @@
 """Atomic write primitive shared by the executor and the ownership store.
 
-Lives in its own module (not executor.py as the spec's layout table names)
-because ownership importing executor would close an ownership -> executor ->
-ownership cycle; the one-line indirection breaks it.
+Its own module so the store can import it without importing the executor:
+ownership -> executor -> ownership would be an import cycle.
 """
 
 import os

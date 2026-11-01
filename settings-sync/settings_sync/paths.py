@@ -97,8 +97,10 @@ def resolve_paths(
                 continue
             value = destinations.get(dest.attr)
             if value is None and dest.env is not None:
+                # An exported-but-empty var counts as unset: Path("") would
+                # resolve the destination to the current working directory.
                 env_value = os.environ.get(dest.env)
-                if env_value is not None:
+                if env_value:
                     value = Path(env_value)
             if value is None:
                 value = dest.default(home, config)

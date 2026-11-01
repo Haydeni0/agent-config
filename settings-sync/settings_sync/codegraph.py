@@ -89,15 +89,24 @@ def _symlink_points_at(symlink: Path, launcher: Path) -> bool:
     return symlink.is_symlink() and symlink.resolve() == launcher.resolve()
 
 
-def _stale_versions(install_root: Path, keep: Path) -> list[Path]:
+def _stale_versions(install_root: Path, keep: Path, protect: tuple[Path, ...] = ()) -> list[Path]:
     versions = install_root / "versions"
     if not versions.is_dir():
         return []
-    return [entry for entry in versions.iterdir() if entry != keep and entry.is_dir()]
+    held = {link.resolve() for link in protect if link.is_symlink()}
+    return [
+        entry
+        for entry in versions.iterdir()
+        if entry != keep and entry.is_dir() and entry.resolve() not in held
+    ]
 
 
-def _prune_other_versions(install_root: Path, keep: Path) -> None:
-    for entry in _stale_versions(install_root, keep):
+def _prune_other_versions(install_root: Path, keep: Path, protect: tuple[Path, ...] = ()) -> None:
+    # Never prune while the kept version is missing (a failed download) or
+    # while an installed link still points at an older version.
+    if not (keep / "bin" / "codegraph").is_file():
+        return
+    for entry in _stale_versions(install_root, keep, protect):
         shutil.rmtree(entry, ignore_errors=True)
 
 
@@ -127,9 +136,9 @@ def plan_codegraph_binary(paths: Paths) -> list[Action]:
                               lambda: download_and_extract(url, version_dir)))
         actions.append(Symlink(symlink, launcher))
         actions.append(Symlink(current, version_dir))
-    if _stale_versions(install_root, version_dir):
+    if _stale_versions(install_root, version_dir, (symlink, current)):
         actions.append(Effect(install_root, True, "prune stale codegraph versions",
-                              lambda: _prune_other_versions(install_root, version_dir)))
+                              lambda: _prune_other_versions(install_root, version_dir, (symlink, current))))
     actions.append(Probe(symlink, lambda: _classify_dry_run(launcher, symlink)))
     return actions
 

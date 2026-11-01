@@ -320,3 +320,18 @@ def test_claude_sync_installs_the_mailbox_stop_guard_alongside_the_wt_marker(
     assert stop[1]["hooks"][0]["timeout"] == 20
     assert "wt.sh" in stop[0]["hooks"][0]["command"]
     assert apply_claude_config(paths, Mode.APPLY)[0].status == Status.UNCHANGED
+
+
+def test_plan_command_hooks_rejects_template_missing_key(tmp_path: Path) -> None:
+    """Finding 1: a hooks.json without the spec's key fails this step, not the
+    whole CLI with a KeyError traceback."""
+    from settings_sync.hooks import HookSpec
+    from settings_sync.paths import resolve_paths
+    from settings_sync.registry import HARNESSES
+    source = tmp_path / "harnesses" / "codex" / "hooks.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({"unrelated": {}}))
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path)
+    spec = HookSpec(source_dir="codex", key="hooks", plugin=False)
+    with pytest.raises(ValueError, match="must hold"):
+        plan_command_hooks(paths, "codex", spec)

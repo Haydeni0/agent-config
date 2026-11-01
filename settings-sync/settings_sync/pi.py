@@ -22,4 +22,9 @@ def plan_pi_keybindings(paths: Paths) -> list[Action]:
     target = paths.target("pi") / "keybindings.json"
     if not source.is_file():
         return [Report(target, Status.NO_SOURCE, f"keybindings source not found: {source}")]
-    return [File(target, source.read_text())]
+    content = source.read_text()
+    try:
+        json.loads(content)
+    except ValueError as exc:
+        raise ValueError(f"invalid JSON in {source}: {exc}") from exc
+    return [File(target, content)]

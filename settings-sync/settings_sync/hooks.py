@@ -127,6 +127,8 @@ def plan_command_hooks(paths: Paths, harness_name: str, spec: HookSpec) -> list[
         else paths.target(harness_name) / "hooks.json"
     )
     defaults = json.loads(source.read_text())
+    if not isinstance(defaults, dict) or not isinstance(defaults.get(spec.key), dict):
+        raise ValueError(f"hooks template {source} must hold a {spec.key!r} object")
     expand_command_hooks(paths.source_dir, harness_name, hook_groups(defaults[spec.key]))
     actions: list[Action] = [MergedConfig(target, JsonCodec(), defaults, hook_key=spec.key)]
     if spec.plugin:
