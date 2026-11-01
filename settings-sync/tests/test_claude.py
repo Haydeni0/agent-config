@@ -8,11 +8,14 @@ from typer.testing import CliRunner
 
 from settings_sync.actions import Mode, Outcome, Status
 from settings_sync.registry import HARNESSES
+from settings_sync import registry
 from settings_sync.claude import plan_claude_config
 from settings_sync.cli import agent_config_app
 from settings_sync.executor import execute
 from settings_sync.ownership import OwnershipStore
 from settings_sync.paths import resolve_paths
+
+from tests.test_read_only import snapshot
 
 
 def apply_claude_config(paths, mode: Mode) -> list[Outcome]:
@@ -170,3 +173,85 @@ def test_synced_claude_settings_have_no_inline_gh_api_hook(source_home: Path, is
     groups = json.loads(target.read_text())["hooks"]["PreToolUse"]
     commands = [hook["command"] for group in groups for hook in group["hooks"]]
     assert not [command for command in commands if "gh api" in command]
+
+_OLD_ALIASES = (
+    ("custom", "custom"), ("hooks", "hooks"),
+    ("statusline-command.sh", "harnesses/claude/statusline-command.sh"),
+    ("settings-sync", "settings-sync"), ("opencode-resume", "opencode-resume"),
+    ("README.md", "README.md"), ("sync.sh", "sync.sh"), ("scripts", "scripts"),
+)
+_NEW_ALIASES = registry._REPO_ALIASES
+
+
+def test_claude_links_install_vendor_and_claude_hooks_aliases(source_home: Path, isolated_home: Path):
+    """S4: the moved trees stay reachable from installed hook commands through the new aliases."""
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "claude"])
+    assert result.exit_code == 0, result.output
+    claude = isolated_home / ".claude"
+    assert (claude / "vendor").is_symlink()
+    assert (claude / "vendor").resolve() == (source_home / "vendor").resolve()
+    assert (claude / "claude-hooks").is_symlink()
+    assert (claude / "claude-hooks").resolve() == (source_home / "harnesses/claude/hooks").resolve()
+    assert not (claude / "custom").is_symlink()
+
+
+def test_claude_links_prune_retired_alias(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S5: a retired alias recorded by an earlier sync is pruned; CLAUDE.md survives (REQ-SYNC-05)."""
+    claude = isolated_home / ".claude"
+    (source_home / "custom").mkdir()
+    monkeypatch.setattr("settings_sync.registry._REPO_ALIASES", _OLD_ALIASES)
+    runner = CliRunner()
+    args = ["--source", str(source_home)]
+    assert runner.invoke(agent_config_app, [*args, "sync", "claude"]).exit_code == 0
+    assert (claude / "custom").is_symlink()
+    assert (claude / "CLAUDE.md").is_file()
+    monkeypatch.setattr("settings_sync.registry._REPO_ALIASES", _NEW_ALIASES)
+    (source_home / "custom").rmdir()
+    result = runner.invoke(agent_config_app, [*args, "sync", "claude"])
+    assert result.exit_code == 0, result.output
+    assert not (claude / "custom").exists()
+    assert (claude / "hooks").is_symlink()
+    assert (claude / "vendor").is_symlink()
+    assert (claude / "claude-hooks").is_symlink()
+    assert (claude / "CLAUDE.md").read_text().startswith("# Shared agent configuration")
+
+
+def test_claude_links_prune_warns_on_edited_retired_alias(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S6: a user-retargeted retired alias is warned, preserved, and fails the run."""
+    claude = isolated_home / ".claude"
+    (source_home / "custom").mkdir()
+    monkeypatch.setattr("settings_sync.registry._REPO_ALIASES", _OLD_ALIASES)
+    runner = CliRunner()
+    args = ["--source", str(source_home)]
+    assert runner.invoke(agent_config_app, [*args, "sync", "claude"]).exit_code == 0
+    monkeypatch.setattr("settings_sync.registry._REPO_ALIASES", _NEW_ALIASES)
+    mine = isolated_home / "my-stuff"
+    mine.mkdir()
+    (claude / "custom").unlink()
+    (claude / "custom").symlink_to(mine)
+    result = runner.invoke(agent_config_app, [*args, "sync", "claude"])
+    assert result.exit_code == 1
+    assert "preserved" in result.output
+    assert (claude / "custom").is_symlink()
+    assert (claude / "custom").resolve() == mine.resolve()
+
+
+def test_check_reports_drift_on_retired_alias(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S8: a machine synced with the old layout shows drift under check, and check writes nothing."""
+    claude = isolated_home / ".claude"
+    template = source_home / "harnesses/claude/settings.json"
+    (source_home / "custom").mkdir()
+    template.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "bash ~/.claude/legacy-dir/activate.sh"}]}]}}))
+    monkeypatch.setattr("settings_sync.registry._REPO_ALIASES", _OLD_ALIASES)
+    runner = CliRunner()
+    args = ["--source", str(source_home)]
+    assert runner.invoke(agent_config_app, [*args, "sync", "claude"]).exit_code == 0
+    monkeypatch.setattr("settings_sync.registry._REPO_ALIASES", _NEW_ALIASES)
+    (source_home / "custom").rmdir()
+    template.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "bash ~/.claude/claude-hooks/activate.sh"}]}]}}))
+    before = snapshot(isolated_home)
+    result = runner.invoke(agent_config_app, [*args, "check", "claude"])
+    assert result.exit_code == 1
+    assert "would remove" in result.output
+    assert "would_merge" in result.output
+    assert snapshot(isolated_home) == before

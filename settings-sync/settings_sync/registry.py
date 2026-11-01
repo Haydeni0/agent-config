@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from settings_sync.actions import Action, Report, Status, Symlink
+from settings_sync.actions import Action, Prune, Report, Status, Symlink
 from settings_sync.agents import plan_agents_dir
 from settings_sync.agents_md import plan_agents_md
 from settings_sync.agy import plan_agy_settings, plan_agy_skills
@@ -192,7 +192,7 @@ HARNESSES = (
 )
 
 _REPO_ALIASES = (
-    ("custom", "custom"), ("hooks", "hooks"),
+    ("vendor", "vendor"), ("claude-hooks", "harnesses/claude/hooks"), ("hooks", "hooks"),
     ("statusline-command.sh", "harnesses/claude/statusline-command.sh"),
     ("settings-sync", "settings-sync"), ("opencode-resume", "opencode-resume"),
     ("README.md", "README.md"), ("sync.sh", "sync.sh"), ("scripts", "scripts"),
@@ -214,6 +214,12 @@ def plan_claude_links(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Acti
         entry = paths.source_dir / "harnesses" / source_dir
         if entry.exists():
             actions.append(Symlink(paths.claude_home / harness.alias, entry))
+    expected = (
+        frozenset({"skills", "commands", "agents", "CLAUDE.md"})
+        | {alias for alias, _ in _REPO_ALIASES}
+        | {h.alias for h in harnesses if h.alias is not None}
+    )
+    actions.append(Prune(paths.claude_home, expected))
     return actions
 
 
