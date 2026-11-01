@@ -6,12 +6,13 @@ import pytest
 
 from settings_sync.codegraph import (
     CODEGRAPH_VERSION,
-    claude_mcp_json_path,
     current_platform,
     release_url,
     sync_codegraph_binary,
 )
 from settings_sync.paths import Paths, resolve_paths
+from settings_sync.cli import agent_config_app
+from typer.testing import CliRunner
 from settings_sync.actions import Status
 
 
@@ -175,13 +176,18 @@ def test_binary_real_sync_never_warns(tmp_path: Path, monkeypatch: pytest.Monkey
     assert all(o.status not in (Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE) for o in outcomes)
 
 
-def test_claude_mcp_json_path_with_and_without_profile_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    paths = _paths(tmp_path)
+def test_claude_mcp_written_with_and_without_profile_dir(source_home: Path, isolated_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """S49: --claude-home X writes X/../.claude.json; CLAUDE_CONFIG_DIR=P writes P/.claude.json."""
+    runner = CliRunner()
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    assert claude_mcp_json_path(paths) == paths.claude_home.parent / ".claude.json"
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "profile"))
-    profile_paths = resolve_paths(claude_dir=tmp_path / "source")
-    assert claude_mcp_json_path(profile_paths) == profile_paths.claude_home / ".claude.json"
+    custom = tmp_path / "custom-claude"
+    result = runner.invoke(agent_config_app, ["--source", str(source_home), "--claude-home", str(custom), "sync", "codegraph", "claude-mcp"])
+    assert result.exit_code == 0, result.output
+    assert json.loads((custom.parent / ".claude.json").read_text())["mcpServers"]["codegraph"]["command"] == "codegraph"
+    profile = tmp_path / "profile"
+    result = runner.invoke(agent_config_app, ["--source", str(source_home), "--claude-home", str(profile), "sync", "codegraph", "claude-mcp"], env={"CLAUDE_CONFIG_DIR": str(profile)})
+    assert result.exit_code == 0, result.output
+    assert json.loads((profile / ".claude.json").read_text())["mcpServers"]["codegraph"]["command"] == "codegraph"
 
 
 def test_claude_mcp_sets_entry_and_preserves_foreign_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -189,7 +195,7 @@ def test_claude_mcp_sets_entry_and_preserves_foreign_keys(tmp_path: Path, monkey
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
-    target = claude_mcp_json_path(paths)
+    target = paths.claude_mcp_json
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({
         "projects": {"/work": {"allowedTools": ["Bash"]}},
@@ -213,10 +219,10 @@ def test_claude_mcp_idempotent_second_run(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
     sync_claude_mcp(paths, dry_run=False)
-    before = claude_mcp_json_path(paths).read_text()
+    before = paths.claude_mcp_json.read_text()
     outcomes = sync_claude_mcp(paths, dry_run=False)
     assert outcomes[0].status == Status.UNCHANGED
-    assert claude_mcp_json_path(paths).read_text() == before
+    assert paths.claude_mcp_json.read_text() == before
 
 
 def test_claude_mcp_creates_absent_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -225,7 +231,7 @@ def test_claude_mcp_creates_absent_file(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
     outcomes = sync_claude_mcp(paths, dry_run=False)
-    target = claude_mcp_json_path(paths)
+    target = paths.claude_mcp_json
     assert target.is_file()
     assert json.loads(target.read_text())["mcpServers"]["codegraph"]["command"] == "codegraph"
 
@@ -235,7 +241,7 @@ def test_claude_mcp_refuses_unparseable_target(tmp_path: Path, monkeypatch: pyte
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
-    target = claude_mcp_json_path(paths)
+    target = paths.claude_mcp_json
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("{not json")
     outcomes = sync_claude_mcp(paths, dry_run=False)

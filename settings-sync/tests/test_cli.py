@@ -196,3 +196,19 @@ def test_leaf_command_flags(tmp_path: pathlib.Path):
     assert result.exit_code == 0
     assert (agy_cli_dir / "settings.json").is_file()
     assert not (agy_dir / "AGENTS.md").exists()
+
+
+def test_plugins_cache_resolves_under_custom_claude_home(source_home: pathlib.Path, isolated_home: pathlib.Path, tmp_path: pathlib.Path):
+    """S50: the superpowers cache link resolves into the --claude-home X cache, never ~/.claude."""
+    custom = tmp_path / "custom-claude"
+    cached = custom / "plugins" / "cache" / "claude-plugins-official" / "superpowers" / "6.1.1" / ".opencode" / "plugins" / "superpowers.js"
+    cached.parent.mkdir(parents=True)
+    cached.write_text("// plugin")
+    result = runner.invoke(
+        agent_config_app,
+        ["--source", str(source_home), "--claude-home", str(custom), "sync", "opencode", "plugins"],
+    )
+    assert result.exit_code == 0, result.output
+    assert (isolated_home / ".config/opencode/plugins/superpowers.js").is_symlink()
+    assert (isolated_home / ".config/opencode/plugins/superpowers.js").resolve() == cached.resolve()
+    assert not (isolated_home / ".claude").exists()

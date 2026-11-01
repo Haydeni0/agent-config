@@ -28,6 +28,8 @@ class Paths:
     def __post_init__(self) -> None:
         if self.home is None:
             object.__setattr__(self, "home", Path.home())
+        if self.claude_home is None:
+            object.__setattr__(self, "claude_home", self.home / ".claude")
         if self.shared_skills is None:
             object.__setattr__(self, "shared_skills", self.home / ".agents" / "skills")
         if self.goose_plugin_dir is None:

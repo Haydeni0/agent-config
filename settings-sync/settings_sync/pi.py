@@ -1,5 +1,6 @@
 """Sync shared source config into ~/.pi/agent (the pi harness)."""
 
+import json
 from pathlib import Path
 
 from settings_sync.ownership import sync_generated_json
@@ -14,10 +15,8 @@ def sync_pi_config(target: Path, template: Path, dry_run: bool = False, *, sourc
         return Outcome(target, Status.NO_SOURCE, f"template not found: {template}")
     content = template.read_text()
     if source_root is not None:
-        import json
         content = content.replace("${AGENT_CONFIG_REPO}", json.dumps(str(source_root))[1:-1])
-    if runtime_home is not None and runtime_home != Path.home() / ".claude":
-        import json
+    if runtime_home is not None:
         content = content.replace("~/.claude/", json.dumps(str(runtime_home))[1:-1] + "/")
     return sync_json_defaults(target, content, dry_run=dry_run)
 

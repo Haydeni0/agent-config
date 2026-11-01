@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.cli import agent_config_app
+from settings_sync.actions import Status
 
 
 @pytest.mark.parametrize("override", ["HOME", "CODEX_HOME"])
@@ -165,3 +166,26 @@ def test_resolve_paths_fills_engine_destinations(tmp_path: Path, monkeypatch: py
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "profile"))
     paths = resolve_paths(claude_dir=source)
     assert paths.claude_mcp_json == tmp_path / "profile" / ".claude.json"
+
+
+def test_no_adapter_rereads_home_after_resolution(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S48: with Paths resolved under HOME=A, a run after HOME=B writes nothing under B."""
+    from settings_sync.registry import run_all_tools
+    from settings_sync.paths import resolve_paths
+
+    paths = resolve_paths(claude_dir=source_home, claude_home=isolated_home / ".claude")
+    other = isolated_home.parent / "switched-home"
+    monkeypatch.setenv("HOME", str(other))
+    original_home = isolated_home
+
+    def fake_download(url: str, version_dir: Path) -> None:
+        launcher = version_dir / "bin" / "codegraph"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_text("#!/bin/sh\necho 1.6.2\n")
+        launcher.chmod(0o755)
+
+    monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fake_download)
+    outcomes, _ = run_all_tools(paths, False, False)
+    assert not any(o.status == Status.FAILED for o in outcomes), [o for o in outcomes if o.status == Status.FAILED]
+    assert not other.exists()
+    assert (original_home / ".local" / "state" / "agent-config" / "managed.json").is_file()

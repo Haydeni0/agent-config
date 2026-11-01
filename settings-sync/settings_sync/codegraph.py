@@ -72,15 +72,11 @@ def download_and_extract(url: str, version_dir: Path) -> None:
             raise ValueError(f"codegraph download failed: url={url} dest={version_dir}: {exc}") from exc
 
 
-def _bin_symlink() -> Path:
-    return Path.home() / ".local" / "bin" / "codegraph"
-
-
 def sync_codegraph_binary(paths: Paths, dry_run: bool) -> list[Outcome]:
     install_root = paths.codegraph_dir
     version_dir = install_root / "versions" / CODEGRAPH_VERSION
     launcher = version_dir / "bin" / "codegraph"
-    symlink = _bin_symlink()
+    symlink = paths.local_bin / "codegraph"
 
     if dry_run:
         return [_classify_dry_run(launcher, symlink)]
@@ -131,18 +127,11 @@ def _prune_other_versions(install_root: Path, keep: Path) -> None:
             shutil.rmtree(entry, ignore_errors=True)
 
 
-def claude_mcp_json_path(paths: Paths) -> Path:
-    profile = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
-    if profile:
-        return paths.claude_home / ".claude.json"
-    return paths.claude_home.parent / ".claude.json"
-
-
 def sync_claude_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
     """Keyed-merge the MCP server entry into ~/.claude.json (or the profile
     copy). Only the mcpServers.codegraph key is managed; trust, oauth, and
     onboarding state pass through untouched (merge_defaults)."""
-    target = claude_mcp_json_path(paths)
+    target = paths.claude_mcp_json
     content = json.dumps(CLAUDE_MCP_ENTRY, indent=2)
     return [sync_json_defaults(target, content, dry_run)]
 

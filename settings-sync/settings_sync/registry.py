@@ -7,7 +7,7 @@ from pathlib import Path
 from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_settings, sync_agy_skills
-from settings_sync.claude import claude_home, sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
+from settings_sync.claude import sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
 from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary, sync_codegraph_telemetry, sync_pi_mcp
 from settings_sync.commands import sync_commands
 from settings_sync.codex import sync_codex_config, sync_codex_sqlite_home
@@ -17,7 +17,7 @@ from settings_sync.hooks import sync_command_hooks
 from settings_sync.nomistakes import sync_nomistakes_config
 from settings_sync.ownership import sync_generated_symlink
 from settings_sync.skills import validate_skills
-from settings_sync.paths import Paths, config_home
+from settings_sync.paths import Paths
 from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.plugins import sync_plugins
 from settings_sync.actions import Outcome, Status
@@ -49,9 +49,9 @@ HARNESSES = (
     ), lambda p: p.codegraph_dir, "codegraph"),
     Harness("claude", (
         Step("config", lambda p, f, d: [sync_claude_config(p, d)], ("harnesses/claude/settings.json",)),
-        Step("context", lambda p, f, d: [sync_agents_md(claude_home(p) / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="claude")], ("rules/global.md",)),
+        Step("context", lambda p, f, d: [sync_agents_md(p.claude_home / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="claude")], ("rules/global.md",)),
         Step("links", lambda p, f, d: sync_claude_links(p, f, d), ("skills", "commands", "agents")),
-    ), claude_home, "claude"),
+    ), lambda p: p.claude_home, "claude"),
     Harness("opencode", (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills",), f, d), ("skills",)),
         Step("config", lambda p, f, d: [sync_config(p.opencode_dir / "opencode.json", p.source_dir / "harnesses/opencode/opencode.json", f, d)], ("harnesses/opencode/opencode.json",)),
@@ -59,12 +59,12 @@ HARNESSES = (
         Step("agents-md", lambda p, f, d: [sync_agents_md(p.opencode_dir / "AGENTS.md", p.source_dir / "rules/global.md", f, d, rules_path=p.source_dir / "harnesses/opencode/rules.md", source_root=p.source_dir, harness="opencode")], ("rules/global.md",)),
         Step("agents", lambda p, f, d: sync_agents_dir(p.opencode_dir / "agents", p.source_dir / "agents", f, d), ("agents",)),
         Step("commands", lambda p, f, d: sync_commands(p.opencode_dir / "commands", p.source_dir / "commands", p.source_dir / "skills", f, d), ("commands",)),
-        Step("plugins", lambda p, f, d: sync_plugins(p.opencode_dir / "plugins", p.source_dir / "harnesses/opencode/plugins", (p.claude_home or Path.home() / ".claude") / "plugins/cache", f, d), ("harnesses/opencode/plugins",)),
+        Step("plugins", lambda p, f, d: sync_plugins(p.opencode_dir / "plugins", p.source_dir / "harnesses/opencode/plugins", p.claude_home / "plugins/cache", f, d), ("harnesses/opencode/plugins",)),
         Step("skills", lambda p, f, d: validate_skills(p.source_dir / "skills"), ()),
     ), lambda p: p.opencode_dir, "opencode"),
     Harness("pi", (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),
-        Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=claude_home(p))], ("harnesses/pi/settings.json",)),
+        Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=(p.claude_home if p.claude_home is not None and p.claude_home != p.home / ".claude" else None))], ("harnesses/pi/settings.json",)),
         Step("mcp", lambda p, f, d: sync_pi_mcp(p, d), ("harnesses/pi/mcp.json",)),
         Step("context", lambda p, f, d: [sync_agents_md(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="pi")], ("rules/global.md",)),
         Step("keybindings", lambda p, f, d: [sync_pi_keybindings(p.target("pi") / "keybindings.json", p.source_dir / "harnesses/pi/keybindings.json", d, force=f)]),
@@ -84,7 +84,7 @@ HARNESSES = (
         Step("skills", lambda p, f, d: sync_agy_skills(p.target("agy") / "skills", p.source_dir / "skills", f, d), ("skills",)),
     ), lambda p: p.agy_dir, "agy"),
     Harness("no-mistakes", (
-        Step("config", lambda p, f, d: [sync_nomistakes_config(p.target("nomistakes") / "config.yaml", p.source_dir / "harnesses/no-mistakes/config.yaml", config_home() / "agent-config/overlays/no-mistakes.yaml", d)], ("harnesses/no-mistakes/config.yaml",)),
+        Step("config", lambda p, f, d: [sync_nomistakes_config(p.target("nomistakes") / "config.yaml", p.source_dir / "harnesses/no-mistakes/config.yaml", p.overlay_dir / "no-mistakes.yaml", d)], ("harnesses/no-mistakes/config.yaml",)),
     ), lambda p: p.nomistakes_dir, "no-mistakes"),
     Harness("codex", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "codex", d), ("harnesses/codex/hooks.json", "hooks/command.mjs")),

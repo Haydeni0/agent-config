@@ -205,7 +205,7 @@ def sync_command_hooks(
 ) -> list[Outcome]:
     directory = "gemini" if harness == "agy" else harness
     source = paths.source_dir / "harnesses" / directory / "hooks.json"
-    plugin = Path.home() / ".agents/plugins/agent-config-goose"
+    plugin = paths.goose_plugin_dir
     target = (
         plugin / "hooks/hooks.json"
         if harness == "goose"

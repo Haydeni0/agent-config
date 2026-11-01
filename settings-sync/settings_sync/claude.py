@@ -7,13 +7,8 @@ from pathlib import Path
 
 from settings_sync.hooks import expand_command_hooks, has_command_placeholder, hook_groups, sync_hook_config
 from settings_sync.ownership import prune_generated, sync_generated_symlink
-from settings_sync.paths import Paths, config_home
+from settings_sync.paths import Paths
 from settings_sync.actions import Outcome, Status
-
-
-def claude_home(paths: Paths) -> Path:
-    return paths.claude_home or Path.home() / ".claude"
-
 
 
 def runtime_command(command: str, home: Path) -> str:
@@ -22,7 +17,7 @@ def runtime_command(command: str, home: Path) -> str:
 
 
 def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
-    target = claude_home(paths) / "settings.json"
+    target = paths.claude_home / "settings.json"
     try:
         defaults = json.loads((paths.source_dir / "harnesses/claude/settings.json").read_text())
         if not isinstance(defaults, dict):
@@ -34,11 +29,11 @@ def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
             for group in groups:
                 for hook in group.get("hooks", []):
                     if hook.get("type") == "command":
-                        hook["command"] = runtime_command(hook["command"], claude_home(paths))
+                        hook["command"] = runtime_command(hook["command"], paths.claude_home)
         status_line = defaults.get("statusLine", {})
         if status_line.get("type") == "command":
-            status_line["command"] = runtime_command(status_line["command"], claude_home(paths))
-        overlay_path = config_home() / "agent-config/overlays/claude.json"
+            status_line["command"] = runtime_command(status_line["command"], paths.claude_home)
+        overlay_path = paths.overlay_dir / "claude.json"
         if overlay_path.exists():
             overlay = json.loads(overlay_path.read_text())
             if not isinstance(overlay, dict) or set(overlay) - {"permissions"}:
@@ -62,7 +57,7 @@ def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
 
 
 def sync_claude_entries(paths: Paths, categories: tuple[str, ...], force: bool, dry_run: bool) -> list[Outcome]:
-    home = claude_home(paths)
+    home = paths.claude_home
     outcomes: list[Outcome] = []
     for category in categories:
         source = paths.source_dir / category
@@ -81,9 +76,9 @@ def sync_claude_entries(paths: Paths, categories: tuple[str, ...], force: bool, 
 
 
 def sync_shared_skills(paths: Paths, dry_run: bool) -> list[Outcome]:
-    target = Path.home() / ".agents/skills"
+    target = paths.shared_skills
     source = paths.source_dir / "skills"
-    legacy = claude_home(paths) / "skills"
+    legacy = paths.claude_home / "skills"
     if target.is_symlink() and target.resolve() == legacy.resolve() and legacy.is_dir():
         local = sorted(
             entry.name for entry in legacy.iterdir()
@@ -98,7 +93,7 @@ def sync_shared_skills(paths: Paths, dry_run: bool) -> list[Outcome]:
 
 
 def sync_claude_links(paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    home = claude_home(paths)
+    home = paths.claude_home
     outcomes = sync_claude_entries(paths, ("skills", "commands", "agents"), force, dry_run)
     for alias, source in (
         ("custom", "custom"), ("hooks", "hooks"),
