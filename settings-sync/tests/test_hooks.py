@@ -8,7 +8,7 @@ import pytest
 from settings_sync.actions import Mode, Outcome, Status
 from settings_sync.claude import plan_claude_config
 from settings_sync.executor import execute
-from settings_sync.hooks import sync_command_hooks
+from settings_sync.hooks import plan_command_hooks
 from settings_sync.merging import JsonCodec
 from settings_sync.actions import MergedConfig
 from settings_sync.ownership import OwnershipStore
@@ -29,6 +29,12 @@ def apply_hook_config(target: Path, desired: dict, mode: Mode, hook_key: str = "
     store = OwnershipStore()
     store.load(mode)
     return execute([MergedConfig(target, JsonCodec(), desired, hook_key=hook_key)], mode, store)[0]
+
+
+def _apply_hooks(paths: Paths, harness: str, mode: Mode = Mode.APPLY) -> list[Outcome]:
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan_command_hooks(paths, harness), mode, store)
 
 
 def test_claude_preserves_foreign_hooks_on_update_and_removal(
@@ -110,7 +116,7 @@ def test_native_hook_sync_preserves_local_state_and_runs(
     foreign = {"SessionStart": [group("local-hook")]}
     key = "agent-config" if harness == "agy" else "hooks"
     target.write_text(json.dumps({key: foreign, "local": True}))
-    outcomes = sync_command_hooks(paths, harness, False)
+    outcomes = _apply_hooks(paths, harness)
     assert all(outcome.status != Status.FAILED for outcome in outcomes)
     result = json.loads(target.read_text())
     assert result["local"] is True
@@ -139,7 +145,7 @@ def test_native_hook_sync_preserves_local_state_and_runs(
     ) in ("deny", "block")
     assert all(
         outcome.status == Status.UNCHANGED
-        for outcome in sync_command_hooks(paths, harness, False)
+        for outcome in _apply_hooks(paths, harness)
     )
 
 
@@ -171,7 +177,7 @@ def test_agy_disabled_choice_is_preserved(
     target.parent.mkdir()
     target.write_text('{"agent-config":{"enabled":false},"other":{"enabled":true}}')
     paths = Paths(source_home, isolated_home / "opencode", agy_dir=target.parent)
-    assert sync_command_hooks(paths, "agy", False)[0].status == Status.MERGED
+    assert _apply_hooks(paths, "agy")[0].status == Status.MERGED
     config = json.loads(target.read_text())
     assert config["agent-config"]["enabled"] is False
     assert config["other"] == {"enabled": True}

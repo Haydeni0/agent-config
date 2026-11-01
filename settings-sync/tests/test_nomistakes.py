@@ -5,27 +5,30 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
+from settings_sync.actions import Mode, Regenerate, Status
 from settings_sync.cli import agent_config_app
-from settings_sync.nomistakes import merge_yaml, sync_nomistakes_config
-from settings_sync.actions import Status
-from settings_sync.sync import sync_yaml
+from settings_sync.executor import execute
+from settings_sync.nomistakes import merge_yaml, plan_nomistakes_config
+from settings_sync.ownership import OwnershipStore
+from settings_sync.paths import resolve_paths
 
 
 @pytest.fixture
 def nm_template(tmp_path: pathlib.Path) -> pathlib.Path:
     """A shared-keys template at <claude>/no-mistakes/config.yaml."""
-    source = tmp_path / "claude" / "no-mistakes" / "config.yaml"
+    source = tmp_path / "claude" / "harnesses" / "no-mistakes" / "config.yaml"
     source.parent.mkdir(parents=True)
     source.write_text("agent: claude\nreview_agent_timeout: \"30m\"\n")
     return source
 
 
 @pytest.fixture
-def nm_overlay(tmp_path: pathlib.Path) -> pathlib.Path:
+def nm_overlay(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """A machine overlay at <claude>/no-mistakes/config.local.yaml."""
-    source = tmp_path / "claude" / "no-mistakes" / "config.local.yaml"
+    source = tmp_path / "cfg" / "agent-config" / "overlays" / "no-mistakes.yaml"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("agent_path_override:\n  claude: /usr/local/bin/local-claude\nworktree_roots: {}\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     return source
 
 
@@ -80,18 +83,29 @@ def test_merge_yaml_empty_template_with_overlay():
     assert merge_yaml({}, {"a": 1}) == {"a": 1}
 
 
-# ---- sync_nomistakes_config ----
+# ---- plan_nomistakes_config ----
+
+def _nm_paths(tmp_path: pathlib.Path) -> object:
+    return resolve_paths(claude_dir=tmp_path / "claude", nomistakes_dir=tmp_path / "no-mistakes")
 
 
-def test_config_creates_target_from_template_alone(nm_template, nm_target):
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_template.with_name("config.local.yaml"))
+def _apply_nomistakes(paths, mode: Mode):
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan_nomistakes_config(paths), mode, store)
+
+
+
+
+def test_config_creates_target_from_template_alone(nm_template, nm_target, tmp_path):
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.CREATED
     assert "agent: claude" in nm_target.read_text()
 
 
-def test_config_merges_overlay_and_overlay_wins(nm_template, nm_overlay, nm_target):
+def test_config_merges_overlay_and_overlay_wins(nm_template, nm_overlay, nm_target, tmp_path):
     nm_template.write_text("agent: claude\nagent_path_override:\n  codex: /usr/bin/codex\n")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.CREATED
     text = nm_target.read_text()
     assert "claude: /usr/local/bin/local-claude" in text
@@ -99,117 +113,111 @@ def test_config_merges_overlay_and_overlay_wins(nm_template, nm_overlay, nm_targ
     assert "worktree_roots" in text
 
 
-def test_config_absent_overlay_ok(nm_template, nm_target):
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_template.with_name("config.local.yaml"))
+def test_config_absent_overlay_ok(nm_template, nm_target, nm_overlay, tmp_path):
+    nm_overlay.unlink()
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.CREATED
     assert "worktree_roots" not in nm_target.read_text()
 
 
-def test_config_absent_template_is_no_source(nm_target):
-    outcome = sync_nomistakes_config(nm_target, pathlib.Path("/nonexistent/config.yaml"), pathlib.Path("/nonexistent/local.yaml"))
-    assert outcome.status == Status.NO_SOURCE
+def test_config_absent_template_fails_planning(nm_target, tmp_path):
+    (tmp_path / "claude" / "harnesses" / "no-mistakes").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "claude" / "harnesses" / "no-mistakes" / "config.yaml").unlink(missing_ok=True)
+    with pytest.raises(ValueError):
+        plan_nomistakes_config(_nm_paths(tmp_path))
     assert not nm_target.exists()
 
 
-def test_config_invalid_template_fails_target_untouched(nm_template, nm_overlay, nm_target):
+def test_config_invalid_template_fails_target_untouched(nm_template, nm_overlay, nm_target, tmp_path):
     nm_target.parent.mkdir(parents=True)
     nm_target.write_text("existing: true\n")
     nm_template.write_text("agent: [unclosed\n")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
-    assert outcome.status == Status.FAILED
+    with pytest.raises(ValueError):
+        plan_nomistakes_config(_nm_paths(tmp_path))
     assert nm_target.read_text() == "existing: true\n"
 
 
-def test_config_invalid_overlay_fails_target_untouched(nm_template, nm_overlay, nm_target):
+def test_config_invalid_overlay_fails_target_untouched(nm_template, nm_overlay, nm_target, tmp_path):
     nm_target.parent.mkdir(parents=True)
     nm_target.write_text("existing: true\n")
     nm_overlay.write_text("agent_path_override: [unclosed\n")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
-    assert outcome.status == Status.FAILED
+    with pytest.raises(ValueError):
+        plan_nomistakes_config(_nm_paths(tmp_path))
     assert nm_target.read_text() == "existing: true\n"
 
 
-def test_config_empty_files_treated_as_empty_dict(nm_template, nm_overlay, nm_target):
+def test_config_empty_files_treated_as_empty_dict(nm_template, nm_overlay, nm_target, tmp_path):
     nm_template.write_text("")
     nm_overlay.write_text("")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.CREATED
     assert nm_target.read_text().strip() == "{}"
 
 
-def test_config_diverging_target_always_replaced(nm_template, nm_overlay, nm_target):
+def test_config_diverging_target_always_replaced(nm_template, nm_overlay, nm_target, tmp_path):
     nm_target.parent.mkdir(parents=True)
     nm_target.write_text("hand: edit\n")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.REPLACED
     assert "hand" not in nm_target.read_text()
 
 
-def test_config_daemon_seed_target_replaced(nm_template, nm_overlay, nm_target):
+def test_config_daemon_seed_target_replaced(nm_template, nm_overlay, nm_target, tmp_path):
     nm_target.parent.mkdir(parents=True)
     nm_target.write_text("# no-mistakes global configuration\nagent: auto\nci_timeout: \"168h\"\n" * 40)
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.REPLACED
 
 
-def test_config_invalid_yaml_target_heals(nm_template, nm_overlay, nm_target):
+def test_config_invalid_yaml_target_heals(nm_template, nm_overlay, nm_target, tmp_path):
     nm_target.parent.mkdir(parents=True)
     nm_target.write_text("agent: [unclosed\n")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.REPLACED
     assert "agent: claude" in nm_target.read_text()
 
 
-def test_config_dry_run_writes_nothing(nm_template, nm_overlay, nm_target):
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay, dry_run=True)
+def test_config_dry_run_writes_nothing(nm_template, nm_overlay, nm_target, tmp_path):
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.DRY_RUN)[0]
     assert outcome.status == Status.WOULD_CREATE
     assert not nm_target.exists()
 
 
-def test_config_dry_run_reports_drift(nm_template, nm_overlay, nm_target):
+def test_config_dry_run_reports_drift(nm_template, nm_overlay, nm_target, tmp_path):
     nm_target.parent.mkdir(parents=True)
     nm_target.write_text("hand: edit\n")
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay, dry_run=True)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.DRY_RUN)[0]
     assert outcome.status == Status.WOULD_REPLACE
     assert nm_target.read_text() == "hand: edit\n"
 
 
-def test_config_unchanged_when_identical(nm_template, nm_overlay, nm_target):
-    sync_nomistakes_config(nm_target, nm_template, nm_overlay)
-    outcome = sync_nomistakes_config(nm_target, nm_template, nm_overlay)
+def test_config_unchanged_when_identical(nm_template, nm_overlay, nm_target, tmp_path):
+    _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)
+    outcome = _apply_nomistakes(_nm_paths(tmp_path), Mode.APPLY)[0]
     assert outcome.status == Status.UNCHANGED
 
 
-# ---- sync_yaml ----
+# ---- Regenerate ----
 
 
-def test_sync_yaml_semantic_equality_reorder_is_unchanged(tmp_path):
+def _regenerate(tmp_path, content: str, mode: Mode = Mode.APPLY):
+    store = OwnershipStore()
+    store.load(mode)
+    return execute([Regenerate(tmp_path / "c.yaml", content)], mode, store)[0]
+
+
+def test_regenerate_semantic_equality_reorder_is_unchanged(tmp_path):
     target = tmp_path / "c.yaml"
     target.write_text("b: 2\na: 1\n")
-    outcome = sync_yaml(target, "a: 1\nb: 2\n")
+    store = OwnershipStore(); store.load(Mode.APPLY)
+    outcome = execute([Regenerate(target, "a: 1\nb: 2\n")], Mode.APPLY, store)[0]
     assert outcome.status == Status.UNCHANGED
-
-
-def test_sync_yaml_drift_skipped_without_force(tmp_path):
-    target = tmp_path / "c.yaml"
-    target.write_text("a: 1\n")
-    outcome = sync_yaml(target, "a: 2\n")
-    assert outcome.status == Status.SKIPPED
-    assert target.read_text() == "a: 1\n"
-
-
-def test_sync_yaml_drift_replaced_with_force(tmp_path):
-    target = tmp_path / "c.yaml"
-    target.write_text("a: 1\n")
-    outcome = sync_yaml(target, "a: 2\n", force=True)
-    assert outcome.status == Status.REPLACED
-    assert target.read_text() == "a: 2\n"
 
 
 def test_sync_yaml_unparseable_target_replaced_under_force(tmp_path):
     target = tmp_path / "c.yaml"
     target.write_text("a: [unclosed\n")
-    outcome = sync_yaml(target, "a: 1\n", force=True)
+    outcome = _regenerate(tmp_path, "a: 1\n", Mode.FORCE)
     assert outcome.status == Status.REPLACED
 
 
@@ -217,10 +225,9 @@ def test_sync_yaml_bare_no_scalar_quoted_round_trips_as_string(tmp_path):
     # pyyaml is YAML 1.1 (bare `no` loads as False) while no-mistakes parses
     # YAML 1.2 (stays a string) and rejects unknown types. The template must
     # quote such scalars; the round-trip then preserves the string.
-    target = tmp_path / "c.yaml"
-    outcome = sync_yaml(target, 'flag: "no"\n', force=True)
+    outcome = _regenerate(tmp_path, 'flag: "no"\n', Mode.FORCE)
     assert outcome.status == Status.CREATED
-    assert '"no"' in target.read_text()
+    assert '"no"' in (tmp_path / "c.yaml").read_text()
 
 
 # ---- CLI ----

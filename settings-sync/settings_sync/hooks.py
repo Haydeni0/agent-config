@@ -6,9 +6,8 @@ import shlex
 import shutil
 from typing import Literal
 
-from settings_sync.actions import Action, File, MergedConfig, Mode, Outcome, Status
+from settings_sync.actions import Action, File, MergedConfig, Status
 from settings_sync.merging import JsonCodec
-from settings_sync.ownership import OwnershipStore
 from settings_sync.paths import Paths
 
 
@@ -138,21 +137,3 @@ def plan_command_hooks(paths: Paths, harness: CommandHarness) -> list[Action]:
         )
         actions.append(File(plugin / "plugin.json", manifest))
     return actions
-
-
-def sync_command_hooks(
-    paths: Paths, harness: CommandHarness, dry_run: bool
-) -> list[Outcome]:
-    """Interim wrapper over plan_command_hooks; dies in Task 15."""
-    from settings_sync.executor import execute
-    try:
-        store = OwnershipStore()
-        store.load(Mode.DRY_RUN if dry_run else Mode.APPLY)
-        return execute(plan_command_hooks(paths, harness), Mode.DRY_RUN if dry_run else Mode.APPLY, store)
-    except (OSError, ValueError) as exc:
-        target = (
-            paths.goose_plugin_dir / "hooks/hooks.json"
-            if harness == "goose"
-            else paths.target(harness) / "hooks.json"
-        )
-        return [Outcome(target, Status.FAILED, f"could not prepare {harness} hooks: {exc}")]

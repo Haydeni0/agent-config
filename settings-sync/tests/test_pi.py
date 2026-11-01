@@ -4,15 +4,18 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
+from settings_sync.actions import Mode, Status
 from settings_sync.cli import agent_config_app
-from settings_sync.pi import sync_pi_config, sync_pi_keybindings
-from settings_sync.actions import Status
+from settings_sync.executor import execute
+from settings_sync.ownership import OwnershipStore
+from settings_sync.paths import resolve_paths
+from settings_sync.pi import plan_pi_config, plan_pi_keybindings
 
 
 @pytest.fixture
 def pi_template(tmp_path: pathlib.Path) -> pathlib.Path:
     """A pointer template at <claude>/pi/settings.json."""
-    template = tmp_path / "claude" / "pi" / "settings.json"
+    template = tmp_path / "claude" / "harnesses" / "pi" / "settings.json"
     template.parent.mkdir(parents=True)
     template.write_text(json.dumps({"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}))
     return template
@@ -21,7 +24,7 @@ def pi_template(tmp_path: pathlib.Path) -> pathlib.Path:
 @pytest.fixture
 def pi_keybindings(tmp_path: pathlib.Path) -> pathlib.Path:
     """A keybindings source at <claude>/pi/keybindings.json."""
-    source = tmp_path / "claude" / "pi" / "keybindings.json"
+    source = tmp_path / "claude" / "harnesses" / "pi" / "keybindings.json"
     source.parent.mkdir(parents=True)
     source.write_text(json.dumps({"app.tree.foldOrUp": ["alt+left"], "app.tree.unfoldOrDown": ["alt+right"]}))
     return source
@@ -44,116 +47,145 @@ def pi_home(tmp_path: pathlib.Path) -> pathlib.Path:
     return home
 
 
+
+
+def _pi_paths(tmp_path: pathlib.Path):
+    return resolve_paths(claude_dir=tmp_path / "claude", pi_dir=tmp_path / "agent")
+
+
+def _apply(plan, paths, mode: Mode):
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan(paths), mode, store)
+
+
 runner = CliRunner()
 
 
-# ---- sync_pi_config (wholesale copy; template is single source of truth) ----
+# ---- plan_pi_config ----
 
 
 def test_pi_config_creates_from_template(tmp_path: pathlib.Path, pi_template: pathlib.Path):
-    target = tmp_path / "agent" / "settings.json"
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "settings.json"
 
-    outcome = sync_pi_config(target, pi_template)
+    outcome = _apply(plan_pi_config, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.CREATED
+    assert outcome.status == Status.MERGED
     assert json.loads(target.read_text())["skills"] == ["~/.claude/skills"]
 
 
-def test_pi_config_retains_native_state(tmp_path: pathlib.Path, pi_template: pathlib.Path):
-    target = tmp_path / "agent" / "settings.json"
+def test_pi_config_retains_native_state(source_home: pathlib.Path, isolated_home: pathlib.Path):
+    (source_home / "harnesses/pi/settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}))
+    paths = resolve_paths(claude_dir=source_home, pi_dir=isolated_home / "pi", claude_home=isolated_home / ".claude")
+    target = paths.pi_dir / "settings.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"lastChangelogVersion": "0.80.6"}))
 
-    outcome = sync_pi_config(target, pi_template)
+    outcome = _apply(plan_pi_config, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.REPLACED
+    assert outcome.status == Status.MERGED
     assert json.loads(target.read_text()) == {"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"], "lastChangelogVersion": "0.80.6"}
 
 
 def test_pi_config_unchanged_when_identical(tmp_path: pathlib.Path, pi_template: pathlib.Path):
-    target = tmp_path / "agent" / "settings.json"
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "settings.json"
     target.parent.mkdir(parents=True)
     target.write_text(pi_template.read_text())
 
-    outcome = sync_pi_config(target, pi_template)
+    outcome = _apply(plan_pi_config, paths, Mode.APPLY)[0]
 
     assert outcome.status == Status.UNCHANGED
 
 
-@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.CREATED)])
+@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.MERGED)])
 def test_pi_config_dry_run_creates_nothing(tmp_path: pathlib.Path, pi_template: pathlib.Path, dry_status: tuple[bool, Status]):
     dry_run, expected = dry_status
-    target = tmp_path / "agent" / "settings.json"
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "settings.json"
 
-    outcome = sync_pi_config(target, pi_template, dry_run=dry_run)
+    outcome = _apply(plan_pi_config, paths, Mode.DRY_RUN if dry_run else Mode.APPLY)[0]
 
     assert outcome.status == expected
     assert (not target.exists()) if dry_run else target.exists()
 
 
-def test_pi_config_dry_run_reports_would_replace_when_diverging(tmp_path: pathlib.Path, pi_template: pathlib.Path):
-    target = tmp_path / "agent" / "settings.json"
+def test_pi_config_dry_run_reports_would_merge_when_diverging(tmp_path: pathlib.Path, pi_template: pathlib.Path):
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "settings.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"lastChangelogVersion": "0.80.6"}))
 
-    outcome = sync_pi_config(target, pi_template, dry_run=True)
+    outcome = _apply(plan_pi_config, paths, Mode.DRY_RUN)[0]
 
-    assert outcome.status == Status.WOULD_REPLACE
+    assert outcome.status == Status.WOULD_MERGE
     assert json.loads(target.read_text()) == {"lastChangelogVersion": "0.80.6"}
 
 
 def test_pi_config_no_source_when_template_missing(tmp_path: pathlib.Path):
-    outcome = sync_pi_config(tmp_path / "agent" / "settings.json", tmp_path / "missing" / "settings.json")
+    (tmp_path / "claude").mkdir(parents=True)
+    paths = _pi_paths(tmp_path)
 
-    assert outcome.status == Status.NO_SOURCE
+    with pytest.raises(OSError):
+        plan_pi_config(paths)
 
 
-# ---- sync_pi_keybindings (wholesale copy; source is single source of truth) ----
+# ---- plan_pi_keybindings ----
 
 
 def test_pi_keybindings_creates_from_source(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
-    target = tmp_path / "agent" / "keybindings.json"
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "keybindings.json"
 
-    outcome = sync_pi_keybindings(target, pi_keybindings)
+    outcome = _apply(plan_pi_keybindings, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.CREATED
+    assert outcome.status == Status.MERGED
     assert json.loads(target.read_text())["app.tree.foldOrUp"] == ["alt+left"]
 
 
-def test_pi_keybindings_preserves_local_edits(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
-    target = tmp_path / "agent" / "keybindings.json"
+def test_pi_keybindings_merges_local_edits(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "keybindings.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"hand": "edited"}))
 
-    outcome = sync_pi_keybindings(target, pi_keybindings)
+    outcome = _apply(plan_pi_keybindings, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.SKIPPED
-    assert json.loads(target.read_text()) == {"hand": "edited"}
+    assert outcome.status == Status.MERGED
+    installed = json.loads(target.read_text())
+    assert installed["hand"] == "edited"
+    assert installed["app.tree.foldOrUp"] == ["alt+left"]
 
 
 def test_pi_keybindings_unchanged_when_identical(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path):
-    target = tmp_path / "agent" / "keybindings.json"
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "keybindings.json"
     target.parent.mkdir(parents=True)
     target.write_text(pi_keybindings.read_text())
 
-    outcome = sync_pi_keybindings(target, pi_keybindings)
+    outcome = _apply(plan_pi_keybindings, paths, Mode.APPLY)[0]
 
     assert outcome.status == Status.UNCHANGED
 
 
-@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.CREATED)])
+@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.MERGED)])
 def test_pi_keybindings_dry_run_creates_nothing(tmp_path: pathlib.Path, pi_keybindings: pathlib.Path, dry_status: tuple[bool, Status]):
     dry_run, expected = dry_status
-    target = tmp_path / "agent" / "keybindings.json"
+    paths = _pi_paths(tmp_path)
+    target = paths.pi_dir / "keybindings.json"
 
-    outcome = sync_pi_keybindings(target, pi_keybindings, dry_run=dry_run)
+    outcome = _apply(plan_pi_keybindings, paths, Mode.DRY_RUN if dry_run else Mode.APPLY)[0]
 
     assert outcome.status == expected
     assert (not target.exists()) if dry_run else target.exists()
 
 
 def test_pi_keybindings_no_source_when_missing(tmp_path: pathlib.Path):
-    outcome = sync_pi_keybindings(tmp_path / "agent" / "keybindings.json", tmp_path / "missing" / "keybindings.json")
+    (tmp_path / "claude").mkdir(parents=True)
+    paths = _pi_paths(tmp_path)
+
+    outcome = _apply(plan_pi_keybindings, paths, Mode.APPLY)[0]
 
     assert outcome.status == Status.NO_SOURCE
 

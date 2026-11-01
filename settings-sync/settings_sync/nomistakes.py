@@ -4,8 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from settings_sync.actions import Outcome, Status
-from settings_sync.sync import sync_yaml
+from settings_sync.actions import Action, Regenerate
+from settings_sync.paths import Paths
 
 
 def merge_yaml(base: dict, overlay: dict) -> dict:
@@ -41,29 +41,18 @@ def _load_yaml(path: Path) -> tuple[dict | None, str | None]:
     return loaded, None
 
 
-def sync_nomistakes_config(target: Path, template: Path, overlay: Path, dry_run: bool = False) -> Outcome:
-    """Merge the tracked template + untracked machine overlay into ~/.no-mistakes/config.yaml.
-
-    The target is fully derived, pi-style: regenerated on every sync with no
-    force gate (force=True at the sync_yaml call site). Hand edits are drift
-    and die on the next sync - machine-only keys belong in the overlay, never
-    in the target. The overlay is optional; the template is the source of
-    truth, so it missing is NO_SOURCE. Either file failing to parse leaves
-    the existing target untouched.
-    """
+def plan_nomistakes_config(paths: Paths) -> list[Action]:
+    template = paths.source_dir / "harnesses/no-mistakes/config.yaml"
     if not template.is_file():
-        return Outcome(target, Status.NO_SOURCE, f"template not found: {template}")
-
+        raise ValueError(f"template not found: {template}")
     base, err = _load_yaml(template)
     if err is not None:
-        return Outcome(target, Status.FAILED, f"invalid template {template}: {err}")
-
+        raise ValueError(f"invalid template {template}: {err}")
     machine: dict = {}
+    overlay = paths.overlay_dir / "no-mistakes.yaml"
     if overlay.is_file():
         machine, err = _load_yaml(overlay)
         if err is not None:
-            return Outcome(target, Status.FAILED, f"invalid overlay {overlay}: {err}")
-
-    merged = merge_yaml(base, machine)
-    content = yaml.safe_dump(merged, sort_keys=False)
-    return sync_yaml(target, content, force=True, dry_run=dry_run)
+            raise ValueError(f"invalid overlay {overlay}: {err}")
+    content = yaml.safe_dump(merge_yaml(base, machine), sort_keys=False)
+    return [Regenerate(path=paths.target("nomistakes") / "config.yaml", content=content)]

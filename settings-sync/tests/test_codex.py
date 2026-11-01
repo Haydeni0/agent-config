@@ -6,9 +6,12 @@ import pytest
 from typer.testing import CliRunner
 
 import settings_sync.codex as codex
+from settings_sync.actions import Mode, Status
 from settings_sync.cli import agent_config_app
-from settings_sync.codex import sync_codex_config
-from settings_sync.actions import Status
+from settings_sync.codex import plan_codex_config
+from settings_sync.executor import execute
+from settings_sync.ownership import OwnershipStore
+from settings_sync.paths import resolve_paths
 
 CONFIG_TEMPLATE = '[features]\nhooks = true\n'
 
@@ -16,7 +19,7 @@ CONFIG_TEMPLATE = '[features]\nhooks = true\n'
 @pytest.fixture
 def codex_template(tmp_path: pathlib.Path) -> pathlib.Path:
     """A config template at <claude>/codex/config.toml."""
-    template = tmp_path / "claude" / "codex" / "config.toml"
+    template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
     template.parent.mkdir(parents=True)
     template.write_text(CONFIG_TEMPLATE)
     return template
@@ -37,68 +40,92 @@ def codex_home(tmp_path: pathlib.Path) -> pathlib.Path:
     return home
 
 
+
+
+def _codex_paths(tmp_path: pathlib.Path):
+    return resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+
+
+def _apply_config(paths, mode: Mode):
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan_codex_config(paths), mode, store)
+
+
 runner = CliRunner()
 
 
-# ---- sync_codex_config (managed defaults) ----
+# ---- plan_codex_config ----
 
 
 def test_codex_config_creates_from_template(tmp_path: pathlib.Path, codex_template: pathlib.Path):
-    target = tmp_path / "codex" / "config.toml"
+    paths = _codex_paths(tmp_path)
+    target = paths.codex_dir / "config.toml"
 
-    outcome = sync_codex_config(target, codex_template)
+    outcomes = _apply_config(paths, Mode.APPLY)
+    outcome = next(o for o in outcomes if o.path == target)
 
-    assert outcome.status == Status.CREATED
+    assert outcome.status == Status.MERGED
     assert target.read_text() == CONFIG_TEMPLATE
 
 
 def test_codex_config_updates_managed_keys(tmp_path: pathlib.Path, codex_template: pathlib.Path):
-    target = tmp_path / "codex" / "config.toml"
+    paths = _codex_paths(tmp_path)
+    target = paths.codex_dir / "config.toml"
     target.parent.mkdir(parents=True)
     target.write_text('[features]\nhooks = false\n')
 
-    outcome = sync_codex_config(target, codex_template)
+    outcomes = _apply_config(paths, Mode.APPLY)
+    outcome = next(o for o in outcomes if o.path == target)
 
-    assert outcome.status == Status.REPLACED
+    assert outcome.status == Status.MERGED
     assert target.read_text() == CONFIG_TEMPLATE
 
 
 def test_codex_config_dry_run_preserves_config(tmp_path: pathlib.Path, codex_template: pathlib.Path):
-    target = tmp_path / "codex" / "config.toml"
+    paths = _codex_paths(tmp_path)
+    target = paths.codex_dir / "config.toml"
     target.parent.mkdir(parents=True)
     target.write_text('[features]\nhooks = false\n')
 
-    outcome = sync_codex_config(target, codex_template, dry_run=True)
+    outcomes = _apply_config(paths, Mode.DRY_RUN)
+    outcome = next(o for o in outcomes if o.path == target)
 
-    assert outcome.status == Status.WOULD_REPLACE
+    assert outcome.status == Status.WOULD_MERGE
     assert target.read_text() == '[features]\nhooks = false\n'
 
 
 def test_codex_config_unchanged_when_identical(tmp_path: pathlib.Path, codex_template: pathlib.Path):
-    target = tmp_path / "codex" / "config.toml"
+    paths = _codex_paths(tmp_path)
+    target = paths.codex_dir / "config.toml"
     target.parent.mkdir(parents=True)
     target.write_text(CONFIG_TEMPLATE)
 
-    outcome = sync_codex_config(target, codex_template)
+    outcomes = _apply_config(paths, Mode.APPLY)
+    outcome = next(o for o in outcomes if o.path == target)
 
     assert outcome.status == Status.UNCHANGED
 
 
-@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.CREATED)])
+@pytest.mark.parametrize("dry_status", [(True, Status.WOULD_CREATE), (False, Status.MERGED)])
 def test_codex_config_dry_run_creates_nothing(tmp_path: pathlib.Path, codex_template: pathlib.Path, dry_status: tuple[bool, Status]):
     dry_run, expected = dry_status
-    target = tmp_path / "codex" / "config.toml"
+    paths = _codex_paths(tmp_path)
+    target = paths.codex_dir / "config.toml"
 
-    outcome = sync_codex_config(target, codex_template, dry_run=dry_run)
+    outcomes = _apply_config(paths, Mode.DRY_RUN if dry_run else Mode.APPLY)
+    outcome = next(o for o in outcomes if o.path == target)
 
     assert outcome.status == expected
     assert (not target.exists()) if dry_run else target.exists()
 
 
 def test_codex_config_no_source_when_template_missing(tmp_path: pathlib.Path):
-    outcome = sync_codex_config(tmp_path / "codex" / "config.toml", tmp_path / "missing" / "config.toml")
+    (tmp_path / "claude").mkdir(parents=True)
+    paths = _codex_paths(tmp_path)
 
-    assert outcome.status == Status.NO_SOURCE
+    with pytest.raises(OSError):
+        plan_codex_config(paths)
 
 
 def write_sqlite_template(path: pathlib.Path, sqlite_home: pathlib.Path) -> None:
@@ -106,34 +133,43 @@ def write_sqlite_template(path: pathlib.Path, sqlite_home: pathlib.Path) -> None
 
 
 def test_codex_sqlite_home_creates_private_directory(tmp_path: pathlib.Path):
-    template = tmp_path / "config.toml"
+    template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
+    template.parent.mkdir(parents=True)
     sqlite_home = tmp_path / "runtime" / "codex-sqlite"
     write_sqlite_template(template, sqlite_home)
+    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
-    outcome = codex.sync_codex_sqlite_home(template)
+    outcomes = _apply_config(paths, Mode.APPLY)
+    outcome = next(o for o in outcomes if o.path == sqlite_home)
 
     assert outcome.status == Status.CREATED
     assert stat.S_IMODE(sqlite_home.stat().st_mode) == 0o700
 
 
 def test_codex_sqlite_home_repairs_permissions(tmp_path: pathlib.Path):
-    template = tmp_path / "config.toml"
+    template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
+    template.parent.mkdir(parents=True)
     sqlite_home = tmp_path / "codex-sqlite"
     sqlite_home.mkdir(mode=0o755)
     write_sqlite_template(template, sqlite_home)
+    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
-    outcome = codex.sync_codex_sqlite_home(template)
+    outcomes = _apply_config(paths, Mode.APPLY)
+    outcome = next(o for o in outcomes if o.path == sqlite_home)
 
     assert outcome.status == Status.REPLACED
     assert stat.S_IMODE(sqlite_home.stat().st_mode) == 0o700
 
 
 def test_codex_sqlite_home_dry_run_creates_nothing(tmp_path: pathlib.Path):
-    template = tmp_path / "config.toml"
+    template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
+    template.parent.mkdir(parents=True)
     sqlite_home = tmp_path / "codex-sqlite"
     write_sqlite_template(template, sqlite_home)
+    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
-    outcome = codex.sync_codex_sqlite_home(template, dry_run=True)
+    outcomes = _apply_config(paths, Mode.DRY_RUN)
+    outcome = next(o for o in outcomes if o.path == sqlite_home)
 
     assert outcome.status == Status.WOULD_CREATE
     assert not sqlite_home.exists()
@@ -141,26 +177,30 @@ def test_codex_sqlite_home_dry_run_creates_nothing(tmp_path: pathlib.Path):
 
 def test_codex_sqlite_home_rejects_relative_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
-    template = tmp_path / "config.toml"
+    template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
+    template.parent.mkdir(parents=True)
     template.write_text('sqlite_home = "relative/codex-sqlite"\n')
+    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
-    outcome = codex.sync_codex_sqlite_home(template)
+    with pytest.raises(ValueError):
+        plan_codex_config(paths)
 
-    assert outcome.status == Status.FAILED
     assert not (tmp_path / "relative").exists()
 
 
 def test_codex_sqlite_home_rejects_symlink(tmp_path: pathlib.Path):
-    template = tmp_path / "config.toml"
+    template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
+    template.parent.mkdir(parents=True)
     real_directory = tmp_path / "real"
     real_directory.mkdir(mode=0o755)
     sqlite_home = tmp_path / "codex-sqlite"
     sqlite_home.symlink_to(real_directory, target_is_directory=True)
     write_sqlite_template(template, sqlite_home)
+    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
-    outcome = codex.sync_codex_sqlite_home(template)
+    with pytest.raises(ValueError):
+        plan_codex_config(paths)
 
-    assert outcome.status == Status.FAILED
     assert stat.S_IMODE(real_directory.stat().st_mode) == 0o755
 
 

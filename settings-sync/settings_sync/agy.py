@@ -3,44 +3,9 @@
 import json
 from pathlib import Path
 
-from settings_sync.actions import Action, MergedConfig, Outcome, Status
-from settings_sync.merging import JsonCodec, sync_json_defaults
-from settings_sync.ownership import prune_generated, sync_generated_symlink
+from settings_sync.actions import Action, MergedConfig, Prune, Symlink
+from settings_sync.merging import JsonCodec
 from settings_sync.paths import Paths
-
-
-def sync_agy_settings(
-    target: Path,
-    source: Path,
-    force: bool = False,
-    dry_run: bool = False,
-) -> Outcome:
-    """Merge shared Gemini settings into the native settings file."""
-    if not source.is_file():
-        return Outcome(target, Status.NO_SOURCE, f"settings source not found: {source}")
-    return sync_json_defaults(target, source.read_text(), dry_run=dry_run)
-
-
-def sync_agy_skills(
-    target_dir: Path,
-    source_dir: Path,
-    force: bool = False,
-    dry_run: bool = False,
-) -> list[Outcome]:
-    """Symlink each skill in source_dir into target_dir and remove orphans."""
-    if not source_dir.is_dir():
-        return [Outcome(target_dir, Status.NO_SOURCE, f"source dir not found: {source_dir}")]
-    outcomes: list[Outcome] = []
-    if not dry_run:
-        target_dir.mkdir(parents=True, exist_ok=True)
-    source_names: set[str] = set()
-    for source_sub in sorted(source_dir.iterdir(), key=lambda p: p.name):
-        if not source_sub.is_dir():
-            continue
-        source_names.add(source_sub.name)
-        outcomes.append(sync_generated_symlink(target_dir / source_sub.name, source_sub, force=force, dry_run=dry_run))
-    outcomes.extend(prune_generated(target_dir, source_names, dry_run))
-    return outcomes
 
 
 
@@ -48,3 +13,12 @@ def plan_agy_settings(paths: Paths) -> list[Action]:
     source = paths.source_dir / "harnesses/gemini/settings.json"
     return [MergedConfig(path=(paths.agy_cli_dir or paths.target("agy")) / "settings.json",
                          codec=JsonCodec(), keys=json.loads(source.read_text()))]
+
+
+def plan_agy_skills(paths: Paths) -> list[Action]:
+    source_dir = paths.source_dir / "skills"
+    target_dir = paths.target("agy") / "skills"
+    skills = sorted((entry for entry in source_dir.iterdir() if entry.is_dir()), key=lambda p: p.name)
+    actions = [Symlink(target_dir / skill.name, skill) for skill in skills]
+    actions.append(Prune(target_dir, frozenset(skill.name for skill in skills)))
+    return actions

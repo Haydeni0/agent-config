@@ -1,22 +1,35 @@
 from conftest import install_hook_sources
 import os
 import pathlib
+
+import pytest
 from typer.testing import CliRunner
 
-from settings_sync.agy import sync_agy_settings, sync_agy_skills
+from settings_sync.actions import Mode, Status
+from settings_sync.agy import plan_agy_settings, plan_agy_skills
 from settings_sync.cli import Paths, agent_config_app
-from settings_sync.actions import Status
+from settings_sync.executor import execute
+from settings_sync.ownership import OwnershipStore
+from settings_sync.paths import resolve_paths
 
+
+
+
+def _apply(plan, paths, mode: Mode):
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan(paths), mode, store)
 
 def test_sync_agy_settings(tmp_path: pathlib.Path):
-    source = tmp_path / "gemini" / "settings.json"
+    source = tmp_path / "claude" / "harnesses" / "gemini" / "settings.json"
     source.parent.mkdir(parents=True)
     source.write_text('{"model": "gemini-3.7-flash"}\n')
-    target = tmp_path / "antigravity-cli" / "settings.json"
+    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config", agy_cli_dir=tmp_path / "antigravity-cli")
+    target = paths.agy_cli_dir / "settings.json"
 
-    outcome = sync_agy_settings(target, source)
+    outcome = _apply(plan_agy_settings, paths, Mode.APPLY)[0]
 
-    assert outcome.status == Status.CREATED
+    assert outcome.status == Status.MERGED
     assert target.is_file()
     assert '"model": "gemini-3.7-flash"' in target.read_text()
 
@@ -28,15 +41,16 @@ def test_sync_agy_skills_symlinks(tmp_path: pathlib.Path):
     (source_dir / "pytest").mkdir(parents=True)
     (source_dir / "pytest" / "SKILL.md").write_text("---\nname: pytest\ndescription: d\n---\nBody\n")
 
-    target_dir = tmp_path / "gemini" / "skills"
+    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
+    target_dir = paths.agy_dir / "skills"
 
-    outcomes = sync_agy_skills(target_dir, source_dir)
+    outcomes = _apply(plan_agy_skills, paths, Mode.APPLY)
 
-    assert len(outcomes) == 2
-    assert all(o.status == Status.CREATED for o in outcomes)
+    created = [o for o in outcomes if o.status == Status.CREATED]
+    assert len(created) == 2
     assert (target_dir / "uv").is_symlink()
     assert (target_dir / "pytest").is_symlink()
-    assert os.readlink(target_dir / "uv") == "../../claude/skills/uv"
+    assert os.readlink(target_dir / "uv") == "../../../claude/skills/uv"
 
 
 def test_sync_agy_skills_orphan_handling(tmp_path: pathlib.Path):
@@ -44,13 +58,14 @@ def test_sync_agy_skills_orphan_handling(tmp_path: pathlib.Path):
     (source_dir / "uv").mkdir(parents=True)
     (source_dir / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody\n")
 
-    target_dir = tmp_path / "gemini" / "skills"
+    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
+    target_dir = paths.agy_dir / "skills"
     target_dir.mkdir(parents=True)
     # create orphan
     (target_dir / "old-skill").mkdir(parents=True)
 
-    for force in (False, True):
-        outcomes = sync_agy_skills(target_dir, source_dir, force=force)
+    for mode in (Mode.APPLY, Mode.FORCE):
+        outcomes = _apply(plan_agy_skills, paths, mode)
         assert all(o.path.name != "old-skill" for o in outcomes)
         assert (target_dir / "old-skill").is_dir()
         assert (target_dir / "uv").is_symlink()
@@ -62,35 +77,38 @@ def test_sync_agy_skills_dry_run_does_not_create_dir(tmp_path: pathlib.Path):
     (source_dir / "uv").mkdir(parents=True)
     (source_dir / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody\n")
 
-    target_dir = tmp_path / "gemini" / "skills"
+    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
+    target_dir = paths.agy_dir / "skills"
 
-    outcomes = sync_agy_skills(target_dir, source_dir, dry_run=True)
+    outcomes = _apply(plan_agy_skills, paths, Mode.DRY_RUN)
     assert not target_dir.exists()
-    assert len(outcomes) == 1
-    assert outcomes[0].status == Status.WOULD_CREATE
+    uv = [o for o in outcomes if o.path.name == "uv"][0]
+    assert uv.status == Status.WOULD_CREATE
 
 
 def test_sync_agy_skills_missing_source_dir(tmp_path: pathlib.Path):
-    source_dir = tmp_path / "nonexistent"
-    target_dir = tmp_path / "dst"
+    (tmp_path / "claude").mkdir(parents=True)
+    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "dst")
+    target_dir = paths.agy_dir / "skills"
     target_dir.mkdir(parents=True)
     (target_dir / "existing-file").write_text("keep me")
-    outcomes = sync_agy_skills(target_dir, source_dir, force=True)
-    assert len(outcomes) == 1
-    assert outcomes[0].status == Status.NO_SOURCE
+    with pytest.raises(OSError):
+        plan_agy_skills(paths)
     assert (target_dir / "existing-file").exists()
 
 
 def test_sync_agy_skills_prunes_orphans(tmp_path: pathlib.Path):
-    source_dir = tmp_path / "src"
+    source = tmp_path / "claude"
+    source_dir = source / "skills"
     (source_dir / "skill-a").mkdir(parents=True)
     (source_dir / "skill-b").mkdir(parents=True)
-    target_dir = tmp_path / "dst"
+    paths = resolve_paths(claude_dir=source, agy_dir=tmp_path / "dst")
+    target_dir = paths.agy_dir / "skills"
     target_dir.mkdir(parents=True)
     (target_dir / "orphan-skill").mkdir(parents=True)
-    sync_agy_skills(target_dir, source_dir)
+    _apply(plan_agy_skills, paths, Mode.APPLY)
     (source_dir / "skill-a").rmdir()
-    outcomes = sync_agy_skills(target_dir, source_dir, force=True)
+    outcomes = _apply(plan_agy_skills, paths, Mode.FORCE)
     assert (target_dir / "orphan-skill").is_dir()
     assert not (target_dir / "skill-a").is_symlink()
     assert (target_dir / "skill-b").is_symlink()

@@ -59,7 +59,7 @@ def test_defaults_drift_leaves_target_unchanged(tmp_path: Path, defaults_source:
     result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), *command])
 
     assert result.exit_code == 1, result.output
-    assert "would_replace" in result.output
+    assert "would_merge" in result.output
     assert config.read_text() == original
 
 
@@ -119,7 +119,11 @@ def test_codex_sync_accepts_native_nested_skills(tmp_path: Path, defaults_source
 
 
 def test_codex_template_includes_codegraph_mcp(tmp_path: Path, defaults_source: Path):
-    from settings_sync.codex import sync_codex_config
+    from settings_sync.actions import Mode
+    from settings_sync.codex import plan_codex_config
+    from settings_sync.executor import execute
+    from settings_sync.ownership import OwnershipStore
+    from settings_sync.paths import resolve_paths
 
     (defaults_source / "harnesses/codex/config.toml").write_text(
         'model = "m"\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve", "--mcp"]\n'
@@ -127,7 +131,10 @@ def test_codex_template_includes_codegraph_mcp(tmp_path: Path, defaults_source: 
     target = tmp_path / "codex/config.toml"
     target.parent.mkdir(parents=True)
     target.write_text('model = "local"\n')
-    sync_codex_config(target, defaults_source / "harnesses/codex/config.toml", dry_run=False)
+    paths = resolve_paths(claude_dir=defaults_source, codex_dir=tmp_path / "codex")
+    store = OwnershipStore()
+    store.load(Mode.APPLY)
+    execute(plan_codex_config(paths), Mode.APPLY, store)
     text = target.read_text()
     # Declared scalars replace (REQ-SYNC-04): template model wins, local keys absent from the template stay.
     assert 'model = "m"' in text
