@@ -11,7 +11,7 @@ from settings_sync.registry import Harness, run_all_tools, run_harness, select_h
 from settings_sync.actions import Outcome, Status
 
 
-_FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE}
+_FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE, Status.WOULD_MERGE}
 
 
 def exit_code(sync_outcomes: list[Outcome]) -> int:
