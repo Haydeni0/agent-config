@@ -25,6 +25,10 @@ Rules:
 
 ## Learnings
 
+### 2026-11-01 - monkeypatch.undo() mid-test reverts the autouse isolation fixtures too: a planned test synced into the real ~/.claude
+
+The cycle D plan's S5/S6/S8 tests called `monkeypatch.undo()` to restore `_REPO_ALIASES` between two syncs. The autouse `isolated_home` and `stub_codegraph_download` fixtures in `settings-sync/tests/conftest.py` set HOME/XDG env through the same function-scoped monkeypatch instance, so undo() also reverted the isolation: the tests' second `agent-config sync claude` ran against the REAL home with `--source <pytest tmp>`. Damage: installed settings.json hooks emptied and `model` clobbered to "shared", CLAUDE.md regenerated pointing at the tmp source, nine alias links repointed at tmp, `~/.claude/custom` pruned, all per-skill/command/agent links pruned, ownership store polluted. Recovered by restoring `settings.json` and `managed.json` from the executor's pre-replace backups under `~/.local/state/agent-config/backups/`, removing the two unmanaged tmp links, then `agent-config sync claude` (+ `--force` for the differing CLAUDE.md and alias links, all incident damage) - final `agent-config check claude` clean. Fix in commit ba41840: tests restore the alias table with a second `monkeypatch.setattr` against a module-level `_NEW_ALIASES` capture; never call `monkeypatch.undo()` mid-test in this suite. Rule for test authors: mid-test state restore must use a scoped re-setattr, because fixture env isolation rides the same monkeypatch instance.
+
 ### 2026-10-06 - WorktreeRemove never fires for hook-created git worktrees; agent worktrees leak without manual `wt remove`
 
 Claude Code 2.1.291 (latest at the time) does not fire `WorktreeRemove` for git worktrees a `WorktreeCreate` hook created - the event only reaches non-git worktrees. Upstream bug anthropics/claude-code#74708, closed stale, never fixed. The Claude harness wt wiring (REQ-HOOKS-06, commit 2a77ded) relies on that event to `wt remove` agent worktrees, so every worktree-isolated subagent and headless `claude -w` session leaves its worktree AND branch behind.
