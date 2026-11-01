@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from settings_sync.cli import agent_config_app
 from settings_sync.actions import Status
+from settings_sync.registry import HARNESSES
 
 
 @pytest.mark.parametrize("override", ["HOME", "CODEX_HOME"])
@@ -122,7 +123,7 @@ def test_resolve_paths_honors_claude_config_dir(tmp_path: Path, monkeypatch: pyt
     source.mkdir()
     profile = tmp_path / "profile"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(profile))
-    paths = resolve_paths(claude_dir=source)
+    paths = resolve_paths(HARNESSES, claude_dir=source)
     assert paths.claude_home == profile.expanduser().absolute()
 
 
@@ -132,7 +133,7 @@ def test_resolve_paths_honors_pi_coding_agent_dir(tmp_path: Path, monkeypatch: p
     source.mkdir()
     target = tmp_path / "pi-home"
     monkeypatch.setenv("PI_CODING_AGENT_DIR", str(target))
-    paths = resolve_paths(claude_dir=source)
+    paths = resolve_paths(HARNESSES, claude_dir=source)
     assert paths.pi_dir == target.expanduser().absolute()
 
 
@@ -142,9 +143,9 @@ def test_resolve_paths_codegraph_dir_flag_and_default(tmp_path: Path, monkeypatc
     source.mkdir()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     (tmp_path / "home").mkdir()
-    paths = resolve_paths(claude_dir=source, codegraph_dir=tmp_path / "cg")
+    paths = resolve_paths(HARNESSES, claude_dir=source, codegraph_dir=tmp_path / "cg")
     assert paths.codegraph_dir == tmp_path / "cg"
-    paths = resolve_paths(claude_dir=source)
+    paths = resolve_paths(HARNESSES, claude_dir=source)
     assert paths.codegraph_dir == (tmp_path / "home" / ".codegraph").expanduser().absolute()
 
 
@@ -156,7 +157,7 @@ def test_resolve_paths_fills_engine_destinations(tmp_path: Path, monkeypatch: py
     (tmp_path / "home").mkdir()
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)  # BEFORE any Paths construction: resolution reads it
-    paths = resolve_paths(claude_dir=source)
+    paths = resolve_paths(HARNESSES, claude_dir=source)
     assert paths.home == tmp_path / "home"
     assert paths.shared_skills == tmp_path / "home" / ".agents" / "skills"
     assert paths.goose_plugin_dir == tmp_path / "home" / ".agents" / "plugins" / "agent-config-goose"
@@ -164,7 +165,7 @@ def test_resolve_paths_fills_engine_destinations(tmp_path: Path, monkeypatch: py
     assert paths.overlay_dir == tmp_path / "home" / ".config" / "agent-config" / "overlays"
     assert paths.claude_mcp_json == (tmp_path / "home" / ".claude").parent / ".claude.json"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "profile"))
-    paths = resolve_paths(claude_dir=source)
+    paths = resolve_paths(HARNESSES, claude_dir=source)
     assert paths.claude_mcp_json == tmp_path / "profile" / ".claude.json"
 
 
@@ -174,7 +175,7 @@ def test_no_adapter_rereads_home_after_resolution(source_home: Path, isolated_ho
     from settings_sync.registry import HARNESSES
     from settings_sync.paths import resolve_paths
 
-    paths = resolve_paths(claude_dir=source_home, claude_home=isolated_home / ".claude")
+    paths = resolve_paths(HARNESSES, claude_dir=source_home, claude_home=isolated_home / ".claude")
     other = isolated_home.parent / "switched-home"
     monkeypatch.setenv("HOME", str(other))
     original_home = isolated_home

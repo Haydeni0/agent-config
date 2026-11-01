@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.actions import Mode, Regenerate, Status
+from settings_sync.registry import HARNESSES
 from settings_sync.cli import agent_config_app
 from settings_sync.executor import execute
 from settings_sync.nomistakes import merge_yaml, plan_nomistakes_config
@@ -86,7 +87,7 @@ def test_merge_yaml_empty_template_with_overlay():
 # ---- plan_nomistakes_config ----
 
 def _nm_paths(tmp_path: pathlib.Path) -> object:
-    return resolve_paths(claude_dir=tmp_path / "claude", nomistakes_dir=tmp_path / "no-mistakes")
+    return resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", nomistakes_dir=tmp_path / "no-mistakes")
 
 
 def _apply_nomistakes(paths, mode: Mode):

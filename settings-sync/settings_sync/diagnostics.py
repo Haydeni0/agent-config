@@ -19,7 +19,7 @@ def doctor(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Outcome]:
         host = shutil.which(harness.host)
         outcomes.append(Outcome(target, Status.UNCHANGED if host else Status.NO_SOURCE,
                                 f"host CLI: {host}" if host else f"optional host CLI unavailable: {harness.host}; config generation is available"))
-        if harness.name in ("claude", "codex", "goose", "agy"):
+        if harness.node_required:
             node = shutil.which("node")
             outcomes.append(Outcome(target, Status.UNCHANGED if node else Status.FAILED,
                                     f"hook runtime: {node}; native loading/trust requires a host smoke test" if node

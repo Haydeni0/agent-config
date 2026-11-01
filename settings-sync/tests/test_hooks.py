@@ -32,9 +32,11 @@ def apply_hook_config(target: Path, desired: dict, mode: Mode, hook_key: str = "
 
 
 def _apply_hooks(paths: Paths, harness: str, mode: Mode = Mode.APPLY) -> list[Outcome]:
+    from settings_sync.registry import select_harnesses
+    spec = select_harnesses(harness)[0].hooks
     store = OwnershipStore()
     store.load(mode)
-    return execute(plan_command_hooks(paths, harness), mode, store)
+    return execute(plan_command_hooks(paths, harness, spec), mode, store)
 
 
 def test_claude_preserves_foreign_hooks_on_update_and_removal(

@@ -153,7 +153,7 @@ The shared `~/.agents/skills` link points directly to the source checkout's `ski
 
 ## Adding a harness
 
-Add its adapter and one `Harness` declaration in `settings_sync/registry.py`, including ordered steps, required sources, destination, and host CLI. CLI selection, all-target runs, and diagnostics consume that declaration. Optional integration inputs belong outside required sources. Opencode skill lint runs as opencode's own `skills` step, so every opencode sync and `doctor opencode` reports findings; config sync remains independent.
+Add its adapter module plus one `Harness` declaration in `settings_sync/registry.py`: destinations (flag, env, default), host CLI, ordered `Step` plans with required sources, `HookSpec` when it installs command hooks, `node_required`, `BootstrapSpec` (installer, host-check, or explicit), and its `~/.claude` alias. CLI options, all-runs, `check`, `doctor`, Claude alias links, and bootstrap selection consume the declaration with no further registration. Optional integration inputs belong outside required sources. Opencode skill lint runs as opencode's own `skills` step, so every opencode sync and `doctor opencode` reports findings; config sync remains independent.
 
 ## Agent frontmatter transform (opencode only)
 

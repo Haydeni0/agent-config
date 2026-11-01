@@ -1,6 +1,10 @@
 """Deploy shared sources into native harness homes; inspect drift and bootstrap dependencies."""
 
 import difflib
+import inspect
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -9,9 +13,8 @@ import typer
 from settings_sync.paths import Paths, resolve_paths
 from settings_sync.actions import Mode
 from settings_sync.executor import run as run_engine
-from settings_sync.registry import Harness, select_harnesses
+from settings_sync.registry import HARNESSES, Harness, select_harnesses
 from settings_sync.actions import Outcome, Status
-
 
 _FAILURE_STATES = {Status.SKIPPED, Status.FAILED, Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE, Status.WOULD_MERGE}
 
@@ -61,31 +64,6 @@ def _ctx_flags(ctx: typer.Context) -> tuple[bool, bool, bool, bool]:
     return obj["force"], obj["dry_run"], obj["check"], obj["verbose"]
 
 
-def callback(
-    ctx: typer.Context,
-    force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
-    check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
-    claude_dir: Path | None = typer.Option(None, "--source", "--claude-dir", help="Shared configuration source directory."),
-    opencode_dir: Path | None = typer.Option(None, "--opencode-dir", help="Target opencode directory."),
-    pi_dir: Path | None = typer.Option(None, "--pi-dir", help="Target ~/.pi/agent directory."),
-    goose_dir: Path | None = typer.Option(None, "--goose-dir", help="Target goose directory."),
-    agy_dir: Path | None = typer.Option(None, "--agy-dir", help="Target ~/.gemini/config directory."),
-    agy_cli_dir: Path | None = typer.Option(None, "--agy-cli-dir", help="Target ~/.gemini/antigravity-cli directory."),
-    nomistakes_dir: Path | None = typer.Option(None, "--nomistakes-dir", help="Target ~/.no-mistakes directory."),
-    codex_dir: Path | None = typer.Option(None, "--codex-dir", help="Target CODEX_HOME directory."),
-    claude_home: Path | None = typer.Option(None, "--claude-home", help="Claude runtime destination."),
-    codegraph_dir: Path | None = typer.Option(None, "--codegraph-dir", help="Target ~/.codegraph directory."),
-) -> None:
-    """Deploy shared configuration from the selected source checkout into native harness homes."""
-    try:
-        paths = resolve_paths(claude_dir, opencode_dir, pi_dir, goose_dir, agy_dir, agy_cli_dir, nomistakes_dir, codex_dir, claude_home, codegraph_dir)
-    except (OSError, ValueError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    ctx.obj = {"paths": paths, "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
-
-
 def _update_ctx_flags(
     ctx: typer.Context,
     force: bool = False,
@@ -105,80 +83,119 @@ def _update_ctx_flags(
         ctx.obj["verbose"] = True
 
 
-agent_config_app = typer.Typer(add_completion=False, no_args_is_help=True, help="Manage shared agent configuration.")
-agent_config_app.callback()(callback)
+def build_app(harnesses: tuple[Harness, ...]) -> typer.Typer:
+    """Build the agent-config CLI from the harness declarations."""
+    app = typer.Typer(add_completion=False, no_args_is_help=True, help="Manage shared agent configuration.")
+
+    def selection(name: str | None) -> tuple[Harness, ...]:
+        try:
+            return select_harnesses(name, harnesses)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+    def callback(
+        ctx: typer.Context,
+        force: bool = typer.Option(False, "--force", help="Clobber conflicting managed paths."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without writing."),
+        check: bool = typer.Option(False, "--check", help="Exit nonzero if drift detected (writes nothing)."),
+        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show diffs for changed text artifacts."),
+        claude_dir: Path | None = typer.Option(None, "--source", "--claude-dir", help="Shared configuration source directory."),
+        **destinations: Path | None,
+    ) -> None:
+        """Deploy shared configuration from the selected source checkout into native harness homes."""
+        try:
+            paths = resolve_paths(harnesses, claude_dir, **{key: value for key, value in destinations.items() if value is not None})
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        ctx.obj = {"paths": paths, "force": force, "dry_run": dry_run, "check": check, "verbose": verbose}
+
+    base = inspect.signature(callback)
+    parameters = [p for p in base.parameters.values() if p.kind is not inspect.Parameter.VAR_KEYWORD]
+    seen = {"ctx", "force", "dry_run", "check", "verbose", "claude_dir"}
+    for harness in harnesses:
+        for dest in harness.destinations:
+            if dest.attr in seen:
+                continue
+            seen.add(dest.attr)
+            parameters.append(inspect.Parameter(
+                dest.attr, inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=typer.Option(None, dest.option, help=f"Target {harness.name} directory."),
+            ))
+    callback.__signature__ = base.replace(parameters=parameters)
+    app.callback()(callback)
+
+    @app.command("sync")
+    def sync_command(
+        ctx: typer.Context,
+        harness: str | None = typer.Argument(None),
+        step: str | None = typer.Argument(None),
+        force: bool = typer.Option(False, "--force"),
+        dry_run: bool = typer.Option(False, "--dry-run"),
+        verbose: bool = typer.Option(False, "--verbose", "-v"),
+    ) -> None:
+        _update_ctx_flags(ctx, force=force, dry_run=dry_run, verbose=verbose)
+        paths = _ctx_paths(ctx)
+        selected_force, selected_dry, check, selected_verbose = _ctx_flags(ctx)
+        try:
+            mode = Mode.DRY_RUN if (selected_dry or check) else (Mode.FORCE if selected_force else Mode.APPLY)
+            outcomes = run_engine(selection(harness), paths, mode, (step,) if step else None)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        report(outcomes, [], selected_verbose)
+        raise typer.Exit(exit_code(outcomes))
+
+    @app.command("check")
+    def check_command(ctx: typer.Context, harness: str | None = typer.Argument(None), step: str | None = typer.Argument(None)) -> None:
+        _update_ctx_flags(ctx, check=True)
+        sync_command(ctx, harness, step, False, False, False)
+
+    @app.command("doctor")
+    def doctor_command(ctx: typer.Context, harness: str | None = typer.Argument(None)) -> None:
+        from settings_sync.diagnostics import doctor
+        outcomes = doctor(_ctx_paths(ctx), selection(harness))
+        report(outcomes, [], verbose=False)
+        # Show effective paths even when all outputs are current.
+        paths = _ctx_paths(ctx)
+        typer.echo(f"Source: {paths.source_dir}")
+        for selected in selection(harness):
+            typer.echo(f"{selected.name}: {selected.destination(paths)}; instructions: {paths.source_dir / 'rules/global.md'}")
+        raise typer.Exit(exit_code(outcomes))
+
+    @app.command("bootstrap")
+    def bootstrap_command(ctx: typer.Context, harness: str | None = typer.Argument(None), dry_run: bool = typer.Option(False, "--dry-run")) -> None:
+        paths = _ctx_paths(ctx)
+        force, global_dry, check, verbose = _ctx_flags(ctx)
+        selected = selection(harness)
+        if harness is None:
+            # Bare bootstrap installs only PATH-present installer and host-check
+            # harnesses; explicit harnesses (no-mistakes) are never auto-selected.
+            selected = tuple(item for item in selected
+                             if item.bootstrap.mode in ("installer", "host-check") and shutil.which(item.host))
+        env_pairs = {env: str(getattr(paths, attr)) for h in harnesses for env, attr in h.bootstrap.env}
+        failures = 0
+        for item in selected:
+            if item.bootstrap.mode == "host-check" and not shutil.which(item.host):
+                typer.echo(f"Bootstrap {item.name}: host CLI {item.host!r} not found on PATH")
+                failures |= 1
+                continue
+            typer.echo(f"Bootstrap {item.name}: {paths.source_dir / 'scripts/bootstrap.sh'}")
+            if dry_run or global_dry or check:
+                continue
+            outcomes = run_engine((item,), paths, Mode.FORCE if force else Mode.APPLY)
+            report(outcomes, [], False)
+            failures |= exit_code(outcomes)
+            if item.bootstrap.mode == "host-check":
+                continue
+            result = subprocess.run(["bash", str(paths.source_dir / "scripts/bootstrap.sh"), str(paths.source_dir), item.name],
+                                    env={**os.environ, **env_pairs}, check=False)
+            failures |= int(result.returncode != 0)
+        raise typer.Exit(failures)
+
+    return app
 
 
-def _selection(name: str | None) -> tuple[Harness, ...]:
-    try:
-        return select_harnesses(name)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+agent_config_app = build_app(HARNESSES)
 
-
-@agent_config_app.command("sync")
-def sync_command(
-    ctx: typer.Context,
-    harness: str | None = typer.Argument(None),
-    step: str | None = typer.Argument(None),
-    force: bool = typer.Option(False, "--force"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
-) -> None:
-    _update_ctx_flags(ctx, force=force, dry_run=dry_run, verbose=verbose)
-    paths = _ctx_paths(ctx)
-    selected_force, selected_dry, check, selected_verbose = _ctx_flags(ctx)
-    try:
-        mode = Mode.DRY_RUN if (selected_dry or check) else (Mode.FORCE if selected_force else Mode.APPLY)
-        outcomes = run_engine(_selection(harness), paths, mode, (step,) if step else None)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    report(outcomes, [], selected_verbose)
-    raise typer.Exit(exit_code(outcomes))
-
-
-@agent_config_app.command("check")
-def check_command(ctx: typer.Context, harness: str | None = typer.Argument(None), step: str | None = typer.Argument(None)) -> None:
-    _update_ctx_flags(ctx, check=True)
-    sync_command(ctx, harness, step, False, False, False)
-
-
-@agent_config_app.command("doctor")
-def doctor_command(ctx: typer.Context, harness: str | None = typer.Argument(None)) -> None:
-    from settings_sync.diagnostics import doctor
-    outcomes = doctor(_ctx_paths(ctx), _selection(harness))
-    report(outcomes, [], verbose=False)
-    # Show effective paths even when all outputs are current.
-    paths = _ctx_paths(ctx)
-    typer.echo(f"Source: {paths.source_dir}")
-    for selected in _selection(harness):
-        typer.echo(f"{selected.name}: {selected.destination(paths)}; instructions: {paths.source_dir / 'rules/global.md'}")
-    raise typer.Exit(exit_code(outcomes))
-
-
-@agent_config_app.command("bootstrap")
-def bootstrap_command(ctx: typer.Context, harness: str | None = typer.Argument(None), dry_run: bool = typer.Option(False, "--dry-run")) -> None:
-    import os
-    import shutil
-    import subprocess
-    paths = _ctx_paths(ctx)
-    force, global_dry, check, verbose = _ctx_flags(ctx)
-    selected = _selection(harness)
-    if harness is None:
-        selected = tuple(item for item in selected if item.name != "no-mistakes" and shutil.which(item.host))
-    failures = 0
-    for item in selected:
-        typer.echo(f"Bootstrap {item.name}: {paths.source_dir / 'scripts/bootstrap.sh'}")
-        if dry_run or global_dry or check:
-            continue
-        outcomes = run_engine((item,), paths, Mode.FORCE if force else Mode.APPLY)
-        report(outcomes, [], False)
-        failures |= exit_code(outcomes)
-        result = subprocess.run(["bash", str(paths.source_dir / "scripts/bootstrap.sh"), str(paths.source_dir), item.name],
-                                env={**os.environ, "OPENCODE_CONFIG_DIR": str(paths.opencode_dir), "AGENT_CONFIG_PI_HOME": str(paths.target("pi")), "AGENT_CONFIG_NOMISTAKES_HOME": str(paths.target("nomistakes"))}, check=False)
-        failures |= int(result.returncode != 0)
-    raise typer.Exit(failures)
 
 def agent_config_main() -> None:
     agent_config_app()
-

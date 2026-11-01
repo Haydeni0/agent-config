@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.actions import Mode, Status
+from settings_sync.registry import HARNESSES
 from settings_sync.cli import agent_config_app
 from settings_sync.executor import execute
 from settings_sync.goose import plan_goose_config, plan_goose_providers
@@ -54,7 +55,7 @@ def goose_home(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _goose_paths(tmp_path: pathlib.Path):
-    return resolve_paths(claude_dir=tmp_path / "claude", goose_dir=tmp_path / "goose")
+    return resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", goose_dir=tmp_path / "goose")
 
 
 def _apply(plan, paths, mode: Mode):

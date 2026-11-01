@@ -1,15 +1,15 @@
 """Resolve shared source and native destinations for each invocation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 import os
 from pathlib import Path
 import tomllib
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class Paths:
     source_dir: Path
-    opencode_dir: Path
+    opencode_dir: Path | None = None
     pi_dir: Path | None = None
     goose_dir: Path | None = None
     agy_dir: Path | None = None
@@ -28,6 +28,8 @@ class Paths:
     def __post_init__(self) -> None:
         if self.home is None:
             object.__setattr__(self, "home", Path.home())
+        if self.opencode_dir is None:
+            object.__setattr__(self, "opencode_dir", config_home() / "opencode")
         if self.claude_home is None:
             object.__setattr__(self, "claude_home", self.home / ".claude")
         if self.shared_skills is None:
@@ -76,31 +78,36 @@ def resolve_source(explicit: Path | None) -> Path:
 
 
 def resolve_paths(
+    harnesses: "tuple[Harness, ...]",
     claude_dir: Path | None = None,
-    opencode_dir: Path | None = None,
-    pi_dir: Path | None = None,
-    goose_dir: Path | None = None,
-    agy_dir: Path | None = None,
-    agy_cli_dir: Path | None = None,
-    nomistakes_dir: Path | None = None,
-    codex_dir: Path | None = None,
-    claude_home: Path | None = None,
-    codegraph_dir: Path | None = None,
+    **destinations: Path | None,
 ) -> Paths:
+    from settings_sync.registry import Harness  # local import keeps the module graph acyclic
+
     home = Path.home()
     config = config_home()
-    claude_profile = os.environ.get("CLAUDE_CONFIG_DIR")
-    pi_agent_dir = os.environ.get("PI_CODING_AGENT_DIR")
-    return Paths(
-        source_dir=resolve_source(claude_dir),
-        home=home,
-        claude_home=(claude_home or (Path(claude_profile) if claude_profile else None) or home / ".claude").expanduser().absolute(),
-        opencode_dir=Path(opencode_dir or os.environ.get("OPENCODE_CONFIG_DIR") or config / "opencode").expanduser().absolute(),
-        pi_dir=(pi_dir or (Path(pi_agent_dir) if pi_agent_dir else None) or home / ".pi" / "agent").expanduser().absolute(),
-        goose_dir=(goose_dir or config / "goose").expanduser().absolute(),
-        agy_dir=(agy_dir or home / ".gemini" / "config").expanduser().absolute(),
-        agy_cli_dir=(agy_cli_dir or home / ".gemini" / "antigravity-cli").expanduser().absolute(),
-        nomistakes_dir=(nomistakes_dir or home / ".no-mistakes").expanduser().absolute(),
-        codex_dir=Path(codex_dir or os.environ.get("CODEX_HOME") or home / ".codex").expanduser().absolute(),
-        codegraph_dir=(codegraph_dir or home / ".codegraph").expanduser().absolute(),
-    )
+    known = {dest.attr for harness in harnesses for dest in harness.destinations}
+    unknown = set(destinations) - known
+    if unknown:
+        raise ValueError(f"unknown destination override: {', '.join(sorted(unknown))}")
+    resolved: dict[str, Path] = {}
+    for harness in harnesses:
+        for dest in harness.destinations:
+            if dest.attr in resolved:
+                continue
+            value = destinations.get(dest.attr)
+            if value is None and dest.env is not None:
+                env_value = os.environ.get(dest.env)
+                if env_value is not None:
+                    value = Path(env_value)
+            if value is None:
+                value = dest.default(home, config)
+            resolved[dest.attr] = Path(value).expanduser().absolute()
+    declared_fields = {f.name for f in fields(Paths)}
+    paths = Paths(source_dir=resolve_source(claude_dir), home=home,
+                  **{attr: value for attr, value in resolved.items() if attr in declared_fields})
+    for attr, value in resolved.items():
+        if attr not in declared_fields:
+            # A test-only or future declaration's destination: attach it dynamically.
+            object.__setattr__(paths, attr, value)
+    return paths

@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.actions import Mode, Status
+from settings_sync.registry import HARNESSES
 from settings_sync.agy import plan_agy_settings, plan_agy_skills
 from settings_sync.cli import Paths, agent_config_app
 from settings_sync.executor import execute
@@ -24,7 +25,7 @@ def test_sync_agy_settings(tmp_path: pathlib.Path):
     source = tmp_path / "claude" / "harnesses" / "gemini" / "settings.json"
     source.parent.mkdir(parents=True)
     source.write_text('{"model": "gemini-3.7-flash"}\n')
-    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config", agy_cli_dir=tmp_path / "antigravity-cli")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config", agy_cli_dir=tmp_path / "antigravity-cli")
     target = paths.agy_cli_dir / "settings.json"
 
     outcome = _apply(plan_agy_settings, paths, Mode.APPLY)[0]
@@ -41,7 +42,7 @@ def test_sync_agy_skills_symlinks(tmp_path: pathlib.Path):
     (source_dir / "pytest").mkdir(parents=True)
     (source_dir / "pytest" / "SKILL.md").write_text("---\nname: pytest\ndescription: d\n---\nBody\n")
 
-    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
     target_dir = paths.agy_dir / "skills"
 
     outcomes = _apply(plan_agy_skills, paths, Mode.APPLY)
@@ -58,7 +59,7 @@ def test_sync_agy_skills_orphan_handling(tmp_path: pathlib.Path):
     (source_dir / "uv").mkdir(parents=True)
     (source_dir / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody\n")
 
-    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
     target_dir = paths.agy_dir / "skills"
     target_dir.mkdir(parents=True)
     # create orphan
@@ -77,7 +78,7 @@ def test_sync_agy_skills_dry_run_does_not_create_dir(tmp_path: pathlib.Path):
     (source_dir / "uv").mkdir(parents=True)
     (source_dir / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody\n")
 
-    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", agy_dir=tmp_path / "gemini" / "config")
     target_dir = paths.agy_dir / "skills"
 
     outcomes = _apply(plan_agy_skills, paths, Mode.DRY_RUN)
@@ -88,7 +89,7 @@ def test_sync_agy_skills_dry_run_does_not_create_dir(tmp_path: pathlib.Path):
 
 def test_sync_agy_skills_missing_source_dir(tmp_path: pathlib.Path):
     (tmp_path / "claude").mkdir(parents=True)
-    paths = resolve_paths(claude_dir=tmp_path / "claude", agy_dir=tmp_path / "dst")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", agy_dir=tmp_path / "dst")
     target_dir = paths.agy_dir / "skills"
     target_dir.mkdir(parents=True)
     (target_dir / "existing-file").write_text("keep me")
@@ -102,7 +103,7 @@ def test_sync_agy_skills_prunes_orphans(tmp_path: pathlib.Path):
     source_dir = source / "skills"
     (source_dir / "skill-a").mkdir(parents=True)
     (source_dir / "skill-b").mkdir(parents=True)
-    paths = resolve_paths(claude_dir=source, agy_dir=tmp_path / "dst")
+    paths = resolve_paths(HARNESSES, claude_dir=source, agy_dir=tmp_path / "dst")
     target_dir = paths.agy_dir / "skills"
     target_dir.mkdir(parents=True)
     (target_dir / "orphan-skill").mkdir(parents=True)

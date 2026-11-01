@@ -100,19 +100,53 @@ def test_bootstrap_passes_effective_destinations(source_home: Path, isolated_hom
     assert not (isolated_home / ".pi").exists()
 
 
-def test_bootstrap_codegraph_arm_requires_cli(source_home: Path, isolated_home: Path):
-    result = subprocess.run(["bash", str(SCRIPT), str(source_home), "codegraph"], capture_output=True, text=True, env={**os.environ, "PATH": "/usr/bin:/bin"})
-    assert result.returncode == 1
-    assert "unknown harness" not in result.stderr
+def test_bare_bootstrap_selects_installed_hosts(source_home: Path, isolated_home: Path, installer_env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """S45/REQ-SYNC-10: bare bootstrap installs PATH-installed installer harnesses only; no-mistakes never; host-check harnesses pass without the installer."""
+    from typer.testing import CliRunner
+    from settings_sync.cli import agent_config_app
+
+    script = source_home / "scripts/bootstrap.sh"
+    script.parent.mkdir()
+    marker = tmp_path / "installed.txt"
+    script.write_text(f"#!/bin/sh\necho \"$2\" >> '{marker}'\n")
+    script.chmod(0o755)
+    for name in ("pi", "codex", "no-mistakes"):
+        stub = installer_env / name
+        stub.write_text("#!/bin/sh\nexit 0\n")
+        stub.chmod(0o755)
+    # Only the stubbed hosts may be selected; the real machine's PATH carries
+    # claude/opencode binaries that would otherwise join the bare selection.
+    # Node stays reachable: the codex hook step expands command hooks with it.
+    import shutil as _shutil
+    node = _shutil.which("node")
+    node_dir = f"{str(Path(node).parent)}:" if node else ""
+    monkeypatch.setenv("PATH", str(installer_env) + ":" + node_dir + "/usr/bin:/bin")
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "bootstrap"])
+    assert result.exit_code == 0, result.output
+    assert marker.read_text().splitlines() == ["pi"]
+    assert "codex" in result.output
 
 
-def test_bootstrap_codegraph_arm_accepts_installed_cli(source_home: Path, isolated_home: Path, tmp_path: Path):
-    binaries = tmp_path / "bin"
-    binaries.mkdir()
-    stub = binaries / "codegraph"
-    stub.write_text("#!/bin/sh\nexit 0\n")
-    stub.chmod(0o755)
-    env = {**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"]}
-    result = subprocess.run(["bash", str(SCRIPT), str(source_home), "codegraph"], capture_output=True, text=True, env=env)
-    assert result.returncode == 0, result.stderr
-    assert "has no declared external installs" in result.stdout
+def test_bootstrap_host_check_requires_the_host(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S46: bootstrap codegraph exits 1 naming the missing host; a stub host passes without the installer."""
+    from typer.testing import CliRunner
+    from settings_sync.cli import agent_config_app
+
+    script = source_home / "scripts/bootstrap.sh"
+    script.parent.mkdir()
+    marker = isolated_home / "ran"
+    script.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "bootstrap", "codegraph"])
+    assert result.exit_code == 1
+    assert "codegraph" in result.output
+    assert not marker.exists()
+    stub = isolated_home / "bin"
+    stub.mkdir()
+    (stub / "codegraph").write_text("#!/bin/sh\nexit 0\n")
+    (stub / "codegraph").chmod(0o755)
+    monkeypatch.setenv("PATH", str(stub) + ":/usr/bin:/bin")
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "bootstrap", "codegraph"])
+    assert result.exit_code == 0, result.output
+    assert not marker.exists()

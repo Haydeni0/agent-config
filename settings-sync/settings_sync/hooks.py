@@ -1,6 +1,7 @@
 """Reconcile managed hook groups while preserving native registrations."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 import shlex
 import shutil
@@ -12,6 +13,13 @@ from settings_sync.paths import Paths
 
 
 HookGroups = dict[str, list[dict[str, object]]]
+
+
+@dataclass(frozen=True, slots=True)
+class HookSpec:
+    source_dir: str  # dir under harnesses/, "gemini" for agy
+    key: str  # hook group key: "hooks" or "agent-config"
+    plugin: bool  # goose: also install the plugin manifest
 
 
 def hook_groups(value: object) -> HookGroups:
@@ -110,20 +118,18 @@ def expand_command_hooks(
                     )
 
 
-def plan_command_hooks(paths: Paths, harness: CommandHarness) -> list[Action]:
-    directory = "gemini" if harness == "agy" else harness
-    source = paths.source_dir / "harnesses" / directory / "hooks.json"
+def plan_command_hooks(paths: Paths, harness_name: str, spec: HookSpec) -> list[Action]:
+    source = paths.source_dir / "harnesses" / spec.source_dir / "hooks.json"
     plugin = paths.goose_plugin_dir
     target = (
         plugin / "hooks/hooks.json"
-        if harness == "goose"
-        else paths.target(harness) / "hooks.json"
+        if spec.plugin
+        else paths.target(harness_name) / "hooks.json"
     )
     defaults = json.loads(source.read_text())
-    key = "agent-config" if harness == "agy" else "hooks"
-    expand_command_hooks(paths.source_dir, harness, hook_groups(defaults[key]))
-    actions: list[Action] = [MergedConfig(target, JsonCodec(), defaults, hook_key=key)]
-    if harness == "goose":
+    expand_command_hooks(paths.source_dir, harness_name, hook_groups(defaults[spec.key]))
+    actions: list[Action] = [MergedConfig(target, JsonCodec(), defaults, hook_key=spec.key)]
+    if spec.plugin:
         manifest = (
             json.dumps(
                 {

@@ -10,6 +10,7 @@ from settings_sync.codegraph import (
     plan_codegraph_binary,
     release_url,
 )
+from settings_sync.registry import HARNESSES
 from settings_sync.paths import Paths, resolve_paths
 from settings_sync.cli import agent_config_app
 from typer.testing import CliRunner
@@ -21,7 +22,7 @@ from settings_sync.ownership import OwnershipStore
 def _paths(tmp_path: Path, **overrides) -> Paths:
     source = tmp_path / "source"
     source.mkdir(exist_ok=True)
-    return resolve_paths(claude_dir=source, codegraph_dir=tmp_path / "cg", **overrides)
+    return resolve_paths(HARNESSES, claude_dir=source, codegraph_dir=tmp_path / "cg", **overrides)
 
 
 def _fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -298,7 +299,7 @@ def test_claude_mcp_refuses_unparseable_target(tmp_path: Path, monkeypatch: pyte
 def _agy_paths(tmp_path: Path, **overrides) -> Paths:
     source = tmp_path / "source"
     source.mkdir(exist_ok=True)
-    return resolve_paths(claude_dir=source, agy_dir=tmp_path / "gemini-config", codegraph_dir=tmp_path / "cg", **overrides)
+    return resolve_paths(HARNESSES, claude_dir=source, agy_dir=tmp_path / "gemini-config", codegraph_dir=tmp_path / "cg", **overrides)
 
 
 def test_agy_mcp_uses_unified_path_when_migrated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -373,7 +374,7 @@ def test_pi_mcp_merges_and_preserves_user_servers(tmp_path: Path):
     from settings_sync.codegraph import plan_pi_mcp
 
     (tmp_path / "source").mkdir()
-    paths = resolve_paths(claude_dir=tmp_path / "source", pi_dir=tmp_path / "pi", codegraph_dir=tmp_path / "cg")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "source", pi_dir=tmp_path / "pi", codegraph_dir=tmp_path / "cg")
     target = paths.pi_dir / "mcp.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"mcpServers": {"mine": {"command": "mine"}}}))

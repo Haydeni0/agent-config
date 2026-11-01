@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.actions import Mode, Status
+from settings_sync.registry import HARNESSES
 from settings_sync.cli import agent_config_app
 from settings_sync.executor import execute
 from settings_sync.ownership import OwnershipStore
@@ -50,7 +51,7 @@ def pi_home(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _pi_paths(tmp_path: pathlib.Path):
-    return resolve_paths(claude_dir=tmp_path / "claude", pi_dir=tmp_path / "agent")
+    return resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", pi_dir=tmp_path / "agent")
 
 
 def _apply(plan, paths, mode: Mode):
@@ -77,7 +78,7 @@ def test_pi_config_creates_from_template(tmp_path: pathlib.Path, pi_template: pa
 
 def test_pi_config_retains_native_state(source_home: pathlib.Path, isolated_home: pathlib.Path):
     (source_home / "harnesses/pi/settings.json").write_text(json.dumps({"skills": ["~/.claude/skills"], "prompts": ["~/.claude/commands"]}))
-    paths = resolve_paths(claude_dir=source_home, pi_dir=isolated_home / "pi", claude_home=isolated_home / ".claude")
+    paths = resolve_paths(HARNESSES, claude_dir=source_home, pi_dir=isolated_home / "pi", claude_home=isolated_home / ".claude")
     target = paths.pi_dir / "settings.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"lastChangelogVersion": "0.80.6"}))

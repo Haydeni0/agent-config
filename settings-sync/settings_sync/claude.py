@@ -80,19 +80,3 @@ def plan_shared_skills(paths: Paths) -> list[Action]:
     return [Symlink(target, source)]
 
 
-_REPO_ALIASES = (
-    ("custom", "custom"), ("hooks", "hooks"),
-    ("statusline-command.sh", "harnesses/claude/statusline-command.sh"),
-    ("settings-sync", "settings-sync"), ("opencode-resume", "opencode-resume"),
-    ("README.md", "README.md"), ("sync.sh", "sync.sh"), ("scripts", "scripts"),
-)
-
-
-def plan_claude_links(paths: Paths) -> list[Action]:
-    actions = plan_claude_entries(paths, ("skills", "commands", "agents"))
-    actions.extend(
-        Symlink(paths.claude_home / alias, paths.source_dir / source)
-        for alias, source in _REPO_ALIASES
-        if (paths.source_dir / source).exists()
-    )
-    return actions

@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 import settings_sync.codex as codex
 from settings_sync.actions import Mode, Status
+from settings_sync.registry import HARNESSES
 from settings_sync.cli import agent_config_app
 from settings_sync.codex import plan_codex_config
 from settings_sync.executor import execute
@@ -43,7 +44,7 @@ def codex_home(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _codex_paths(tmp_path: pathlib.Path):
-    return resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+    return resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
 
 def _apply_config(paths, mode: Mode):
@@ -137,7 +138,7 @@ def test_codex_sqlite_home_creates_private_directory(tmp_path: pathlib.Path):
     template.parent.mkdir(parents=True)
     sqlite_home = tmp_path / "runtime" / "codex-sqlite"
     write_sqlite_template(template, sqlite_home)
-    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
     outcomes = _apply_config(paths, Mode.APPLY)
     outcome = next(o for o in outcomes if o.path == sqlite_home)
@@ -152,7 +153,7 @@ def test_codex_sqlite_home_repairs_permissions(tmp_path: pathlib.Path):
     sqlite_home = tmp_path / "codex-sqlite"
     sqlite_home.mkdir(mode=0o755)
     write_sqlite_template(template, sqlite_home)
-    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
     outcomes = _apply_config(paths, Mode.APPLY)
     outcome = next(o for o in outcomes if o.path == sqlite_home)
@@ -166,7 +167,7 @@ def test_codex_sqlite_home_dry_run_creates_nothing(tmp_path: pathlib.Path):
     template.parent.mkdir(parents=True)
     sqlite_home = tmp_path / "codex-sqlite"
     write_sqlite_template(template, sqlite_home)
-    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
     outcomes = _apply_config(paths, Mode.DRY_RUN)
     outcome = next(o for o in outcomes if o.path == sqlite_home)
@@ -180,7 +181,7 @@ def test_codex_sqlite_home_rejects_relative_path(tmp_path: pathlib.Path, monkeyp
     template = tmp_path / "claude" / "harnesses" / "codex" / "config.toml"
     template.parent.mkdir(parents=True)
     template.write_text('sqlite_home = "relative/codex-sqlite"\n')
-    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
     with pytest.raises(ValueError):
         plan_codex_config(paths)
@@ -196,7 +197,7 @@ def test_codex_sqlite_home_rejects_symlink(tmp_path: pathlib.Path):
     sqlite_home = tmp_path / "codex-sqlite"
     sqlite_home.symlink_to(real_directory, target_is_directory=True)
     write_sqlite_template(template, sqlite_home)
-    paths = resolve_paths(claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
+    paths = resolve_paths(HARNESSES, claude_dir=tmp_path / "claude", codex_dir=tmp_path / "codex-target")
 
     with pytest.raises(ValueError):
         plan_codex_config(paths)

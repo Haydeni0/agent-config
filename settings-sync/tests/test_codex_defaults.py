@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.cli import agent_config_app
+from settings_sync.registry import HARNESSES
 
 
 @pytest.fixture
@@ -131,7 +132,7 @@ def test_codex_template_includes_codegraph_mcp(tmp_path: Path, defaults_source: 
     target = tmp_path / "codex/config.toml"
     target.parent.mkdir(parents=True)
     target.write_text('model = "local"\n')
-    paths = resolve_paths(claude_dir=defaults_source, codex_dir=tmp_path / "codex")
+    paths = resolve_paths(HARNESSES, claude_dir=defaults_source, codex_dir=tmp_path / "codex")
     store = OwnershipStore()
     store.load(Mode.APPLY)
     execute(plan_codex_config(paths), Mode.APPLY, store)

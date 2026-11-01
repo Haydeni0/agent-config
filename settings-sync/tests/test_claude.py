@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.actions import Mode, Outcome, Status
+from settings_sync.registry import HARNESSES
 from settings_sync.claude import plan_claude_config
 from settings_sync.cli import agent_config_app
 from settings_sync.executor import execute
@@ -83,7 +84,7 @@ def test_claude_permissions_include_codegraph(tmp_path: Path, isolated_home: Pat
     target = isolated_home / ".claude/settings.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"permissions": {"allow": ["Bash(git status*)"]}}))
-    paths = resolve_paths(claude_dir=source, claude_home=target.parent)
+    paths = resolve_paths(HARNESSES, claude_dir=source, claude_home=target.parent)
     apply_claude_config(paths, Mode.APPLY)
     allow = json.loads(target.read_text())["permissions"]["allow"]
     # Declared arrays replace (REQ-SYNC-04): the template allow list wins.
@@ -101,7 +102,7 @@ def synced_claude_settings(source_home: Path, isolated_home: Path) -> tuple[Outc
     target = isolated_home / ".claude/settings.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"hooks": {"PreToolUse": [FOREIGN_GROUP]}, "localKey": "keep"}))
-    paths = resolve_paths(claude_dir=source_home, claude_home=target.parent)
+    paths = resolve_paths(HARNESSES, claude_dir=source_home, claude_home=target.parent)
     return apply_claude_config(paths, Mode.APPLY)[0], target
 
 
@@ -158,7 +159,7 @@ def test_claude_guard_sync_without_node_fails_untouched(
     before = json.dumps({"hooks": {"PreToolUse": [FOREIGN_GROUP]}, "localKey": "keep"})
     target.write_text(before)
     shutil.copyfile(REPO / "harnesses/claude/settings.json", source_home / "harnesses/claude/settings.json")
-    paths = resolve_paths(claude_dir=source_home, claude_home=target.parent)
+    paths = resolve_paths(HARNESSES, claude_dir=source_home, claude_home=target.parent)
     with pytest.raises(ValueError, match="Node.js"):
         plan_claude_config(paths)
     assert target.read_text() == before
