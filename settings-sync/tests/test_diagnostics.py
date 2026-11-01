@@ -33,9 +33,22 @@ def test_shared_skill_root_preserves_foreign_entries(source_home: Path, isolated
     else:
         target.symlink_to(foreign)
     before = snapshot(target.parent)
-    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "codex", "skills", "--force"])
+    runner = CliRunner()
+    args = ["--source", str(source_home)]
+    result = runner.invoke(agent_config_app, [*args, "sync", "codex", "skills"])
     assert result.exit_code == 1, result.output
     assert snapshot(target.parent) == before
+    result = runner.invoke(agent_config_app, [*args, "sync", "codex", "skills", "--force"])
+    if kind == "directory":
+        assert result.exit_code == 1, result.output
+        assert "failed" in result.output
+        assert snapshot(target.parent) == before
+        assert (target / "personal").read_text() == "keep"
+    else:
+        assert result.exit_code == 0, result.output
+        assert target.resolve() == (source_home / "skills").resolve()
+        backups = isolated_home / ".local/state/agent-config/backups"
+        assert any(path.is_symlink() for path in backups.rglob("*"))
 
 
 def test_doctor_reports_required_missing_and_broken_link(source_home: Path, isolated_home: Path):

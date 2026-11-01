@@ -1,10 +1,12 @@
 """Read the base opencode config from ~/.claude and write the generated opencode.json."""
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
-from settings_sync.actions import Outcome, Status
-from settings_sync.merging import merge_defaults, strip_jsonc, sync_json_defaults
+from settings_sync.actions import Action, MergedConfig
+from settings_sync.merging import JsonCodec, strip_jsonc
+from settings_sync.paths import Paths
 
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"
 TUI_SCHEMA = "https://opencode.ai/tui.json"
@@ -20,37 +22,6 @@ def build_config(base_path: Path) -> dict:
     return config
 
 
-def sync_config(target: Path, base_path: Path, force: bool = False, dry_run: bool = False) -> Outcome:
-    legacy_path = target.with_suffix(".jsonc")
-    try:
-        config = build_config(base_path)
-        if legacy_path.is_symlink() or legacy_path.exists() and not legacy_path.is_file():
-            return Outcome(target, Status.FAILED, f"legacy entry is not a regular file; preserve and resolve {legacy_path}")
-        legacy_text = legacy_path.read_text() if legacy_path.is_file() else None
-        if legacy_text is not None:
-            legacy = json.loads(strip_jsonc(legacy_text))
-            installed = json.loads(target.read_text()) if target.exists() else {}
-            if not isinstance(legacy, dict) or not isinstance(installed, dict):
-                raise ValueError("legacy and installed JSON must be objects")
-            conflicts = [key for key in legacy if key != "$schema" and key in installed and legacy[key] != installed[key]]
-            if conflicts and not force:
-                return Outcome(target, Status.SKIPPED, f"legacy config conflicts on {', '.join(conflicts)}; reconcile or use --force")
-            merge_defaults(legacy, config)
-            config = legacy
-    except (OSError, ValueError) as err:
-        return Outcome(target, Status.FAILED, f"could not prepare configuration: {err}")
-    content = json.dumps(config, indent=2) + "\n"
-    outcome = sync_json_defaults(target, content, dry_run=dry_run)
-    if legacy_text is not None and not dry_run and outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
-        try:
-            if legacy_path.is_symlink() or legacy_path.read_text() != legacy_text:
-                return Outcome(target, Status.FAILED, "legacy file changed during sync; preserved, retry after reconciling")
-            legacy_path.unlink()
-        except OSError as exc:
-            return Outcome(target, Status.FAILED, f"output installed but legacy cleanup failed: {exc}")
-    return outcome
-
-
 def build_tui(base_path: Path) -> dict:
     if base_path.is_file():
         config = json.loads(base_path.read_text())
@@ -60,10 +31,21 @@ def build_tui(base_path: Path) -> dict:
     return config
 
 
-def sync_tui(target: Path, base_path: Path, force: bool = False, dry_run: bool = False) -> Outcome:
-    try:
-        config = build_tui(base_path)
-    except json.JSONDecodeError as err:
-        return Outcome(target, Status.FAILED, f"invalid JSON in {base_path}: {err}")
-    content = json.dumps(config, indent=2) + "\n"
-    return sync_json_defaults(target, content, dry_run=dry_run)
+def plan_opencode_config(paths: Paths) -> list[Action]:
+    target = paths.opencode_dir / "opencode.json"
+    legacy = target.with_suffix(".jsonc")
+    if legacy.is_symlink() or legacy.exists() and not legacy.is_file():
+        raise ValueError(f"legacy entry is not a regular file; preserve and resolve {legacy}")
+    config = build_config(paths.source_dir / "harnesses/opencode/opencode.json")
+    migrate: Mapping[str, object] | None = None
+    if legacy.is_file():
+        migrate = json.loads(strip_jsonc(legacy.read_text()))
+        if not isinstance(migrate, dict):
+            raise ValueError("legacy JSON must be an object")
+    return [MergedConfig(path=target, codec=JsonCodec(), keys=config,
+                         migrate=migrate, remove_after=legacy if migrate is not None else None)]
+
+
+def plan_opencode_tui(paths: Paths) -> list[Action]:
+    return [MergedConfig(path=paths.opencode_dir / "tui.json", codec=JsonCodec(),
+                         keys=build_tui(paths.source_dir / "harnesses/opencode/tui.json"))]

@@ -3,8 +3,7 @@
 from pathlib import Path
 
 from settings_sync.frontmatter import dump, parse
-from settings_sync.actions import Outcome, Status
-from settings_sync.ownership import prune_generated, sync_generated_file
+from settings_sync.actions import Action, File, Prune, Report, Status
 
 
 def _build_skill_stub(skill_md: Path) -> str | None:
@@ -17,26 +16,17 @@ def _build_skill_stub(skill_md: Path) -> str | None:
     return dump({"description": description}, body)
 
 
-def sync_commands(
-    target_dir: Path,
-    source_dir: Path,
-    skills_dir: Path,
-    force: bool = False,
-    dry_run: bool = False,
-) -> list[Outcome]:
+def plan_commands(target_dir: Path, source_dir: Path, skills_dir: Path) -> list[Action]:
     if not source_dir.is_dir():
-        return [Outcome(source_dir, Status.FAILED, "required commands source directory missing; restore before syncing")]
-    outcomes: list[Outcome] = []
-    if not dry_run:
-        target_dir.mkdir(parents=True, exist_ok=True)
-
+        return [Report(source_dir, Status.FAILED, "required commands source directory missing; restore before syncing")]
+    actions: list[Action] = []
     expected_names: set[str] = set()
 
     for source_file in sorted(source_dir.glob("*.md"), key=lambda p: p.name):
         if not source_file.is_file():
             continue
         expected_names.add(source_file.name)
-        outcomes.append(sync_generated_file(target_dir / source_file.name, source_file.read_text(), force, dry_run))
+        actions.append(File(target_dir / source_file.name, source_file.read_text()))
 
     if skills_dir.is_dir():
         for skill_dir in sorted(skills_dir.iterdir(), key=lambda p: p.name):
@@ -52,7 +42,7 @@ def sync_commands(
             if name in expected_names:
                 continue
             expected_names.add(name)
-            outcomes.append(sync_generated_file(target_dir / name, stub, force, dry_run))
+            actions.append(File(target_dir / name, stub))
 
-    outcomes.extend(prune_generated(target_dir, expected_names, dry_run))
-    return outcomes
+    actions.append(Prune(target_dir, frozenset(expected_names)))
+    return actions

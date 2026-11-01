@@ -13,16 +13,25 @@ def test_skills_ref_rewritten_to_plain_text(tmp_path: pathlib.Path):
     assert "@skills/uv" not in result
 
 
+def _apply(target: pathlib.Path, claude: pathlib.Path, mode):
+    from settings_sync.actions import Mode
+    from settings_sync.agents_md import plan_agents_md
+    from settings_sync.executor import execute
+    from settings_sync.ownership import OwnershipStore
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan_agents_md(target, claude), mode, store)[0]
+
+
 def test_sync_agents_md_writes_expanded_content(tmp_path: pathlib.Path):
     claude = tmp_path / "claude" / "CLAUDE.md"
     claude.parent.mkdir(parents=True)
     claude.write_text("See @skills/uv.\n")
     target = tmp_path / "config" / "opencode" / "AGENTS.md"
 
-    from settings_sync.agents_md import sync_agents_md
-    outcome = sync_agents_md(target, claude)
+    from settings_sync.actions import Mode, Status
+    outcome = _apply(target, claude, Mode.APPLY)
 
-    from settings_sync.actions import Status
     assert outcome.status == Status.CREATED
     assert "the `uv` skill" in target.read_text()
 
@@ -35,9 +44,8 @@ def test_sync_agents_md_skips_diverging_without_force(tmp_path: pathlib.Path):
     target.parent.mkdir(parents=True)
     target.write_text("hand-edited\n")
 
-    from settings_sync.agents_md import sync_agents_md
-    from settings_sync.actions import Status
-    outcome = sync_agents_md(target, claude)
+    from settings_sync.actions import Mode, Status
+    outcome = _apply(target, claude, Mode.APPLY)
 
     assert outcome.status == Status.SKIPPED
     assert target.read_text() == "hand-edited\n"

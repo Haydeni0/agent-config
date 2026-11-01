@@ -335,7 +335,7 @@ def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> Ou
             if mode is not Mode.DRY_RUN:
                 _record_config(store, path, codec, action)
         if outcome.status in (Status.CREATED, Status.REPLACED, Status.MERGED, Status.UNCHANGED) and action.remove_after is not None:
-            failed = _remove_after(action.remove_after, mode, action.migrate)
+            failed = _remove_after(action.remove_after, mode, action.migrate, store)
             if failed is not None:
                 return failed
         return outcome
@@ -384,7 +384,7 @@ def _record_config(store: OwnershipStore, path: Path, codec: Codec, action: Merg
         store.record_hooks(path, codec.name, hook_groups(action.keys.get(action.hook_key, {})))
 
 
-def _remove_after(legacy: Path, mode: Mode, migrate: Mapping[str, object] | None) -> Outcome | None:
+def _remove_after(legacy: Path, mode: Mode, migrate: Mapping[str, object] | None, store: OwnershipStore) -> Outcome | None:
     if mode is Mode.DRY_RUN:
         return None
     try:
@@ -394,6 +394,7 @@ def _remove_after(legacy: Path, mode: Mode, migrate: Mapping[str, object] | None
             return None
         if json.loads(strip_jsonc(legacy.read_text())) != migrate:
             return Outcome(legacy, Status.FAILED, "legacy file changed during sync; preserved, retry after reconciling")
+        store.backup(legacy)
         legacy.unlink()
     except (OSError, ValueError) as exc:
         return Outcome(legacy, Status.FAILED, f"output installed but legacy cleanup failed: {exc}")

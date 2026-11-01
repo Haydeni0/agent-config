@@ -3,8 +3,7 @@
 import re
 from pathlib import Path
 
-from settings_sync.actions import Outcome, Status
-from settings_sync.ownership import sync_generated_symlink
+from settings_sync.actions import Action, Prune, Report, Status, Symlink
 
 _SUPERPOWERS_ROOT = Path("claude-plugins-official") / "superpowers"
 _VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -26,23 +25,19 @@ def resolve_superpowers_js(cache_root: Path) -> Path | None:
     return js if js.is_file() else None
 
 
-def sync_superpowers(target: Path, cache_root: Path, force: bool = False, dry_run: bool = False) -> Outcome:
-    source = resolve_superpowers_js(cache_root)
-    if source is None:
-        return Outcome(target, Status.NO_SOURCE, "superpowers not found in cache")
-    return sync_generated_symlink(target, source, force=force, dry_run=dry_run)
-
-
-def sync_plugins(target: Path, source: Path, cache: Path, force: bool = False, dry_run: bool = False) -> list[Outcome]:
+def plan_plugins(target: Path, source: Path, cache: Path) -> list[Action]:
     """Install shared plugin links alongside native external plugins."""
-    from settings_sync.ownership import prune_generated
     if not source.is_dir():
-        return [Outcome(source, Status.FAILED, "required plugin source directory missing")]
+        return [Report(source, Status.FAILED, "required plugin source directory missing")]
     expected = {"superpowers.js"}
-    outcomes: list[Outcome] = []
+    actions: list[Action] = []
     for plugin in sorted(source.glob("*.js")):
         expected.add(plugin.name)
-        outcomes.append(sync_generated_symlink(target / plugin.name, plugin, force, dry_run))
-    outcomes.append(sync_superpowers(target / "superpowers.js", cache, force, dry_run))
-    outcomes.extend(prune_generated(target, expected, dry_run))
-    return outcomes
+        actions.append(Symlink(target / plugin.name, plugin))
+    superpowers = resolve_superpowers_js(cache)
+    if superpowers is None:
+        actions.append(Report(target / "superpowers.js", Status.NO_SOURCE, "superpowers not found in cache"))
+    else:
+        actions.append(Symlink(target / "superpowers.js", superpowers))
+    actions.append(Prune(target, frozenset(expected)))
+    return actions

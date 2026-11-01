@@ -1,10 +1,12 @@
 """Deploy shared AGY (Antigravity) settings and resources."""
 
+import json
 from pathlib import Path
 
-from settings_sync.actions import Outcome, Status
-from settings_sync.merging import sync_json_defaults
+from settings_sync.actions import Action, MergedConfig, Outcome, Status
+from settings_sync.merging import JsonCodec, sync_json_defaults
 from settings_sync.ownership import prune_generated, sync_generated_symlink
+from settings_sync.paths import Paths
 
 
 def sync_agy_settings(
@@ -40,3 +42,9 @@ def sync_agy_skills(
     outcomes.extend(prune_generated(target_dir, source_names, dry_run))
     return outcomes
 
+
+
+def plan_agy_settings(paths: Paths) -> list[Action]:
+    source = paths.source_dir / "harnesses/gemini/settings.json"
+    return [MergedConfig(path=(paths.agy_cli_dir or paths.target("agy")) / "settings.json",
+                         codec=JsonCodec(), keys=json.loads(source.read_text()))]

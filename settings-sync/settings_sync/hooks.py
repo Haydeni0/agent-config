@@ -6,10 +6,10 @@ import shlex
 import shutil
 from typing import Literal
 
-from settings_sync.merging import install_merged, merge_defaults
-from settings_sync.ownership import OwnershipStore, sync_generated_json
+from settings_sync.actions import Action, File, MergedConfig, Mode, Outcome, Status
+from settings_sync.merging import JsonCodec
+from settings_sync.ownership import OwnershipStore
 from settings_sync.paths import Paths
-from settings_sync.actions import Outcome, Status
 
 
 HookGroups = dict[str, list[dict[str, object]]]
@@ -69,65 +69,6 @@ def reconcile_hooks(
     return result
 
 
-def sync_hook_config(
-    target: Path, defaults: dict[str, object], dry_run: bool, hook_key: str = "hooks"
-) -> Outcome:
-    """Merge defaults and update only hook groups adopted by this checkout."""
-    try:
-        store = OwnershipStore()
-        with store.lock(dry_run):
-            if target.is_symlink():
-                raise ValueError(
-                    "expected a regular hook configuration, found a symlink"
-                )
-            existing = target.read_text() if target.exists() else None
-            config = json.loads(existing) if existing is not None else {}
-            if not isinstance(config, dict):
-                raise ValueError("hook configuration must be an object")
-            destination = str(target.absolute())
-            record = store.hooks_of(destination)
-            desired = hook_groups(defaults.get(hook_key, {}))
-            current = config.get(hook_key, {})
-            enabled = {}
-            if (
-                hook_key == "agent-config"
-                and isinstance(current, dict)
-                and "enabled" in current
-            ):
-                if not isinstance(current["enabled"], bool):
-                    raise ValueError("hook enabled flag must be boolean")
-                enabled = {"enabled": current["enabled"]}
-                current = {
-                    key: value for key, value in current.items() if key != "enabled"
-                }
-            reconciled = reconcile_hooks(hook_groups(current), record, desired)
-            before = json.dumps(config, sort_keys=True)
-            merge_defaults(
-                config,
-                {key: value for key, value in defaults.items() if key != hook_key},
-            )
-            if hook_key in config or hook_key in defaults:
-                config[hook_key] = {**enabled, **reconciled}
-            content = (
-                existing
-                if existing is not None and json.dumps(config, sort_keys=True) == before
-                else json.dumps(config, indent=2) + "\n"
-            )
-            backup = (
-                store.backup(target)
-                if not dry_run and existing is not None and content != existing
-                else None
-            )
-            outcome = install_merged(target, content, existing, dry_run)
-            if backup is not None:
-                outcome.detail += f"; backup: {backup}"
-            if not dry_run and outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
-                store.record_hooks(destination, "json", desired)
-            return outcome
-    except (OSError, ValueError) as exc:
-        return Outcome(target, Status.FAILED, f"could not sync hooks: {exc}")
-
-
 COMMAND_PLACEHOLDER = "${AGENT_CONFIG_COMMAND}"
 CommandHarness = Literal["claude", "codex", "goose", "agy"]
 
@@ -170,9 +111,7 @@ def expand_command_hooks(
                     )
 
 
-def sync_command_hooks(
-    paths: Paths, harness: Literal["codex", "goose", "agy"], dry_run: bool
-) -> list[Outcome]:
+def plan_command_hooks(paths: Paths, harness: CommandHarness) -> list[Action]:
     directory = "gemini" if harness == "agy" else harness
     source = paths.source_dir / "harnesses" / directory / "hooks.json"
     plugin = paths.goose_plugin_dir
@@ -181,13 +120,11 @@ def sync_command_hooks(
         if harness == "goose"
         else paths.target(harness) / "hooks.json"
     )
-    try:
-        defaults = json.loads(source.read_text())
-        key = "agent-config" if harness == "agy" else "hooks"
-        expand_command_hooks(paths.source_dir, harness, hook_groups(defaults[key]))
-        outcome = sync_hook_config(target, defaults, dry_run, key)
-        if harness != "goose" or outcome.status == Status.FAILED:
-            return [outcome]
+    defaults = json.loads(source.read_text())
+    key = "agent-config" if harness == "agy" else "hooks"
+    expand_command_hooks(paths.source_dir, harness, hook_groups(defaults[key]))
+    actions: list[Action] = [MergedConfig(target, JsonCodec(), defaults, hook_key=key)]
+    if harness == "goose":
         manifest = (
             json.dumps(
                 {
@@ -199,11 +136,23 @@ def sync_command_hooks(
             )
             + "\n"
         )
-        return [
-            outcome,
-            sync_generated_json(plugin / "plugin.json", manifest, dry_run=dry_run),
-        ]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        return [
-            Outcome(target, Status.FAILED, f"could not prepare {harness} hooks: {exc}")
-        ]
+        actions.append(File(plugin / "plugin.json", manifest))
+    return actions
+
+
+def sync_command_hooks(
+    paths: Paths, harness: CommandHarness, dry_run: bool
+) -> list[Outcome]:
+    """Interim wrapper over plan_command_hooks; dies in Task 15."""
+    from settings_sync.executor import execute
+    try:
+        store = OwnershipStore()
+        store.load(Mode.DRY_RUN if dry_run else Mode.APPLY)
+        return execute(plan_command_hooks(paths, harness), Mode.DRY_RUN if dry_run else Mode.APPLY, store)
+    except (OSError, ValueError) as exc:
+        target = (
+            paths.goose_plugin_dir / "hooks/hooks.json"
+            if harness == "goose"
+            else paths.target(harness) / "hooks.json"
+        )
+        return [Outcome(target, Status.FAILED, f"could not prepare {harness} hooks: {exc}")]

@@ -3,9 +3,7 @@
 import re
 from pathlib import Path
 
-from settings_sync.ownership import sync_generated_file
-
-from settings_sync.actions import Outcome, Status
+from settings_sync.actions import Action, File, Report, Status
 
 SKILLS_REF = re.compile(r"@skills/([a-zA-Z0-9_-]+)")
 
@@ -32,15 +30,15 @@ def build_agents_md(claude_md: Path, rules_path: Path | None = None, *, source_r
     return markdown
 
 
-def sync_agents_md(
+def plan_agents_md(
     target: Path,
     claude_md: Path,
-    force: bool = False,
-    dry_run: bool = False,
     rules_path: Path | None = None,
-    *, source_root: Path | None = None, harness: str = "opencode",
-) -> Outcome:
+    *,
+    source_root: Path | None = None,
+    harness: str = "",
+) -> list[Action]:
     if not claude_md.is_file():
-        return Outcome(target, Status.NO_SOURCE, f"CLAUDE.md not found: {claude_md}")
+        return [Report(target, Status.NO_SOURCE, f"CLAUDE.md not found: {claude_md}")]
     content = build_agents_md(claude_md, rules_path=rules_path, source_root=source_root, harness=harness)
-    return sync_generated_file(target, content, force=force, dry_run=dry_run)
+    return [File(target, content)]

@@ -4,23 +4,22 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from settings_sync.agents import sync_agents_dir
-from settings_sync.agents_md import sync_agents_md
-from settings_sync.agy import sync_agy_settings, sync_agy_skills
-from settings_sync.claude import sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
+from settings_sync.agents import plan_agents_dir
+from settings_sync.agents_md import plan_agents_md
+from settings_sync.agy import plan_agy_settings, sync_agy_skills
+from settings_sync.claude import plan_claude_config, plan_claude_entries, plan_claude_links, plan_shared_skills
 from settings_sync.codegraph import plan_agy_mcp, plan_claude_mcp, plan_codegraph_binary, plan_codegraph_telemetry, plan_pi_mcp
-from settings_sync.commands import sync_commands
+from settings_sync.commands import plan_commands
 from settings_sync.codex import sync_codex_config, sync_codex_sqlite_home
-from settings_sync.config import sync_config, sync_tui
+from settings_sync.config import plan_opencode_config, plan_opencode_tui
 from settings_sync.goose import sync_goose_config, sync_goose_providers
 from settings_sync.hooks import sync_command_hooks
 from settings_sync.nomistakes import sync_nomistakes_config
-from settings_sync.ownership import sync_generated_symlink
 from settings_sync.skills import validate_skills
 from settings_sync.paths import Paths
 from settings_sync.pi import sync_pi_config, sync_pi_keybindings
-from settings_sync.plugins import sync_plugins
-from settings_sync.actions import Action, Outcome, Status
+from settings_sync.plugins import plan_plugins
+from settings_sync.actions import Action, Mode, Outcome, Report, Status
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,39 +48,39 @@ HARNESSES = (
         Step("telemetry", plan=plan_codegraph_telemetry),
     ), lambda p: p.codegraph_dir, "codegraph"),
     Harness("claude", (
-        Step("config", lambda p, f, d: [sync_claude_config(p, d)], ("harnesses/claude/settings.json",)),
-        Step("context", lambda p, f, d: [sync_agents_md(p.claude_home / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="claude")], ("rules/global.md",)),
-        Step("links", lambda p, f, d: sync_claude_links(p, f, d), ("skills", "commands", "agents")),
+        Step("config", plan=plan_claude_config, required_sources=("harnesses/claude/settings.json",)),
+        Step("context", plan=lambda p: plan_agents_md(p.claude_home / "CLAUDE.md", p.source_dir / "rules/global.md", source_root=p.source_dir, harness="claude"), required_sources=("rules/global.md",)),
+        Step("links", plan=plan_claude_links, required_sources=("skills", "commands", "agents")),
     ), lambda p: p.claude_home, "claude"),
     Harness("opencode", (
-        Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills",), f, d), ("skills",)),
-        Step("config", lambda p, f, d: [sync_config(p.opencode_dir / "opencode.json", p.source_dir / "harnesses/opencode/opencode.json", f, d)], ("harnesses/opencode/opencode.json",)),
-        Step("tui", lambda p, f, d: [sync_tui(p.opencode_dir / "tui.json", p.source_dir / "harnesses/opencode/tui.json", f, d)], ("harnesses/opencode/tui.json",)),
-        Step("agents-md", lambda p, f, d: [sync_agents_md(p.opencode_dir / "AGENTS.md", p.source_dir / "rules/global.md", f, d, rules_path=p.source_dir / "harnesses/opencode/rules.md", source_root=p.source_dir, harness="opencode")], ("rules/global.md",)),
-        Step("agents", lambda p, f, d: sync_agents_dir(p.opencode_dir / "agents", p.source_dir / "agents", f, d), ("agents",)),
-        Step("commands", lambda p, f, d: sync_commands(p.opencode_dir / "commands", p.source_dir / "commands", p.source_dir / "skills", f, d), ("commands",)),
-        Step("plugins", lambda p, f, d: sync_plugins(p.opencode_dir / "plugins", p.source_dir / "harnesses/opencode/plugins", p.claude_home / "plugins/cache", f, d), ("harnesses/opencode/plugins",)),
-        Step("skills", lambda p, f, d: validate_skills(p.source_dir / "skills"), ()),
+        Step("resources", plan=lambda p: plan_claude_entries(p, ("skills",)), required_sources=("skills",)),
+        Step("config", plan=plan_opencode_config, required_sources=("harnesses/opencode/opencode.json",)),
+        Step("tui", plan=plan_opencode_tui, required_sources=("harnesses/opencode/tui.json",)),
+        Step("agents-md", plan=lambda p: plan_agents_md(p.opencode_dir / "AGENTS.md", p.source_dir / "rules/global.md", rules_path=p.source_dir / "harnesses/opencode/rules.md", source_root=p.source_dir, harness="opencode"), required_sources=("rules/global.md",)),
+        Step("agents", plan=lambda p: plan_agents_dir(p.opencode_dir / "agents", p.source_dir / "agents"), required_sources=("agents",)),
+        Step("commands", plan=lambda p: plan_commands(p.opencode_dir / "commands", p.source_dir / "commands", p.source_dir / "skills"), required_sources=("commands",)),
+        Step("plugins", plan=lambda p: plan_plugins(p.opencode_dir / "plugins", p.source_dir / "harnesses/opencode/plugins", p.claude_home / "plugins/cache"), required_sources=("harnesses/opencode/plugins",)),
+        Step("skills", plan=lambda p: [Report(o.path, o.status, o.detail) for o in validate_skills(p.source_dir / "skills")]),
     ), lambda p: p.opencode_dir, "opencode"),
     Harness("pi", (
-        Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),
+        Step("resources", plan=lambda p: plan_claude_entries(p, ("skills", "commands")), required_sources=("skills", "commands")),
         Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=(p.claude_home if p.claude_home is not None and p.claude_home != p.home / ".claude" else None))], ("harnesses/pi/settings.json",)),
         Step("mcp", plan=plan_pi_mcp, required_sources=("harnesses/pi/mcp.json",)),
-        Step("context", lambda p, f, d: [sync_agents_md(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="pi")], ("rules/global.md",)),
+        Step("context", plan=lambda p: plan_agents_md(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", source_root=p.source_dir, harness="pi"), required_sources=("rules/global.md",)),
         Step("keybindings", lambda p, f, d: [sync_pi_keybindings(p.target("pi") / "keybindings.json", p.source_dir / "harnesses/pi/keybindings.json", d, force=f)]),
     ), lambda p: p.pi_dir, "pi"),
     Harness("goose", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "goose", d), ("harnesses/goose/hooks.json", "hooks/command.mjs")),
-        Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "agents"), f, d), ("skills", "agents")),
-        Step("hints", lambda p, f, d: [sync_agents_md(p.target("goose") / ".goosehints", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="goose")], ("rules/global.md",)),
+        Step("resources", plan=lambda p: plan_claude_entries(p, ("skills", "agents")), required_sources=("skills", "agents")),
+        Step("hints", plan=lambda p: plan_agents_md(p.target("goose") / ".goosehints", p.source_dir / "rules/global.md", source_root=p.source_dir, harness="goose"), required_sources=("rules/global.md",)),
         Step("config", lambda p, f, d: [sync_goose_config(p.target("goose") / "config.yaml", p.source_dir / "harnesses/goose/config.yaml", f, d)], ("harnesses/goose/config.yaml",)),
         Step("providers", lambda p, f, d: sync_goose_providers(p.target("goose") / "custom_providers", p.source_dir / "harnesses/goose/custom_providers", f, d), ("harnesses/goose/custom_providers",)),
     ), lambda p: p.goose_dir, "goose"),
     Harness("agy", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "agy", d), ("harnesses/gemini/hooks.json", "hooks/command.mjs")),
-        Step("settings", lambda p, f, d: [sync_agy_settings((p.agy_cli_dir or p.target("agy")) / "settings.json", p.source_dir / "harnesses/gemini/settings.json", f, d)], ("harnesses/gemini/settings.json",)),
+        Step("settings", plan=plan_agy_settings, required_sources=("harnesses/gemini/settings.json",)),
         Step("mcp", plan=plan_agy_mcp),
-        Step("agents-md", lambda p, f, d: [sync_agents_md(p.target("agy") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="agy")], ("rules/global.md",)),
+        Step("agents-md", plan=lambda p: plan_agents_md(p.target("agy") / "AGENTS.md", p.source_dir / "rules/global.md", source_root=p.source_dir, harness="agy"), required_sources=("rules/global.md",)),
         Step("skills", lambda p, f, d: sync_agy_skills(p.target("agy") / "skills", p.source_dir / "skills", f, d), ("skills",)),
     ), lambda p: p.agy_dir, "agy"),
     Harness("no-mistakes", (
@@ -89,12 +88,12 @@ HARNESSES = (
     ), lambda p: p.nomistakes_dir, "no-mistakes"),
     Harness("codex", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "codex", d), ("harnesses/codex/hooks.json", "hooks/command.mjs")),
-        Step("skills", lambda p, f, d: sync_shared_skills(p, d), ("skills",)),
+        Step("skills", plan=plan_shared_skills, required_sources=("skills",)),
         Step("config", lambda p, f, d: [
             sync_codex_sqlite_home(p.source_dir / "harnesses/codex/config.toml", dry_run=d),
             sync_codex_config(p.target("codex") / "config.toml", p.source_dir / "harnesses/codex/config.toml", dry_run=d),
         ], ("harnesses/codex/config.toml",)),
-        Step("agents-md", lambda p, f, d: [sync_agents_md(p.target("codex") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="codex")], ("rules/global.md",)),
+        Step("agents-md", plan=lambda p: plan_agents_md(p.target("codex") / "AGENTS.md", p.source_dir / "rules/global.md", source_root=p.source_dir, harness="codex"), required_sources=("rules/global.md",)),
     ), lambda p: p.codex_dir, "codex"),
 )
 
@@ -111,6 +110,9 @@ def select_harnesses(name: str | None) -> tuple[Harness, ...]:
 def run_harness(harness: Harness, paths: Paths, force: bool, dry_run: bool, steps: tuple[str, ...] | None = None) -> list[Outcome]:
     if not harness.available(paths):
         return []
+    from settings_sync.ownership import OwnershipStore
+    store = OwnershipStore()
+    store.load(Mode.DRY_RUN if dry_run else Mode.APPLY)
     selected = harness.steps if steps is None else tuple(step for step in harness.steps if step.name in steps)
     if steps is not None and set(steps) - {step.name for step in selected}:
         raise ValueError(f"unknown step for {harness.name}: {steps}")
@@ -121,7 +123,12 @@ def run_harness(harness: Harness, paths: Paths, force: bool, dry_run: bool, step
             outcomes.extend(Outcome(path, Status.FAILED, f"required source missing for {harness.name} {step.name}; restore it in the source checkout") for path in missing)
             continue
         try:
-            outcomes.extend(step.run(paths, force, dry_run))
+            if step.plan is not None:
+                from settings_sync.executor import execute
+                mode = Mode.DRY_RUN if dry_run else (Mode.FORCE if force else Mode.APPLY)
+                outcomes.extend(execute(step.plan(paths), mode, store))
+            else:
+                outcomes.extend(step.run(paths, force, dry_run))
         except (OSError, ValueError) as exc:
             outcomes.append(Outcome(paths.source_dir, Status.FAILED, f"{harness.name} {step.name}: {exc}"))
     return outcomes

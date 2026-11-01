@@ -1,11 +1,27 @@
+import os
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+from settings_sync.actions import Mode
 from settings_sync.cli import agent_config_app
-from settings_sync.ownership import sync_generated_symlink
 from tests.test_read_only import snapshot
+
+
+def home_snapshot(home: Path) -> dict:
+    """Snapshot excluding the engine's own state dir (lock and store bookkeeping)."""
+    return {path: entry for path, entry in snapshot(home).items()
+            if not path.parts[:3] == (".local", "state", "agent-config")}
+
+
+def record_link(home: Path, link: Path, target: Path) -> None:
+    from settings_sync.ownership import ManagedEntry, OwnershipStore
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+    store = OwnershipStore()
+    store.load(Mode.APPLY)
+    store.record_symlink(ManagedEntry(f"{link.parent.name}/{link.name}", link, os.readlink(link)))
 
 
 def test_codex_discovers_source_skills_without_claude(source_home: Path, isolated_home: Path):
@@ -29,7 +45,7 @@ def test_codex_replaces_managed_legacy_root(source_home: Path, isolated_home: Pa
     local.parent.mkdir(parents=True)
     local.write_text("Claude-local generated skill")
     root = isolated_home / ".agents/skills"
-    sync_generated_symlink(root, legacy)
+    record_link(isolated_home, root, legacy)
     before = snapshot(legacy)
     runner = CliRunner()
     args = ["--source", str(source_home)]
@@ -57,9 +73,16 @@ def test_codex_preserves_legacy_local_skill_discovery(source_home: Path, isolate
     local.parent.mkdir(parents=True)
     local.write_text("Local skill")
     root = isolated_home / ".agents/skills"
-    sync_generated_symlink(root, legacy)
-    before = snapshot(isolated_home)
-    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "codex", "skills", "--force"])
+    record_link(isolated_home, root, legacy)
+    before = home_snapshot(isolated_home)
+    runner = CliRunner()
+    args = ["--source", str(source_home)]
+    result = runner.invoke(agent_config_app, [*args, "sync", "codex", "skills"])
     assert result.exit_code == 1, result.output
     assert name in result.output
-    assert snapshot(isolated_home) == before
+    assert home_snapshot(isolated_home) == before
+    result = runner.invoke(agent_config_app, [*args, "sync", "codex", "skills", "--force"])
+    assert result.exit_code == 0, result.output
+    assert root.resolve() == source_home / "skills"
+    backups = isolated_home / ".local/state/agent-config/backups"
+    assert any(path.is_symlink() for path in backups.rglob("*"))

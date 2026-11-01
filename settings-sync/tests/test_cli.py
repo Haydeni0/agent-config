@@ -212,3 +212,25 @@ def test_plugins_cache_resolves_under_custom_claude_home(source_home: pathlib.Pa
     assert (isolated_home / ".config/opencode/plugins/superpowers.js").is_symlink()
     assert (isolated_home / ".config/opencode/plugins/superpowers.js").resolve() == cached.resolve()
     assert not (isolated_home / ".claude").exists()
+
+
+def test_merged_config_message_is_the_contract(source_home: pathlib.Path, isolated_home: pathlib.Path) -> None:
+    """S14/S15/S16: merges report merged/would_merge with changed:/removed: key paths, never 'overwrote'."""
+    target = isolated_home / ".gemini" / "antigravity-cli" / "settings.json"
+    target.parent.mkdir(parents=True)
+    target.write_text('{\n  "model": "local",\n  "keep": true\n}\n')
+    args = ["--source", str(source_home)]
+    runner = CliRunner()
+    result = runner.invoke(agent_config_app, [*args, "sync", "agy", "settings"])
+    assert result.exit_code == 0, result.output
+    assert "merged" in result.output
+    assert "changed: model" in result.output
+    assert "overwrote" not in result.output
+    assert "replaced" not in result.output.split("merged")[0] if "merged" in result.output else True
+    (source_home / "harnesses" / "gemini" / "settings.json").write_text('{"model": "newer"}\n')
+    before_check = target.read_text()
+    result = runner.invoke(agent_config_app, [*args, "check", "agy", "settings"])
+    assert result.exit_code == 1, result.output
+    assert "would_merge" in result.output
+    assert "changed: model" in result.output
+    assert target.read_text() == before_check

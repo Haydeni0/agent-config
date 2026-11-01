@@ -5,14 +5,30 @@ from pathlib import Path
 
 import pytest
 
-from settings_sync.claude import sync_claude_config
-from settings_sync.hooks import sync_command_hooks, sync_hook_config
+from settings_sync.actions import Mode, Outcome, Status
+from settings_sync.claude import plan_claude_config
+from settings_sync.executor import execute
+from settings_sync.hooks import sync_command_hooks
+from settings_sync.merging import JsonCodec
+from settings_sync.actions import MergedConfig
+from settings_sync.ownership import OwnershipStore
 from settings_sync.paths import Paths
-from settings_sync.actions import Status
 
 
 def group(command: str) -> dict[str, object]:
     return {"matcher": "Bash", "hooks": [{"type": "command", "command": command}]}
+
+
+def apply_claude_config(paths: Paths, mode: Mode) -> list[Outcome]:
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan_claude_config(paths), mode, store)
+
+
+def apply_hook_config(target: Path, desired: dict, mode: Mode, hook_key: str = "hooks") -> Outcome:
+    store = OwnershipStore()
+    store.load(mode)
+    return execute([MergedConfig(target, JsonCodec(), desired, hook_key=hook_key)], mode, store)[0]
 
 
 def test_claude_preserves_foreign_hooks_on_update_and_removal(
@@ -26,34 +42,35 @@ def test_claude_preserves_foreign_hooks_on_update_and_removal(
     template = source_home / "harnesses/claude/settings.json"
     template.write_text(json.dumps({"hooks": {"PreToolUse": [shared]}}))
     paths = Paths(source_home, isolated_home / "opencode", claude_home=target.parent)
-    assert sync_claude_config(paths, False).status != Status.FAILED
+    assert apply_claude_config(paths, Mode.APPLY)[0].status != Status.FAILED
     assert json.loads(target.read_text())["hooks"]["PreToolUse"] == [foreign, shared]
-    assert sync_claude_config(paths, False).status == Status.UNCHANGED
+    assert apply_claude_config(paths, Mode.APPLY)[0].status == Status.UNCHANGED
     updated = group("updated-policy")
     template.write_text(json.dumps({"hooks": {"PreToolUse": [updated]}}))
-    sync_claude_config(paths, False)
+    apply_claude_config(paths, Mode.APPLY)
     assert json.loads(target.read_text())["hooks"]["PreToolUse"] == [foreign, updated]
     template.write_text('{"hooks": {}}')
-    sync_claude_config(paths, False)
+    apply_claude_config(paths, Mode.APPLY)
     assert json.loads(target.read_text()) == {
         "hooks": {"PreToolUse": [foreign]},
         "native": True,
     }
 
 
+@pytest.mark.parametrize("mode", [Mode.APPLY, Mode.FORCE])
 def test_claude_preserves_a_locally_edited_managed_hook(
-    source_home: Path, isolated_home: Path
+    source_home: Path, isolated_home: Path, mode: Mode
 ) -> None:
     target = isolated_home / ".claude/settings.json"
     paths = Paths(source_home, isolated_home / "opencode", claude_home=target.parent)
     template = source_home / "harnesses/claude/settings.json"
     template.write_text(json.dumps({"hooks": {"PreToolUse": [group("shared")]}}))
-    sync_claude_config(paths, False)
+    apply_claude_config(paths, Mode.APPLY)
     config = json.loads(target.read_text())
     config["hooks"]["PreToolUse"][0]["matcher"] = "Read"
     target.write_text(json.dumps(config))
     before = target.read_bytes()
-    assert sync_claude_config(paths, False).status == Status.FAILED
+    assert apply_claude_config(paths, mode)[0].status == Status.FAILED
     assert target.read_bytes() == before
 
 
@@ -63,7 +80,7 @@ def test_hook_check_is_read_only(source_home: Path, isolated_home: Path) -> None
     paths = Paths(
         source_home, isolated_home / "opencode", claude_home=isolated_home / ".claude"
     )
-    assert sync_claude_config(paths, True).status == Status.WOULD_CREATE
+    assert apply_claude_config(paths, Mode.DRY_RUN)[0].status == Status.WOULD_CREATE
     assert not (isolated_home / ".claude").exists()
     assert not (isolated_home / ".local/state").exists()
 
@@ -132,10 +149,10 @@ def test_hook_update_keeps_registration_order(
     target = isolated_home / "hooks.json"
     shared = group("shared")
     local = group("local")
-    sync_hook_config(target, {"hooks": {"PreToolUse": [shared]}}, False)
+    apply_hook_config(target, {"hooks": {"PreToolUse": [shared]}}, Mode.APPLY)
     target.write_text(json.dumps({"hooks": {"PreToolUse": [shared, local]}}))
     updated = group("updated")
-    sync_hook_config(target, {"hooks": {"PreToolUse": [updated]}}, False)
+    apply_hook_config(target, {"hooks": {"PreToolUse": [updated]}}, Mode.APPLY)
     assert json.loads(target.read_text())["hooks"]["PreToolUse"] == [updated, local]
 
 
@@ -143,7 +160,7 @@ def test_hook_update_keeps_registration_order(
 def test_invalid_native_config_is_preserved(contents: str, isolated_home: Path) -> None:
     target = isolated_home / "hooks.json"
     target.write_text(contents)
-    assert sync_hook_config(target, {"hooks": {}}, False).status == Status.FAILED
+    assert apply_hook_config(target, {"hooks": {}}, Mode.APPLY).status == Status.FAILED
     assert target.read_text() == contents
 
 
@@ -154,7 +171,7 @@ def test_agy_disabled_choice_is_preserved(
     target.parent.mkdir()
     target.write_text('{"agent-config":{"enabled":false},"other":{"enabled":true}}')
     paths = Paths(source_home, isolated_home / "opencode", agy_dir=target.parent)
-    assert sync_command_hooks(paths, "agy", False)[0].status == Status.REPLACED
+    assert sync_command_hooks(paths, "agy", False)[0].status == Status.MERGED
     config = json.loads(target.read_text())
     assert config["agent-config"]["enabled"] is False
     assert config["other"] == {"enabled": True}
@@ -164,7 +181,7 @@ def test_hook_changes_make_restorable_backups(isolated_home: Path) -> None:
     target = isolated_home / "hooks.json"
     original = '{"local":true,"hooks":{"Stop":[]}}'
     target.write_text(original)
-    sync_hook_config(target, {"hooks": {"PreToolUse": [group("shared")]}}, False)
+    apply_hook_config(target, {"hooks": {"PreToolUse": [group("shared")]}}, Mode.APPLY)
     backups = list(
         (isolated_home / ".local/state/agent-config/backups").glob("*-hooks.json")
     )
@@ -175,21 +192,24 @@ def test_hook_changes_make_restorable_backups(isolated_home: Path) -> None:
 def test_corrupt_hook_ownership_preserves_configuration(isolated_home: Path) -> None:
     target = isolated_home / "hooks.json"
     desired = {"hooks": {"PreToolUse": [group("shared")]}}
-    sync_hook_config(target, desired, False)
+    apply_hook_config(target, desired, Mode.APPLY)
     store = isolated_home / ".local/state/agent-config/managed.json"
     store.write_text("{")
     original = target.read_bytes()
-    assert sync_hook_config(target, desired, False).status == Status.FAILED
+    # A corrupt store fails the whole run before any action (S20/S23); only
+    # executor.run converts that to an outcome, so the helper raises here.
+    with pytest.raises(ValueError):
+        apply_hook_config(target, desired, Mode.APPLY)
     assert target.read_bytes() == original
 
 
 def test_hook_update_backs_up_ownership_for_rollback(isolated_home: Path) -> None:
     target = isolated_home / "hooks.json"
-    sync_hook_config(target, {"hooks": {"PreToolUse": [group("old")]}}, False)
+    apply_hook_config(target, {"hooks": {"PreToolUse": [group("old")]}}, Mode.APPLY)
     state_dir = isolated_home / ".local/state/agent-config"
     store = state_dir / "managed.json"
     original = store.read_bytes()
-    sync_hook_config(target, {"hooks": {"PreToolUse": [group("new")]}}, False)
+    apply_hook_config(target, {"hooks": {"PreToolUse": [group("new")]}}, Mode.APPLY)
     backups = [p for p in (state_dir / "backups").glob("*") if p.name.endswith(".json") and p.is_file()]
     assert any(backup.read_bytes() == original for backup in backups), sorted(p.name for p in backups)
     assert json.loads(store.read_text())["configs"]
@@ -199,10 +219,10 @@ def test_removal_conflicts_when_another_managed_group_was_edited(
     isolated_home: Path,
 ) -> None:
     target = isolated_home / "hooks.json"
-    sync_hook_config(target, {"hooks": {"PreToolUse": [group("a"), group("b")]}}, False)
+    apply_hook_config(target, {"hooks": {"PreToolUse": [group("a"), group("b")]}}, Mode.APPLY)
     edited = json.dumps({"hooks": {"PreToolUse": [group("edited a"), group("b")]}})
     target.write_text(edited)
-    result = sync_hook_config(target, {"hooks": {"PreToolUse": [group("b")]}}, False)
+    result = apply_hook_config(target, {"hooks": {"PreToolUse": [group("b")]}}, Mode.APPLY)
     assert result.status == Status.FAILED
     assert target.read_text() == edited
 
@@ -224,7 +244,8 @@ def test_claude_invalid_hook_template_preserves_native_config(
     template = source_home / "harnesses/claude/settings.json"
     template.write_text(json.dumps({"hooks": hooks}))
     paths = Paths(source_home, isolated_home / "opencode", claude_home=target.parent)
-    assert sync_claude_config(paths, False).status == Status.FAILED
+    with pytest.raises(ValueError):
+        plan_claude_config(paths)
     assert target.read_text() == '{"local":true}'
 
 
@@ -234,11 +255,11 @@ def test_concurrent_hook_sync_is_idempotent(isolated_home: Path) -> None:
     desired = {"hooks": {"PreToolUse": [group("shared")]}}
     with ThreadPoolExecutor(max_workers=4) as executor:
         outcomes = list(
-            executor.map(lambda _: sync_hook_config(target, desired, False), range(4))
+            executor.map(lambda _: apply_hook_config(target, desired, Mode.APPLY), range(4))
         )
-    assert [outcome.status for outcome in outcomes].count(Status.REPLACED) == 1
+    assert [outcome.status for outcome in outcomes].count(Status.MERGED) == 1
     assert all(
-        outcome.status in (Status.REPLACED, Status.UNCHANGED) for outcome in outcomes
+        outcome.status in (Status.MERGED, Status.UNCHANGED) for outcome in outcomes
     )
     assert json.loads(target.read_text())["hooks"]["PreToolUse"] == [
         group("local"),
@@ -283,11 +304,11 @@ def test_claude_sync_installs_the_mailbox_stop_guard_alongside_the_wt_marker(
         )
     )
 
-    assert sync_claude_config(paths, False).status != Status.FAILED
+    assert apply_claude_config(paths, Mode.APPLY)[0].status != Status.FAILED
 
     stop = json.loads(target.read_text())["hooks"]["Stop"]
     assert len(stop) == 2
     assert "mailbox-guard.mjs" in stop[1]["hooks"][0]["command"]
     assert stop[1]["hooks"][0]["timeout"] == 20
     assert "wt.sh" in stop[0]["hooks"][0]["command"]
-    assert sync_claude_config(paths, False).status == Status.UNCHANGED
+    assert apply_claude_config(paths, Mode.APPLY)[0].status == Status.UNCHANGED

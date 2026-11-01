@@ -41,7 +41,7 @@ def report(sync_outcomes: list[Outcome], skills_outcomes: list[Outcome], verbose
         typer.echo(f"  {o.status.value:14s} {o.path}")
         if o.detail:
             typer.echo(f"                 {o.detail}")
-        if verbose and o.status in (Status.SKIPPED, Status.REPLACED, Status.WOULD_REPLACE):
+        if verbose and o.status in (Status.SKIPPED, Status.REPLACED, Status.WOULD_REPLACE, Status.WOULD_MERGE):
             diff = _format_diff(o)
             if diff:
                 typer.echo(diff)

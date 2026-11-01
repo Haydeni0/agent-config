@@ -6,10 +6,18 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.claude import sync_claude_config
+from settings_sync.actions import Mode, Outcome, Status
+from settings_sync.claude import plan_claude_config
 from settings_sync.cli import agent_config_app
+from settings_sync.executor import execute
+from settings_sync.ownership import OwnershipStore
 from settings_sync.paths import resolve_paths
-from settings_sync.actions import Outcome, Status
+
+
+def apply_claude_config(paths, mode: Mode) -> list[Outcome]:
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan_claude_config(paths), mode, store)
 
 
 def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated_home: Path):
@@ -67,7 +75,6 @@ def test_custom_claude_home_runs_its_source_hook(source_home: Path, isolated_hom
 
 
 def test_claude_permissions_include_codegraph(tmp_path: Path, isolated_home: Path):
-    from settings_sync.claude import sync_claude_config
     from settings_sync.paths import resolve_paths
 
     source = tmp_path / "source"
@@ -77,7 +84,7 @@ def test_claude_permissions_include_codegraph(tmp_path: Path, isolated_home: Pat
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"permissions": {"allow": ["Bash(git status*)"]}}))
     paths = resolve_paths(claude_dir=source, claude_home=target.parent)
-    sync_claude_config(paths, dry_run=False)
+    apply_claude_config(paths, Mode.APPLY)
     allow = json.loads(target.read_text())["permissions"]["allow"]
     # Declared arrays replace (REQ-SYNC-04): the template allow list wins.
     assert "mcp__codegraph__*" in allow
@@ -95,7 +102,7 @@ def synced_claude_settings(source_home: Path, isolated_home: Path) -> tuple[Outc
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"hooks": {"PreToolUse": [FOREIGN_GROUP]}, "localKey": "keep"}))
     paths = resolve_paths(claude_dir=source_home, claude_home=target.parent)
-    return sync_claude_config(paths, dry_run=False), target
+    return apply_claude_config(paths, Mode.APPLY)[0], target
 
 
 def installed_guard_command(target: Path) -> str:
@@ -151,9 +158,9 @@ def test_claude_guard_sync_without_node_fails_untouched(
     before = json.dumps({"hooks": {"PreToolUse": [FOREIGN_GROUP]}, "localKey": "keep"})
     target.write_text(before)
     shutil.copyfile(REPO / "harnesses/claude/settings.json", source_home / "harnesses/claude/settings.json")
-    outcome = sync_claude_config(resolve_paths(claude_dir=source_home, claude_home=target.parent), dry_run=False)
-    assert outcome.status == Status.FAILED
-    assert "Node.js" in outcome.detail
+    paths = resolve_paths(claude_dir=source_home, claude_home=target.parent)
+    with pytest.raises(ValueError, match="Node.js"):
+        plan_claude_config(paths)
     assert target.read_text() == before
 
 

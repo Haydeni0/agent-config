@@ -5,10 +5,10 @@ import re
 import shlex
 from pathlib import Path
 
-from settings_sync.hooks import expand_command_hooks, has_command_placeholder, hook_groups, sync_hook_config
-from settings_sync.ownership import prune_generated, sync_generated_symlink
+from settings_sync.actions import Action, MergedConfig, Prune, Symlink
+from settings_sync.hooks import expand_command_hooks, has_command_placeholder, hook_groups
+from settings_sync.merging import JsonCodec
 from settings_sync.paths import Paths
-from settings_sync.actions import Outcome, Status
 
 
 def runtime_command(command: str, home: Path) -> str:
@@ -16,66 +16,54 @@ def runtime_command(command: str, home: Path) -> str:
     return re.sub(pattern, lambda match: shlex.quote(str(home) + (match[1] or match[2] or "")), command)
 
 
-def sync_claude_config(paths: Paths, dry_run: bool) -> Outcome:
-    target = paths.claude_home / "settings.json"
-    try:
-        defaults = json.loads((paths.source_dir / "harnesses/claude/settings.json").read_text())
-        if not isinstance(defaults, dict):
-            raise ValueError("Claude settings must be a JSON object")
-        hooks = hook_groups(defaults.get("hooks", {}))
-        if has_command_placeholder(hooks):
-            expand_command_hooks(paths.source_dir, "claude", hooks)
-        for groups in hooks.values():
-            for group in groups:
-                for hook in group.get("hooks", []):
-                    if hook.get("type") == "command":
-                        hook["command"] = runtime_command(hook["command"], paths.claude_home)
-        status_line = defaults.get("statusLine", {})
-        if status_line.get("type") == "command":
-            status_line["command"] = runtime_command(status_line["command"], paths.claude_home)
-        overlay_path = paths.overlay_dir / "claude.json"
-        if overlay_path.exists():
-            overlay = json.loads(overlay_path.read_text())
-            if not isinstance(overlay, dict) or set(overlay) - {"permissions"}:
-                raise ValueError("Claude overlay accepts only permissions.allow")
-            permissions = overlay.get("permissions", {})
-            if not isinstance(permissions, dict) or set(permissions) - {"allow"}:
-                raise ValueError("Claude overlay accepts only permissions.allow")
-            additions = permissions.get("allow", [])
-            if not isinstance(additions, list) or not all(isinstance(item, str) for item in additions):
-                raise ValueError("Claude overlay permissions.allow must be a list of strings")
-            shared_permissions = defaults.setdefault("permissions", {})
-            if not isinstance(shared_permissions, dict):
-                raise ValueError("shared permissions must be an object")
-            shared = shared_permissions.setdefault("allow", [])
-            if not isinstance(shared, list) or not all(isinstance(item, str) for item in shared):
-                raise ValueError("shared permissions.allow must be a list of strings")
-            shared.extend(item for item in additions if item not in shared)
-        return sync_hook_config(target, defaults, dry_run)
-    except (OSError, ValueError) as exc:
-        return Outcome(target, Status.FAILED, f"could not render Claude settings: {exc}")
+def plan_claude_config(paths: Paths) -> list[Action]:
+    defaults = json.loads((paths.source_dir / "harnesses/claude/settings.json").read_text())
+    if not isinstance(defaults, dict):
+        raise ValueError("Claude settings must be a JSON object")
+    hooks = hook_groups(defaults.get("hooks", {}))
+    if has_command_placeholder(hooks):
+        expand_command_hooks(paths.source_dir, "claude", hooks)
+    for groups in hooks.values():
+        for group in groups:
+            for hook in group.get("hooks", []):
+                if hook.get("type") == "command":
+                    hook["command"] = runtime_command(hook["command"], paths.claude_home)
+    status_line = defaults.get("statusLine", {})
+    if status_line.get("type") == "command":
+        status_line["command"] = runtime_command(status_line["command"], paths.claude_home)
+    overlay_path = paths.overlay_dir / "claude.json"
+    if overlay_path.exists():
+        overlay = json.loads(overlay_path.read_text())
+        if not isinstance(overlay, dict) or set(overlay) - {"permissions"}:
+            raise ValueError("Claude overlay accepts only permissions.allow")
+        permissions = overlay.get("permissions", {})
+        if not isinstance(permissions, dict) or set(permissions) - {"allow"}:
+            raise ValueError("Claude overlay accepts only permissions.allow")
+        additions = permissions.get("allow", [])
+        if not isinstance(additions, list) or not all(isinstance(item, str) for item in additions):
+            raise ValueError("Claude overlay permissions.allow must be a list of strings")
+        shared_permissions = defaults.setdefault("permissions", {})
+        if not isinstance(shared_permissions, dict):
+            raise ValueError("shared permissions must be an object")
+        shared = shared_permissions.setdefault("allow", [])
+        if not isinstance(shared, list) or not all(isinstance(item, str) for item in shared):
+            raise ValueError("shared permissions.allow must be a list of strings")
+        shared.extend(item for item in additions if item not in shared)
+    return [MergedConfig(path=paths.claude_home / "settings.json", codec=JsonCodec(), keys=defaults, hook_key="hooks")]
 
 
-def sync_claude_entries(paths: Paths, categories: tuple[str, ...], force: bool, dry_run: bool) -> list[Outcome]:
-    home = paths.claude_home
-    outcomes: list[Outcome] = []
+def plan_claude_entries(paths: Paths, categories: tuple[str, ...]) -> list[Action]:
+    actions: list[Action] = []
     for category in categories:
         source = paths.source_dir / category
-        target = home / category
-        if not source.is_dir():
-            outcomes.append(Outcome(source, Status.FAILED, f"required {category} source directory missing"))
-            continue
-        names: set[str] = set()
-        for entry in sorted(source.iterdir()):
-            if entry.name.startswith("."):
-                continue
-            names.add(entry.name)
-            outcomes.append(sync_generated_symlink(target / entry.name, entry, force, dry_run))
-        outcomes.extend(prune_generated(target, names, dry_run))
-    return outcomes
+        target = paths.claude_home / category
+        names = frozenset(entry.name for entry in source.iterdir() if not entry.name.startswith("."))
+        actions.extend(Symlink(target / name, source / name) for name in sorted(names))
+        actions.append(Prune(target, names))
+    return actions
 
 
-def sync_shared_skills(paths: Paths, dry_run: bool) -> list[Outcome]:
+def plan_shared_skills(paths: Paths) -> list[Action]:
     target = paths.shared_skills
     source = paths.source_dir / "skills"
     legacy = paths.claude_home / "skills"
@@ -86,25 +74,25 @@ def sync_shared_skills(paths: Paths, dry_run: bool) -> list[Outcome]:
             and entry.resolve() != (source / entry.name).resolve()
         )
         if local:
-            return [Outcome(target, Status.SKIPPED,
-                            f"legacy skills need reconciliation before changing discovery: {', '.join(local)}; "
-                            "move shared skills into the source checkout and sync claude links first")]
-    return [sync_generated_symlink(target, source, dry_run=dry_run)]
+            return [Symlink(target, source, detail=(
+                f"legacy skills need reconciliation before changing discovery: {', '.join(local)}; "
+                "move shared skills into the source checkout and sync claude links first"))]
+    return [Symlink(target, source)]
 
 
-def sync_claude_links(paths: Paths, force: bool, dry_run: bool) -> list[Outcome]:
-    home = paths.claude_home
-    outcomes = sync_claude_entries(paths, ("skills", "commands", "agents"), force, dry_run)
-    for alias, source in (
-        ("custom", "custom"), ("hooks", "hooks"),
-        ("statusline-command.sh", "harnesses/claude/statusline-command.sh"),
-        ("pi", "harnesses/pi"), ("opencode", "harnesses/opencode"),
-        ("settings-sync", "settings-sync"), ("opencode-resume", "opencode-resume"),
-        ("codex", "harnesses/codex"), ("goose", "harnesses/goose"),
-        ("gemini", "harnesses/gemini"), ("no-mistakes", "harnesses/no-mistakes"),
-        ("README.md", "README.md"), ("sync.sh", "sync.sh"), ("scripts", "scripts"),
-    ):
-        entry = paths.source_dir / source
-        if entry.exists():
-            outcomes.append(sync_generated_symlink(home / alias, entry, force, dry_run))
-    return outcomes
+_REPO_ALIASES = (
+    ("custom", "custom"), ("hooks", "hooks"),
+    ("statusline-command.sh", "harnesses/claude/statusline-command.sh"),
+    ("settings-sync", "settings-sync"), ("opencode-resume", "opencode-resume"),
+    ("README.md", "README.md"), ("sync.sh", "sync.sh"), ("scripts", "scripts"),
+)
+
+
+def plan_claude_links(paths: Paths) -> list[Action]:
+    actions = plan_claude_entries(paths, ("skills", "commands", "agents"))
+    actions.extend(
+        Symlink(paths.claude_home / alias, paths.source_dir / source)
+        for alias, source in _REPO_ALIASES
+        if (paths.source_dir / source).exists()
+    )
+    return actions
