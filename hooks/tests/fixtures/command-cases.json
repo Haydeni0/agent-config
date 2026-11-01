@@ -129,6 +129,46 @@
       ]
     },
     {
+      "name": "pipeline_delete_inherits_protected_path",
+      "label": "pipe-connected listing feeds a delete consumer",
+      "expect": "deny",
+      "needle": "/mnt/data",
+      "commands": [
+        "ls /mnt/data | xargs rm -rf",
+        "fd --type f . /mnt/data | xargs rm -rf",
+        "rg -l x /mnt/data | xargs shred",
+        "find /mnt/data -print0 | xargs -0 rm -rf",
+        "ls /mnt/data |& xargs rm -rf",
+        "ls /mnt/data | grep f | xargs rm -f"
+      ]
+    },
+    {
+      "name": "pipeline_without_protected_path_allowed",
+      "label": "pipes without a protected path pass",
+      "expect": "allow",
+      "commands": [
+        "fd --type f . /tmp/build | xargs rm -rf",
+        "ls /tmp | xargs rm"
+      ]
+    },
+    {
+      "name": "listing_without_delete_consumer_allowed",
+      "label": "listing or reading protected paths without a delete consumer passes",
+      "expect": "allow",
+      "commands": [
+        "cat /mnt/data/f | wc -l",
+        "ls /mnt/data"
+      ]
+    },
+    {
+      "name": "or_pipe_no_inheritance_allowed",
+      "label": "|| carries no data: per-segment isolation stands",
+      "expect": "allow",
+      "commands": [
+        "rm -rf /tmp/build || echo \"keeping /mnt/data\""
+      ]
+    },
+    {
       "name": "mnt_data_quoted_denied",
       "label": "/mnt/data quoted-message denied (safe)",
       "expect": "deny",

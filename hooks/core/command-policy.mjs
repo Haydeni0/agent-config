@@ -39,6 +39,9 @@
 //     chars (NOT separators), so a verb and a path must share a segment. This
 //     prevents false positives where they appear as unrelated words across a
 //     boundary (rm /tmp/x && echo cleaned /mnt/data done).
+//   - A delete-class consumer segment inherits the tokens of every
+//     pipe-connected segment (single | or |&); ||, &, &&, ;, newline join
+//     segments that stay isolated.
 //   - Subcommands are found past global options: a value-taking option skips
 //     its value token too. aws also accepts unambiguous option-name prefixes
 //     (--prof p) and options between s3/s3api and the subcommand, so both
@@ -60,6 +63,11 @@
 //     names /media) is denied on the safe side.
 //   - A glob component that can match . or .. (.*, .?) is also read as them,
 //     so rm -rf "$DIR"/.* (flattened to /.*) is denied as filesystem root.
+//   - A quoted | inside a path argument (rm "/tmp/cache|/mnt/data/old") was
+//     already split into segments by the flattened view; the pipeline guard
+//     now marks that boundary as a data-carrying pipe and denies on the
+//     inherited path - safe-side, same accepted class as the quoted-value
+//     limitations above.
 
 const S3_REASON =
   "S3 deletes are not permitted for the agent - run them yourself outside the agent. (policy: command)"
@@ -87,10 +95,9 @@ const GIT_GATE_TAIL =
   "The user sets it in their session - run it yourself outside the agent if it must happen now. (policy: command)"
 const COMMIT_SUBCOMMANDS = new Set(["commit", "merge", "cherry-pick", "revert", "rebase", "am"])
 
-// Command tokens: flatten separators + quote/subshell/backslash chars so
-// wrapped/compound forms (bash -c "...", $(...), a && b, \rm) tokenize to bare
-// tokens.
-const S3_FLATTEN = /["'`$()|;&\\]/g
+// Command tokens: segments (split on separator runs first) flattened per
+// segment, so wrapped/compound forms (bash -c "...", $(...), a && b, \rm)
+// tokenize to bare tokens.
 // Segment: flatten only quote/subshell/backslash chars (NOT separators, which
 // were already split on).
 const SEG_FLATTEN = /["'`$()\\]/g
@@ -598,6 +605,29 @@ function findDeleteLabel(args) {
   return null
 }
 
+// A segment holding a delete-verb token (directly or as xargs/parallel
+// arguments) inherits every pipe-connected segment's tokens for the
+// protected-path scan. ||, &, &&, ;, newline carry no data: their segments
+// stay isolated (rm /tmp/x && echo cleaned /mnt/data done stays allowed).
+function pipelineDeleteGuard(segments, pipeToNext) {
+  for (let ci = 0; ci < segments.length; ci++) {
+    const verb = segments[ci].map(toolName).find((name) => DELETE_VERBS.has(name))
+    if (!verb) continue
+    let lo = ci
+    while (lo > 0 && pipeToNext[lo]) lo--
+    let hi = ci
+    while (hi + 1 < segments.length && pipeToNext[hi + 1]) hi++
+    for (let si = lo; si <= hi; si++) {
+      for (const arg of segments[si]) {
+        if (arg.startsWith("-")) continue
+        const reason = protectedPathReason(verb, arg)
+        if (reason) return reason
+      }
+    }
+  }
+  return null
+}
+
 // Order decides which reason a multi-violation command reports.
 const COMMAND_GUARDS = [sudoGuard, ddGuard, mkfsGuard, kubectlGuard, s3Guard]
 const SEGMENT_GUARDS = [gitGuard, ghGuard, chmodGuard, deleteVerbGuard, findGuard]
@@ -612,26 +642,43 @@ function firstReason(guards, tokens, env) {
 
 // One tokenization of the command: `tokens` feed the command-token guards,
 // each entry of `segments` the segment guards.
-function viewReason({ tokens, segments }, env) {
+function viewReason({ tokens, segments, pipeToNext }, env) {
   const commandReason = firstReason(COMMAND_GUARDS, tokens, env)
   if (commandReason) return commandReason
   for (const s of segments) {
     const reason = firstReason(SEGMENT_GUARDS, s, env)
     if (reason) return reason
   }
-  return null
+  return pipelineDeleteGuard(segments, pipeToNext ?? segments.map(() => false))
+}
+
+// Split on separator runs, flattening each segment with `flatten`, recording
+// whether each boundary is a data-carrying pipe (exactly one | or |&).
+// Entry k of pipeToNext describes the boundary between segment k-1 and k.
+function splitSegments(command, flatten) {
+  const parts = command.split(/([\n;&|]+)/)
+  const segments = []
+  const pipeToNext = []
+  let pendingPipe = false
+  for (let i = 0; i < parts.length; i += 2) {
+    const tokens = parts[i].replace(flatten, " ").split(SHELL_WHITESPACE).filter(Boolean)
+    if (tokens.length > 0) {
+      segments.push(tokens)
+      pipeToNext.push(pendingPipe)
+      pendingPipe = false
+    }
+    if (parts[i + 1] !== undefined) {
+      pendingPipe = parts[i + 1] === "|" || parts[i + 1] === "|&"
+    }
+  }
+  return { segments, pipeToNext }
 }
 
 // Quote-flattening view: quote/subshell chars become blanks, so a command
 // wrapped in a string (bash -c "...", $(...)) tokenizes to its bare words.
 function flattenedView(command) {
-  return {
-    tokens: command.replace(S3_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean),
-    segments: command
-      .split(SPLIT_SEPS)
-      .map((segment) => segment.replace(SEG_FLATTEN, " ").split(SHELL_WHITESPACE).filter(Boolean))
-      .filter((s) => s.length > 0),
-  }
+  const { segments, pipeToNext } = splitSegments(command, SEG_FLATTEN)
+  return { tokens: segments.flat(), segments, pipeToNext }
 }
 
 // Quoted view of the command, then of every quoted word holding a blank,
@@ -657,6 +704,7 @@ function quotedReason(command, env, depth) {
 // unterminated quote runs to the end.
 function quotedView(command) {
   const segments = [[]]
+  const pipeToNext = [false]
   let word = null
   const endWord = () => {
     if (word !== null) segments.at(-1).push(word)
@@ -681,8 +729,13 @@ function quotedView(command) {
     } else if (c === "\\" && i + 1 < command.length) {
       word = (word ?? "") + command[++i]
     } else if (SPLIT_SEPS.test(c)) {
+      let run = c
+      while (i + 1 < command.length && SPLIT_SEPS.test(command[i + 1])) run += command[++i]
       endWord()
-      if (segments.at(-1).length > 0) segments.push([])
+      if (segments.at(-1).length > 0) {
+        segments.push([])
+        pipeToNext.push(run === "|" || run === "|&")
+      }
     } else if (SHELL_WHITESPACE.test(c) || "`$()<>".includes(c)) {
       endWord()
     } else {
@@ -690,8 +743,15 @@ function quotedView(command) {
     }
   }
   endWord()
-  const nonEmpty = segments.filter((s) => s.length > 0)
-  return { tokens: nonEmpty.flat(), segments: nonEmpty }
+  const kept = []
+  const keptPipes = []
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].length > 0) {
+      kept.push(segments[i])
+      keptPipes.push(pipeToNext[i])
+    }
+  }
+  return { tokens: kept.flat(), segments: kept, pipeToNext: keptPipes }
 }
 
 export function decide(command, env = process.env) {
