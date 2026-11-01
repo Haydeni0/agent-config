@@ -284,6 +284,8 @@ flowchart LR
     orchestrator --> work_package
     orchestrator --> claim_verification
     pr_review --> code_review
+    prototype --> work_package
+    prototype --> grill_me
     pytest_guidelines --> uv
     reflect --> backlog
     reflect --> repo_agent_setup
