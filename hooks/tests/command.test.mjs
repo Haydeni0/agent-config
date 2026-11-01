@@ -167,6 +167,28 @@ test("claude entry ignores a non-shell Cursor tool", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "");
 });
+test("claude: missing or non-string tool_name fails closed", () => {
+  const missing = invoke("claude", {
+    hook_event_name: "PreToolUse",
+    tool_input: { command: "sudo true" },
+  });
+  assert.equal(missing.status, 2, missing.stderr);
+  assert.equal(missing.stdout, "");
+  const nonString = invoke("claude", {
+    hook_event_name: "PreToolUse",
+    tool_name: 42,
+    tool_input: { command: "sudo true" },
+  });
+  assert.equal(nonString.status, 2, nonString.stderr);
+  assert.equal(nonString.stdout, "");
+});
+
+test("codex: missing tool_name stays outside the claude strictness", () => {
+  const result = invoke("codex", { hook_event_name: "PreToolUse", tool_input: { command: "sudo true" } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
+
 test("codex entry stays strict about the event name", () => {
   const result = invoke("codex", {
     hook_event_name: "preToolUse",

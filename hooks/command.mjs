@@ -8,6 +8,11 @@ function commandFor(harness, input) {
   switch (harness) {
     case "claude":
     case "codex": {
+      // Payloads outside the native contract are indistinguishable from an
+      // attack: fail closed (exit 2, empty stdout) on the claude arm only -
+      // codex payload strictness is unchanged.
+      if (harness === "claude" && typeof input.tool_name !== "string")
+        throw new Error("Expected a tool_name string");
       // Cursor imports Claude hooks and renames the event/tool pair
       // (PreToolUse -> preToolUse, Bash -> Shell); the claude arm accepts
       // both spellings, codex payloads are never translated.
