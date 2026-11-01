@@ -1,13 +1,83 @@
 """Merge declared config defaults while retaining native local state."""
 
-from collections.abc import Mapping, MutableMapping
+import datetime
 import json
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
+from typing import Protocol
 
+import tomlkit
 import yaml
+from tomlkit.exceptions import ParseError
 
 from settings_sync.actions import Outcome, Status
 from settings_sync.sync import install_text
+
+
+class Codec(Protocol):
+    name: str
+
+    def loads(self, text: str) -> Mapping[str, object]: ...
+
+    def dumps(self, obj: Mapping[str, object]) -> str: ...
+
+
+class JsonCodec:
+    name = "json"
+
+    def loads(self, text: str) -> Mapping[str, object]:
+        return json.loads(text)
+
+    def dumps(self, obj: Mapping[str, object]) -> str:
+        return json.dumps(obj, indent=2) + "\n"
+
+
+class YamlCodec:
+    name = "yaml"
+
+    def loads(self, text: str) -> Mapping[str, object]:
+        try:
+            return yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"invalid YAML: {exc}") from exc
+
+    def dumps(self, obj: Mapping[str, object]) -> str:
+        return yaml.safe_dump(obj, sort_keys=False)
+
+
+class TomlCodec:
+    name = "toml"
+
+    def loads(self, text: str) -> Mapping[str, object]:
+        try:
+            return tomlkit.parse(text)
+        except ParseError as exc:
+            raise ValueError(f"invalid TOML: {exc}") from exc
+
+    def dumps(self, obj: Mapping[str, object]) -> str:
+        return tomlkit.dumps(obj)
+
+
+_CODECS = {codec.name: codec for codec in (JsonCodec(), YamlCodec(), TomlCodec())}
+
+
+def codec_by_name(name: str) -> Codec:
+    if name not in _CODECS:
+        raise ValueError(f"unknown config codec: {name}")
+    return _CODECS[name]
+
+
+def canonicalize(value: object) -> object:
+    """Map TOML-only value types onto JSON-native ones so record equality is stable."""
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: canonicalize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [canonicalize(item) for item in value]
+    return value
 
 
 def merge_defaults(target: MutableMapping[str, object], source: Mapping[str, object]) -> None:
