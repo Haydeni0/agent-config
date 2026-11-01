@@ -255,3 +255,42 @@ def test_check_reports_drift_on_retired_alias(source_home: Path, isolated_home: 
     assert "would remove" in result.output
     assert "would_merge" in result.output
     assert snapshot(isolated_home) == before
+
+
+def test_synced_claude_commands_use_moved_paths(source_home: Path, isolated_home: Path):
+    """S7: installed commands name claude-hooks and vendor, never the retired tree."""
+    _, target = synced_claude_settings(source_home, isolated_home)
+    config = json.loads(target.read_text())
+    commands = [hook["command"] for groups in config["hooks"].values() for group in groups for hook in group["hooks"]]
+    assert [c for c in commands if "caveman-activate" in c] == [f"bash {target.parent}/claude-hooks/caveman-activate.sh"]
+    wt = [c for c in commands if "wt.sh" in c]
+    assert len(wt) == 8
+    assert all(f"{target.parent}/vendor/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh" in c for c in wt)
+    assert "custom/" not in target.read_text()
+
+
+def test_claude_sync_removes_adopted_tracker_group(source_home: Path, isolated_home: Path):
+    """S9: a UserPromptSubmit group adopted by an earlier sync disappears when the template
+    drops it, while a foreign group keeps its position. The retired tracker registration is
+    represented by a stand-in command because the verify.sh layout guard forbids its name
+    in tracked files (D7)."""
+    target = isolated_home / ".claude/settings.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    template = source_home / "harnesses/claude/settings.json"
+    real = (REPO / "harnesses/claude/settings.json").read_text()
+    retired = {"hooks": [{"type": "command", "command": "bash ~/.claude/claude-hooks/retired-session-hook.sh"}]}
+    old = json.loads(real)
+    old["hooks"]["UserPromptSubmit"] = [retired, *old["hooks"]["UserPromptSubmit"]]
+    template.write_text(json.dumps(old))
+    paths = resolve_paths(HARNESSES, claude_dir=source_home, claude_home=target.parent)
+    assert apply_claude_config(paths, Mode.APPLY)[0].status != Status.FAILED
+    installed = json.loads(target.read_text())
+    foreign = {"hooks": [{"type": "command", "command": "echo local"}]}
+    installed["hooks"]["UserPromptSubmit"].append(foreign)
+    target.write_text(json.dumps(installed))
+    template.write_text(real)
+    assert apply_claude_config(paths, Mode.APPLY)[0].status != Status.FAILED
+    groups_now = json.loads(target.read_text())["hooks"]["UserPromptSubmit"]
+    assert foreign in groups_now
+    adopted = [g for g in groups_now if g != foreign]
+    assert adopted and all("wt.sh" in h["command"] for g in adopted for h in g["hooks"])
