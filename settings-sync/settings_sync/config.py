@@ -1,50 +1,13 @@
 """Read the base opencode config from ~/.claude and write the generated opencode.json."""
 
 import json
-import re
 from pathlib import Path
 
 from settings_sync.actions import Outcome, Status
-from settings_sync.merging import merge_defaults, sync_json_defaults
+from settings_sync.merging import merge_defaults, strip_jsonc, sync_json_defaults
 
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"
 TUI_SCHEMA = "https://opencode.ai/tui.json"
-
-_LINE_COMMENT = re.compile(r"//[^\n]*")
-_TRAILING_COMMA = re.compile(r",(\s*[}\]])")
-
-
-def _strip_jsonc(text: str) -> str:
-    out: list[str] = []
-    i = 0
-    n = len(text)
-    in_string = False
-    while i < n:
-        ch = text[i]
-        if in_string:
-            out.append(ch)
-            if ch == "\\" and i + 1 < n:
-                out.append(text[i + 1])
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-            i += 1
-            continue
-        if ch == '"':
-            in_string = True
-            out.append(ch)
-            i += 1
-            continue
-        if ch == "/" and i + 1 < n and text[i + 1] == "/":
-            while i < n and text[i] != "\n":
-                i += 1
-            continue
-        out.append(ch)
-        i += 1
-    stripped = "".join(out)
-    return _TRAILING_COMMA.sub(r"\1", stripped)
-
 
 def build_config(base_path: Path) -> dict:
     if base_path.is_file():
@@ -65,7 +28,7 @@ def sync_config(target: Path, base_path: Path, force: bool = False, dry_run: boo
             return Outcome(target, Status.FAILED, f"legacy entry is not a regular file; preserve and resolve {legacy_path}")
         legacy_text = legacy_path.read_text() if legacy_path.is_file() else None
         if legacy_text is not None:
-            legacy = json.loads(_strip_jsonc(legacy_text))
+            legacy = json.loads(strip_jsonc(legacy_text))
             installed = json.loads(target.read_text()) if target.exists() else {}
             if not isinstance(legacy, dict) or not isinstance(installed, dict):
                 raise ValueError("legacy and installed JSON must be objects")

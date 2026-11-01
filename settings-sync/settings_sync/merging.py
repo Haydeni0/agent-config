@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import re
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Protocol
@@ -65,6 +66,43 @@ def codec_by_name(name: str) -> Codec:
     if name not in _CODECS:
         raise ValueError(f"unknown config codec: {name}")
     return _CODECS[name]
+
+
+_LINE_COMMENT = re.compile(r"//[^\n]*")
+_TRAILING_COMMA = re.compile(r",(\s*[}\]])")
+
+
+def strip_jsonc(text: str) -> str:
+    """Remove // line comments and trailing commas so JSONC parses as JSON."""
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    stripped = "".join(out)
+    return _TRAILING_COMMA.sub(r"\1", stripped)
 
 
 def canonicalize(value: object) -> object:
