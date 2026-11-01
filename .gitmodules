@@ -1,12 +1,12 @@
-[submodule "custom/plugins/caveman"]
-	path = custom/plugins/caveman
+[submodule "vendor/plugins/caveman"]
+	path = vendor/plugins/caveman
 	url = https://github.com/JuliusBrussee/caveman.git
-[submodule "custom/plugins/marimo-pair"]
-	path = custom/plugins/marimo-pair
+[submodule "vendor/plugins/marimo-pair"]
+	path = vendor/plugins/marimo-pair
 	url = https://github.com/marimo-team/marimo-pair.git
-[submodule "custom/plugins/marimo-skills"]
-	path = custom/plugins/marimo-skills
+[submodule "vendor/plugins/marimo-skills"]
+	path = vendor/plugins/marimo-skills
 	url = https://github.com/marimo-team/skills.git
-[submodule "custom/plugins/worktrunk"]
-	path = custom/plugins/worktrunk
+[submodule "vendor/plugins/worktrunk"]
+	path = vendor/plugins/worktrunk
 	url = https://github.com/max-sixty/worktrunk
