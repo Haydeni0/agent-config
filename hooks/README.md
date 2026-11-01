@@ -68,9 +68,7 @@ certification: [Claude launcher](https://github.com/kunchenguid/no-mistakes/blob
 
 ## Install and update
 
-Use Node.js 22+ for every command-hook harness, Claude included; the Claude
-forwarder `custom/hooks/check-bash-guard.sh` (kept for installs whose settings
-still name it) also requires Bash.
+Use Node.js 22+ for every command-hook harness, Claude included.
 Command-hook sync records the available Node executable and absolute checkout
 path, quoted for spaces. Rerun sync after moving the checkout or Node executable.
 Opencode/Pi use their own JavaScript runtimes.
