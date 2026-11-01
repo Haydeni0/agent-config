@@ -6,8 +6,8 @@ classification runs only in the dry-run branch (steps cannot distinguish
 --check from --dry-run); real sync reports CREATED/REPLACED/UNCHANGED only.
 """
 
+import copy
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -15,9 +15,9 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from settings_sync.merging import sync_json_defaults
+from settings_sync.actions import Action, Effect, MergedConfig, Outcome, Probe, Report, Status, Symlink
+from settings_sync.merging import JsonCodec
 from settings_sync.paths import Paths
-from settings_sync.actions import Outcome, Status
 
 CODEGRAPH_VERSION = "v1.6.2"
 CODEGRAPH_REPO = "colbymchenry/codegraph"
@@ -72,35 +72,6 @@ def download_and_extract(url: str, version_dir: Path) -> None:
             raise ValueError(f"codegraph download failed: url={url} dest={version_dir}: {exc}") from exc
 
 
-def sync_codegraph_binary(paths: Paths, dry_run: bool) -> list[Outcome]:
-    install_root = paths.codegraph_dir
-    version_dir = install_root / "versions" / CODEGRAPH_VERSION
-    launcher = version_dir / "bin" / "codegraph"
-    symlink = paths.local_bin / "codegraph"
-
-    if dry_run:
-        return [_classify_dry_run(launcher, symlink)]
-
-    if launcher.exists() and _symlink_points_at(symlink, launcher):
-        _prune_other_versions(install_root, version_dir)
-        return [Outcome(symlink, Status.UNCHANGED, f"codegraph {CODEGRAPH_VERSION} installed")]
-
-    url = release_url()
-    was_installed = symlink.exists() or symlink.is_symlink()
-    download_and_extract(url, version_dir)
-    symlink.parent.mkdir(parents=True, exist_ok=True)
-    if symlink.exists() or symlink.is_symlink():
-        symlink.unlink()
-    symlink.symlink_to(launcher)
-    current = install_root / "current"
-    if current.is_symlink() or current.exists():
-        current.unlink()
-    current.symlink_to(version_dir)
-    _prune_other_versions(install_root, version_dir)
-    status = Status.REPLACED if was_installed else Status.CREATED
-    return [Outcome(symlink, status, f"codegraph {CODEGRAPH_VERSION} installed from {url}")]
-
-
 def _classify_dry_run(launcher: Path, symlink: Path) -> Outcome:
     if launcher.exists() and _symlink_points_at(symlink, launcher):
         which = shutil.which("codegraph")
@@ -118,22 +89,16 @@ def _symlink_points_at(symlink: Path, launcher: Path) -> bool:
     return symlink.is_symlink() and symlink.resolve() == launcher.resolve()
 
 
-def _prune_other_versions(install_root: Path, keep: Path) -> None:
+def _stale_versions(install_root: Path, keep: Path) -> list[Path]:
     versions = install_root / "versions"
     if not versions.is_dir():
-        return
-    for entry in versions.iterdir():
-        if entry != keep and entry.is_dir():
-            shutil.rmtree(entry, ignore_errors=True)
+        return []
+    return [entry for entry in versions.iterdir() if entry != keep and entry.is_dir()]
 
 
-def sync_claude_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
-    """Keyed-merge the MCP server entry into ~/.claude.json (or the profile
-    copy). Only the mcpServers.codegraph key is managed; trust, oauth, and
-    onboarding state pass through untouched (merge_defaults)."""
-    target = paths.claude_mcp_json
-    content = json.dumps(CLAUDE_MCP_ENTRY, indent=2)
-    return [sync_json_defaults(target, content, dry_run)]
+def _prune_other_versions(install_root: Path, keep: Path) -> None:
+    for entry in _stale_versions(install_root, keep):
+        shutil.rmtree(entry, ignore_errors=True)
 
 
 def agy_mcp_config_path(paths: Paths) -> Path:
@@ -147,51 +112,61 @@ def agy_mcp_config_path(paths: Paths) -> Path:
     return paths.agy_dir.parent / "antigravity" / "mcp_config.json"
 
 
-def sync_agy_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
-    """Keyed-merge the Antigravity MCP entry. No 'type' field - Antigravity
-    rejects type: "stdio" entries. On darwin the command is the absolute
-    launcher path (GUI launches get a stripped PATH); the pinned path is
-    computable without the binary, so it serves as the fallback."""
-    command: str = "codegraph"
+
+
+def plan_codegraph_binary(paths: Paths) -> list[Action]:
+    install_root = paths.codegraph_dir
+    version_dir = install_root / "versions" / CODEGRAPH_VERSION
+    launcher = version_dir / "bin" / "codegraph"
+    symlink = paths.local_bin / "codegraph"
+    current = install_root / "current"
+    actions: list[Action] = []
+    if not (launcher.exists() and _symlink_points_at(symlink, launcher)):
+        url = release_url()
+        actions.append(Effect(symlink, True, f"install codegraph {CODEGRAPH_VERSION} from {url}",
+                              lambda: download_and_extract(url, version_dir)))
+        actions.append(Symlink(symlink, launcher))
+        actions.append(Symlink(current, version_dir))
+    if _stale_versions(install_root, version_dir):
+        actions.append(Effect(install_root, True, "prune stale codegraph versions",
+                              lambda: _prune_other_versions(install_root, version_dir)))
+    actions.append(Probe(symlink, lambda: _classify_dry_run(launcher, symlink)))
+    return actions
+
+
+AGY_MCP_ENTRY: dict = {"mcpServers": {"codegraph": {"command": "codegraph", "args": ["serve", "--mcp"]}}}
+
+
+def plan_claude_mcp(paths: Paths) -> list[Action]:
+    return [MergedConfig(path=paths.claude_mcp_json, codec=JsonCodec(), keys=copy.deepcopy(CLAUDE_MCP_ENTRY))]
+
+
+def plan_agy_mcp(paths: Paths) -> list[Action]:
+    entry = copy.deepcopy(AGY_MCP_ENTRY)
     if current_platform() == "darwin":
-        command = str(paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph")
-    entry = {"mcpServers": {"codegraph": {"command": command, "args": ["serve", "--mcp"]}}}
-    target = agy_mcp_config_path(paths)
-    return [sync_json_defaults(target, json.dumps(entry, indent=2), dry_run)]
+        entry["mcpServers"]["codegraph"]["command"] = str(paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph")
+    return [MergedConfig(path=agy_mcp_config_path(paths), codec=JsonCodec(), keys=entry)]
 
 
-def sync_pi_mcp(paths: Paths, dry_run: bool) -> list[Outcome]:
-    """Keyed-merge pi's mcp.json from the harnesses/pi/mcp.json template.
-    exposure: "direct" is required - pi's default codemode never declares a
-    server's tools to the model. Keyed merge (not wholesale) so user servers
-    in the same file survive."""
-    target = paths.pi_dir / "mcp.json"
+def plan_pi_mcp(paths: Paths) -> list[Action]:
     content = (paths.source_dir / "harnesses/pi/mcp.json").read_text()
-    return [sync_json_defaults(target, content, dry_run)]
+    return [MergedConfig(path=paths.pi_dir / "mcp.json", codec=JsonCodec(), keys=json.loads(content))]
 
 
-def sync_codegraph_telemetry(paths: Paths, dry_run: bool) -> list[Outcome]:
-    """Store the anonymous-usage telemetry opt-out (codegraph defaults to on).
-    The stored choice covers every process - CLI, MCP server, background
-    daemon - and deletes any unsent queue; the spec leaves telemetry values
-    at codegraph defaults but the user policy is opt-out everywhere, so sync
-    enforces it on every machine it touches."""
+def plan_codegraph_telemetry(paths: Paths) -> list[Action]:
     target = paths.codegraph_dir / "telemetry.json"
-    enabled = None
     if target.exists():
         try:
             enabled = json.loads(target.read_text()).get("enabled")
         except ValueError as exc:
-            return [Outcome(target, Status.FAILED, f"could not parse telemetry config: {exc}")]
-    if enabled is False:
-        return [Outcome(target, Status.UNCHANGED, "telemetry opt-out stored")]
-    if dry_run:
-        return [Outcome(target, Status.WOULD_CREATE, "would store telemetry opt-out")]
+            return [Report(target, Status.FAILED, f"could not parse telemetry config: {exc}")]
+        if enabled is False:
+            return [Report(target, Status.UNCHANGED, "telemetry opt-out stored")]
     launcher = paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph"
-    if not launcher.exists():
-        raise ValueError("telemetry opt-out requires the installed binary; run the binary step first")
-    try:
+
+    def run_off() -> None:
+        if not launcher.exists():
+            raise ValueError("telemetry opt-out requires the installed binary; run the binary step first")
         subprocess.run([str(launcher), "telemetry", "off"], check=True, capture_output=True)
-    except subprocess.CalledProcessError as exc:
-        raise ValueError(f"codegraph telemetry off failed: returncode={exc.returncode}") from exc
-    return [Outcome(target, Status.CREATED, "telemetry opt-out stored (codegraph telemetry off)")]
+
+    return [Effect(target, True, "store telemetry opt-out (codegraph telemetry off)", run_off)]

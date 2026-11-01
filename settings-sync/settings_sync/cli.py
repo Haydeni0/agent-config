@@ -7,7 +7,9 @@ from typing import Any
 import typer
 
 from settings_sync.paths import Paths, resolve_paths
-from settings_sync.registry import Harness, run_all_tools, run_harness, select_harnesses
+from settings_sync.actions import Mode
+from settings_sync.executor import run as run_engine
+from settings_sync.registry import Harness, run_all_tools, select_harnesses
 from settings_sync.actions import Outcome, Status
 
 
@@ -127,8 +129,8 @@ def sync_command(
     paths = _ctx_paths(ctx)
     selected_force, selected_dry, check, selected_verbose = _ctx_flags(ctx)
     try:
-        outcomes = [outcome for selected in _selection(harness)
-                    for outcome in run_harness(selected, paths, selected_force, selected_dry or check, (step,) if step else None)]
+        mode = Mode.DRY_RUN if (selected_dry or check) else (Mode.FORCE if selected_force else Mode.APPLY)
+        outcomes = run_engine(_selection(harness), paths, mode, (step,) if step else None)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     report(outcomes, [], selected_verbose)
@@ -169,7 +171,7 @@ def bootstrap_command(ctx: typer.Context, harness: str | None = typer.Argument(N
         typer.echo(f"Bootstrap {item.name}: {paths.source_dir / 'scripts/bootstrap.sh'}")
         if dry_run or global_dry or check:
             continue
-        outcomes = run_harness(item, paths, force, False)
+        outcomes = run_engine((item,), paths, Mode.FORCE if force else Mode.APPLY)
         report(outcomes, [], False)
         failures |= exit_code(outcomes)
         result = subprocess.run(["bash", str(paths.source_dir / "scripts/bootstrap.sh"), str(paths.source_dir), item.name],

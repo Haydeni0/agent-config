@@ -4,8 +4,9 @@ from pathlib import Path
 import shutil
 
 from settings_sync.paths import Paths
-from settings_sync.registry import Harness, run_harness
-from settings_sync.actions import Outcome, Status
+from settings_sync.registry import Harness
+from settings_sync.actions import Mode, Outcome, Status
+from settings_sync.executor import run
 
 
 def doctor(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Outcome]:
@@ -23,7 +24,7 @@ def doctor(paths: Paths, harnesses: tuple[Harness, ...]) -> list[Outcome]:
             outcomes.append(Outcome(target, Status.UNCHANGED if node else Status.FAILED,
                                     f"hook runtime: {node}; native loading/trust requires a host smoke test" if node
                                     else "Node.js is required to execute shared command hooks; install Node.js before using this harness"))
-        for outcome in run_harness(harness, paths, False, True):
+        for outcome in run((harness,), paths, Mode.DRY_RUN):
             if outcome.status not in (Status.UNCHANGED, Status.NO_SOURCE, Status.FAILED):
                 outcome.detail += f"; run agent-config sync {harness.name}"
             outcomes.append(outcome)

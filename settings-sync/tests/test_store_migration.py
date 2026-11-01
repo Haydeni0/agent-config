@@ -5,6 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from settings_sync.cli import agent_config_app
@@ -148,3 +149,21 @@ def test_v2_record_wins_over_stale_snapshot(source_home: Path, isolated_home: Pa
     assert result.exit_code == 0, result.output
     assert not stale.exists()
     assert json.loads(target.read_text())["hooks"]["PreToolUse"] == [current]
+
+
+@pytest.mark.parametrize("store_text", ["broken", '{"version": 3, "entries": []}', '{"version": 2, "files": "nope"}'])
+def test_invalid_store_blocks_everything(source_home: Path, isolated_home: Path, store_text: str) -> None:
+    """S23: unparseable, unknown-version, or malformed v2 stores fail before any write."""
+    store = isolated_home / ".local" / "state" / "agent-config" / "managed.json"
+    store.parent.mkdir(parents=True)
+    store.write_text(store_text)
+    (isolated_home / ".no-mistakes").mkdir()
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "no-mistakes"])
+    assert result.exit_code == 1
+    assert "restore" in result.output
+    # S23's wording: every target and managed.json byte-identical. Compare only
+    # those - the engine's own sync.lock under the state dir is exempt, because
+    # the lock acquire precedes the load that fails, so a fresh lock file is
+    # engine bookkeeping, not a write to any target.
+    assert store.read_text() == store_text
+    assert not (isolated_home / ".no-mistakes" / "config.yaml").exists()

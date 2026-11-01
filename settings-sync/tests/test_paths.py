@@ -170,7 +170,8 @@ def test_resolve_paths_fills_engine_destinations(tmp_path: Path, monkeypatch: py
 
 def test_no_adapter_rereads_home_after_resolution(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
     """S48: with Paths resolved under HOME=A, a run after HOME=B writes nothing under B."""
-    from settings_sync.registry import run_all_tools
+    from settings_sync.executor import Mode, run
+    from settings_sync.registry import HARNESSES
     from settings_sync.paths import resolve_paths
 
     paths = resolve_paths(claude_dir=source_home, claude_home=isolated_home / ".claude")
@@ -185,7 +186,7 @@ def test_no_adapter_rereads_home_after_resolution(source_home: Path, isolated_ho
         launcher.chmod(0o755)
 
     monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fake_download)
-    outcomes, _ = run_all_tools(paths, False, False)
+    outcomes = run(HARNESSES, paths, Mode.APPLY)
     assert not any(o.status == Status.FAILED for o in outcomes), [o for o in outcomes if o.status == Status.FAILED]
     assert not other.exists()
     assert (original_home / ".local" / "state" / "agent-config" / "managed.json").is_file()

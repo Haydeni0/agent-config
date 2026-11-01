@@ -8,7 +8,7 @@ from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
 from settings_sync.agy import sync_agy_settings, sync_agy_skills
 from settings_sync.claude import sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
-from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary, sync_codegraph_telemetry, sync_pi_mcp
+from settings_sync.codegraph import plan_agy_mcp, plan_claude_mcp, plan_codegraph_binary, plan_codegraph_telemetry, plan_pi_mcp
 from settings_sync.commands import sync_commands
 from settings_sync.codex import sync_codex_config, sync_codex_sqlite_home
 from settings_sync.config import sync_config, sync_tui
@@ -20,14 +20,15 @@ from settings_sync.skills import validate_skills
 from settings_sync.paths import Paths
 from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.plugins import sync_plugins
-from settings_sync.actions import Outcome, Status
+from settings_sync.actions import Action, Outcome, Status
 
 
 @dataclass(frozen=True, slots=True)
 class Step:
     name: str
-    run: Callable[[Paths, bool, bool], list[Outcome]]
+    run: Callable[[Paths, bool, bool], list[Outcome]] | None = None
     required_sources: tuple[str, ...] = ()
+    plan: Callable[[Paths], list[Action]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,9 +44,9 @@ class Harness:
 
 HARNESSES = (
     Harness("codegraph", (
-        Step("binary", lambda p, f, d: sync_codegraph_binary(p, d), ()),
-        Step("claude-mcp", lambda p, f, d: sync_claude_mcp(p, d), ()),
-        Step("telemetry", lambda p, f, d: sync_codegraph_telemetry(p, d), ()),
+        Step("binary", plan=plan_codegraph_binary),
+        Step("claude-mcp", plan=plan_claude_mcp),
+        Step("telemetry", plan=plan_codegraph_telemetry),
     ), lambda p: p.codegraph_dir, "codegraph"),
     Harness("claude", (
         Step("config", lambda p, f, d: [sync_claude_config(p, d)], ("harnesses/claude/settings.json",)),
@@ -65,7 +66,7 @@ HARNESSES = (
     Harness("pi", (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),
         Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=(p.claude_home if p.claude_home is not None and p.claude_home != p.home / ".claude" else None))], ("harnesses/pi/settings.json",)),
-        Step("mcp", lambda p, f, d: sync_pi_mcp(p, d), ("harnesses/pi/mcp.json",)),
+        Step("mcp", plan=plan_pi_mcp, required_sources=("harnesses/pi/mcp.json",)),
         Step("context", lambda p, f, d: [sync_agents_md(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="pi")], ("rules/global.md",)),
         Step("keybindings", lambda p, f, d: [sync_pi_keybindings(p.target("pi") / "keybindings.json", p.source_dir / "harnesses/pi/keybindings.json", d, force=f)]),
     ), lambda p: p.pi_dir, "pi"),
@@ -79,7 +80,7 @@ HARNESSES = (
     Harness("agy", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "agy", d), ("harnesses/gemini/hooks.json", "hooks/command.mjs")),
         Step("settings", lambda p, f, d: [sync_agy_settings((p.agy_cli_dir or p.target("agy")) / "settings.json", p.source_dir / "harnesses/gemini/settings.json", f, d)], ("harnesses/gemini/settings.json",)),
-        Step("mcp", lambda p, f, d: sync_agy_mcp(p, d), ()),
+        Step("mcp", plan=plan_agy_mcp),
         Step("agents-md", lambda p, f, d: [sync_agents_md(p.target("agy") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="agy")], ("rules/global.md",)),
         Step("skills", lambda p, f, d: sync_agy_skills(p.target("agy") / "skills", p.source_dir / "skills", f, d), ("skills",)),
     ), lambda p: p.agy_dir, "agy"),

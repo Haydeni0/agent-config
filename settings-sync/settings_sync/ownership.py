@@ -54,6 +54,7 @@ class OwnershipStore:
         self.files: dict[Path, ManagedEntry] = {}
         self.symlinks: dict[Path, ManagedEntry] = {}
         self.configs: dict[Path, ConfigRecord] = {}
+        self._loaded = False
 
     # -- loading and migration --
 
@@ -79,6 +80,7 @@ class OwnershipStore:
         folded_snapshots = self._fold_snapshots()
         if folded_snapshots:
             migrated = True
+        self._loaded = True
         if migrated and mode is not Mode.DRY_RUN:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             if self.path.exists():
@@ -244,6 +246,10 @@ class OwnershipStore:
             self.load(Mode.DRY_RUN)
             yield
             return
+        if not self._loaded and depth > 0:
+            # An interim helper constructed its own store inside another lock:
+            # it must still see current on-disk state.
+            self.load(Mode.DRY_RUN if dry_run else Mode.APPLY)
         if depth == 0:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             handle = (self.path.parent / "sync.lock").open("a")

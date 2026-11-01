@@ -7,13 +7,15 @@ import pytest
 from settings_sync.codegraph import (
     CODEGRAPH_VERSION,
     current_platform,
+    plan_codegraph_binary,
     release_url,
-    sync_codegraph_binary,
 )
 from settings_sync.paths import Paths, resolve_paths
 from settings_sync.cli import agent_config_app
 from typer.testing import CliRunner
 from settings_sync.actions import Status
+from settings_sync.executor import Mode, execute
+from settings_sync.ownership import OwnershipStore
 
 
 def _paths(tmp_path: Path, **overrides) -> Paths:
@@ -37,6 +39,16 @@ def _install_fake_version(paths: Paths, version: str = CODEGRAPH_VERSION) -> Pat
     return launcher
 
 
+def _apply(plan, paths: Paths, mode: Mode):
+    store = OwnershipStore()
+    store.load(mode)
+    return execute(plan(paths), mode, store)
+
+
+def apply_binary(paths: Paths, mode: Mode):
+    return _apply(plan_codegraph_binary, paths, mode)
+
+
 def test_release_url_platform_triples(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(platform, "system", lambda: "Linux")
     for machine, arch in (("x86_64", "x64"), ("amd64", "x64"), ("aarch64", "arm64")):
@@ -56,8 +68,8 @@ def test_release_url_rejects_unsupported_platform(monkeypatch: pytest.MonkeyPatc
 def test_binary_dry_run_missing_reports_would_create(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
     paths = _paths(tmp_path)
-    outcomes = sync_codegraph_binary(paths, dry_run=True)
-    assert outcomes[0].status == Status.WOULD_CREATE
+    outcomes = apply_binary(paths, Mode.DRY_RUN)
+    assert any(o.status == Status.WOULD_CREATE for o in outcomes)
     assert not (paths.codegraph_dir / "versions").exists()
 
 
@@ -70,8 +82,7 @@ def test_binary_dry_run_ok_reports_unchanged(tmp_path: Path, monkeypatch: pytest
     bin_dir.mkdir(parents=True)
     (bin_dir / "codegraph").symlink_to(launcher)
     monkeypatch.setenv("PATH", str(bin_dir) + ":")
-    outcomes = sync_codegraph_binary(paths, dry_run=True)
-    assert outcomes[0].status == Status.UNCHANGED
+    assert all(o.status == Status.UNCHANGED for o in apply_binary(paths, Mode.DRY_RUN))
 
 
 def test_binary_dry_run_stale_symlink_reports_would_replace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -82,8 +93,7 @@ def test_binary_dry_run_stale_symlink_reports_would_replace(tmp_path: Path, monk
     bin_dir = home / ".local" / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "codegraph").symlink_to(old)
-    outcomes = sync_codegraph_binary(paths, dry_run=True)
-    assert outcomes[0].status == Status.WOULD_REPLACE
+    assert any(o.status == Status.WOULD_REPLACE for o in apply_binary(paths, Mode.DRY_RUN))
 
 
 def test_binary_dry_run_off_path_reports_warned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -95,8 +105,7 @@ def test_binary_dry_run_off_path_reports_warned(tmp_path: Path, monkeypatch: pyt
     bin_dir.mkdir(parents=True)
     (bin_dir / "codegraph").symlink_to(launcher)
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
-    outcomes = sync_codegraph_binary(paths, dry_run=True)
-    assert outcomes[0].status == Status.WARNED
+    assert any(o.status == Status.WARNED for o in apply_binary(paths, Mode.DRY_RUN))
 
 
 def test_binary_dry_run_shadowed_reports_warned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -112,8 +121,7 @@ def test_binary_dry_run_shadowed_reports_warned(tmp_path: Path, monkeypatch: pyt
     (other / "codegraph").write_text("#!/bin/sh\n")
     (other / "codegraph").chmod(0o755)
     monkeypatch.setenv("PATH", str(other) + ":" + str(bin_dir) + ":")
-    outcomes = sync_codegraph_binary(paths, dry_run=True)
-    assert outcomes[0].status == Status.WARNED
+    assert any(o.status == Status.WARNED for o in apply_binary(paths, Mode.DRY_RUN))
 
 
 def test_binary_real_sync_installs_and_prunes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -131,8 +139,8 @@ def test_binary_real_sync_installs_and_prunes(tmp_path: Path, monkeypatch: pytes
         launcher.chmod(0o755)
 
     monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fake_download)
-    outcomes = sync_codegraph_binary(paths, dry_run=False)
-    assert outcomes[0].status == Status.CREATED
+    outcomes = apply_binary(paths, Mode.APPLY)
+    assert any(o.status == Status.CREATED for o in outcomes)
     assert installed["url"] == release_url()
     bin_dir = home / ".local" / "bin"
     assert (bin_dir / "codegraph").resolve() == (paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph").resolve()
@@ -154,8 +162,9 @@ def test_binary_real_sync_skips_when_current(tmp_path: Path, monkeypatch: pytest
 
     monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fail_download)
     _install_fake_version(paths, "v0.9.1")  # pruned even on the skip path
-    outcomes = sync_codegraph_binary(paths, dry_run=False)
-    assert outcomes[0].status == Status.UNCHANGED
+    outcomes = apply_binary(paths, Mode.APPLY)
+    assert all(o.status in (Status.UNCHANGED, Status.CREATED) for o in outcomes)
+    assert any(o.status == Status.CREATED and "prune" in o.detail for o in outcomes)
     assert not (paths.codegraph_dir / "versions" / "v0.9.1").exists()
 
 
@@ -172,8 +181,44 @@ def test_binary_real_sync_never_warns(tmp_path: Path, monkeypatch: pytest.Monkey
         launcher.chmod(0o755)
 
     monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fake_download)
-    outcomes = sync_codegraph_binary(paths, dry_run=False)
+    outcomes = apply_binary(paths, Mode.APPLY)
     assert all(o.status not in (Status.WARNED, Status.WOULD_CREATE, Status.WOULD_REPLACE) for o in outcomes)
+
+
+def test_check_codegraph_never_downloads(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S53: check previews would_create; the download stub fails the test if called."""
+    def fail_download(url: str, version_dir: Path) -> None:
+        raise AssertionError("download must not run in check")
+
+    monkeypatch.setattr("settings_sync.codegraph.download_and_extract", fail_download)
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "check", "codegraph"])
+    assert result.exit_code == 1, result.output
+    assert "would_create" in result.output
+    assert not (isolated_home / ".codegraph").exists()
+
+
+def test_sync_codegraph_runs_telemetry_after_binary(source_home: Path, isolated_home: Path):
+    """S64: telemetry succeeds in the same run using the launcher binary installed (D15)."""
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "codegraph"])
+    assert result.exit_code == 0, result.output
+    assert (isolated_home / ".codegraph" / "telemetry.json").is_file()
+    assert json.loads((isolated_home / ".codegraph" / "telemetry.json").read_text())["enabled"] is False
+
+
+def test_telemetry_failure_is_one_failed_outcome(source_home: Path, isolated_home: Path, monkeypatch: pytest.MonkeyPatch):
+    """S65: a nonzero telemetry exit fails that action only; binary and claude-mcp still land."""
+    def failing_download(url: str, version_dir: Path) -> None:
+        launcher = version_dir / "bin" / "codegraph"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_text('#!/bin/sh\nif [ "$1" = "telemetry" ]; then exit 1; fi\nexit 0\n')
+        launcher.chmod(0o755)
+
+    monkeypatch.setattr("settings_sync.codegraph.download_and_extract", failing_download)
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "codegraph"])
+    assert result.exit_code == 1, result.output
+    assert "failed" in result.output
+    assert (isolated_home / ".local" / "bin" / "codegraph").is_symlink()
+    assert (isolated_home / ".claude.json").is_file()
 
 
 def test_claude_mcp_written_with_and_without_profile_dir(source_home: Path, isolated_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -191,7 +236,7 @@ def test_claude_mcp_written_with_and_without_profile_dir(source_home: Path, isol
 
 
 def test_claude_mcp_sets_entry_and_preserves_foreign_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_claude_mcp
+    from settings_sync.codegraph import plan_claude_mcp
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
@@ -202,8 +247,8 @@ def test_claude_mcp_sets_entry_and_preserves_foreign_keys(tmp_path: Path, monkey
         "oauthAccount": {"email": "user@example.com"},
         "mcpServers": {"other": {"type": "stdio", "command": "other"}},
     }))
-    outcomes = sync_claude_mcp(paths, dry_run=False)
-    assert outcomes[0].status in (Status.CREATED, Status.REPLACED)
+    outcomes = _apply(plan_claude_mcp, paths, Mode.APPLY)
+    assert outcomes[0].status == Status.MERGED
     data = json.loads(target.read_text())
     assert data["mcpServers"]["codegraph"] == {
         "type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"], "alwaysLoad": True,
@@ -214,39 +259,39 @@ def test_claude_mcp_sets_entry_and_preserves_foreign_keys(tmp_path: Path, monkey
 
 
 def test_claude_mcp_idempotent_second_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_claude_mcp
+    from settings_sync.codegraph import plan_claude_mcp
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
-    sync_claude_mcp(paths, dry_run=False)
+    _apply(plan_claude_mcp, paths, Mode.APPLY)
     before = paths.claude_mcp_json.read_text()
-    outcomes = sync_claude_mcp(paths, dry_run=False)
+    outcomes = _apply(plan_claude_mcp, paths, Mode.APPLY)
     assert outcomes[0].status == Status.UNCHANGED
     assert paths.claude_mcp_json.read_text() == before
 
 
 def test_claude_mcp_creates_absent_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_claude_mcp
+    from settings_sync.codegraph import plan_claude_mcp
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
-    outcomes = sync_claude_mcp(paths, dry_run=False)
+    outcomes = _apply(plan_claude_mcp, paths, Mode.APPLY)
     target = paths.claude_mcp_json
     assert target.is_file()
     assert json.loads(target.read_text())["mcpServers"]["codegraph"]["command"] == "codegraph"
 
 
 def test_claude_mcp_refuses_unparseable_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_claude_mcp
+    from settings_sync.codegraph import plan_claude_mcp
 
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     paths = _paths(tmp_path)
     target = paths.claude_mcp_json
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("{not json")
-    outcomes = sync_claude_mcp(paths, dry_run=False)
+    outcomes = _apply(plan_claude_mcp, paths, Mode.APPLY)
     assert outcomes[0].status == Status.FAILED
-    assert "could not merge JSON configuration" in outcomes[0].detail
+    assert "could not merge configuration" in outcomes[0].detail
     assert target.read_text() == "{not json"
 
 
@@ -257,13 +302,13 @@ def _agy_paths(tmp_path: Path, **overrides) -> Paths:
 
 
 def test_agy_mcp_uses_unified_path_when_migrated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_agy_mcp
+    from settings_sync.codegraph import plan_agy_mcp
 
     monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
     paths = _agy_paths(tmp_path)
     paths.agy_dir.mkdir(parents=True)
     (paths.agy_dir / ".migrated").write_text("")
-    sync_agy_mcp(paths, dry_run=False)
+    _apply(plan_agy_mcp, paths, Mode.APPLY)
     target = paths.agy_dir / "mcp_config.json"
     assert target.is_file()
     entry = json.loads(target.read_text())["mcpServers"]["codegraph"]
@@ -272,32 +317,32 @@ def test_agy_mcp_uses_unified_path_when_migrated(tmp_path: Path, monkeypatch: py
 
 
 def test_agy_mcp_uses_unified_path_when_file_exists_without_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_agy_mcp
+    from settings_sync.codegraph import plan_agy_mcp
 
     monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
     paths = _agy_paths(tmp_path)
     paths.agy_dir.mkdir(parents=True)
     (paths.agy_dir / "mcp_config.json").write_text(json.dumps({"mcpServers": {"other": {"command": "other"}}}))
-    sync_agy_mcp(paths, dry_run=False)
+    _apply(plan_agy_mcp, paths, Mode.APPLY)
     data = json.loads((paths.agy_dir / "mcp_config.json").read_text())
     assert data["mcpServers"]["other"] == {"command": "other"}
     assert data["mcpServers"]["codegraph"]["command"] == "codegraph"
 
 
 def test_agy_mcp_falls_back_to_legacy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_agy_mcp
+    from settings_sync.codegraph import plan_agy_mcp
 
     monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "linux")
     paths = _agy_paths(tmp_path)
     paths.agy_dir.mkdir(parents=True)
-    sync_agy_mcp(paths, dry_run=False)
+    _apply(plan_agy_mcp, paths, Mode.APPLY)
     legacy = paths.agy_dir.parent / "antigravity" / "mcp_config.json"
     assert legacy.is_file()
     assert not (paths.agy_dir / "mcp_config.json").exists()
 
 
 def test_agy_mcp_darwin_writes_absolute_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_agy_mcp
+    from settings_sync.codegraph import plan_agy_mcp
 
     monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "darwin")
     paths = _agy_paths(tmp_path)
@@ -306,26 +351,26 @@ def test_agy_mcp_darwin_writes_absolute_launcher(tmp_path: Path, monkeypatch: py
     launcher = paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph"
     launcher.parent.mkdir(parents=True, exist_ok=True)
     launcher.write_text("#!/bin/sh\n")
-    sync_agy_mcp(paths, dry_run=False)
+    _apply(plan_agy_mcp, paths, Mode.APPLY)
     entry = json.loads((paths.agy_dir / "mcp_config.json").read_text())["mcpServers"]["codegraph"]
     assert entry["command"] == str(launcher)
     assert entry["args"] == ["serve", "--mcp"]
 
 
 def test_agy_mcp_darwin_missing_binary_uses_pinned_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_agy_mcp
+    from settings_sync.codegraph import plan_agy_mcp
 
     monkeypatch.setattr("settings_sync.codegraph.current_platform", lambda: "darwin")
     paths = _agy_paths(tmp_path)
     paths.agy_dir.mkdir(parents=True)
     (paths.agy_dir / ".migrated").write_text("")
-    sync_agy_mcp(paths, dry_run=False)
+    _apply(plan_agy_mcp, paths, Mode.APPLY)
     entry = json.loads((paths.agy_dir / "mcp_config.json").read_text())["mcpServers"]["codegraph"]
     assert entry["command"] == str(paths.codegraph_dir / "versions" / CODEGRAPH_VERSION / "bin" / "codegraph")
 
 
 def test_pi_mcp_merges_and_preserves_user_servers(tmp_path: Path):
-    from settings_sync.codegraph import sync_pi_mcp
+    from settings_sync.codegraph import plan_pi_mcp
 
     (tmp_path / "source").mkdir()
     paths = resolve_paths(claude_dir=tmp_path / "source", pi_dir=tmp_path / "pi", codegraph_dir=tmp_path / "cg")
@@ -337,7 +382,7 @@ def test_pi_mcp_merges_and_preserves_user_servers(tmp_path: Path):
     template.write_text(json.dumps({
         "mcpServers": {"codegraph": {"command": "codegraph", "args": ["serve", "--mcp"], "exposure": "direct"}}
     }))
-    sync_pi_mcp(paths, dry_run=False)
+    _apply(plan_pi_mcp, paths, Mode.APPLY)
     data = json.loads(target.read_text())
     assert data["mcpServers"]["mine"] == {"command": "mine"}
     entry = data["mcpServers"]["codegraph"]
@@ -346,37 +391,37 @@ def test_pi_mcp_merges_and_preserves_user_servers(tmp_path: Path):
 
 
 def test_telemetry_dry_run_no_file_reports_would_create(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_codegraph_telemetry
+    from settings_sync.codegraph import plan_codegraph_telemetry
 
     paths = _paths(tmp_path)
-    outcomes = sync_codegraph_telemetry(paths, dry_run=True)
+    outcomes = _apply(plan_codegraph_telemetry, paths, Mode.DRY_RUN)
     assert outcomes[0].status == Status.WOULD_CREATE
 
 
 def test_telemetry_dry_run_stored_optout_reports_unchanged(tmp_path: Path):
-    from settings_sync.codegraph import sync_codegraph_telemetry
+    from settings_sync.codegraph import plan_codegraph_telemetry
 
     paths = _paths(tmp_path)
     target = paths.codegraph_dir / "telemetry.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"enabled": False, "machine_id": None}))
-    outcomes = sync_codegraph_telemetry(paths, dry_run=True)
+    outcomes = _apply(plan_codegraph_telemetry, paths, Mode.DRY_RUN)
     assert outcomes[0].status == Status.UNCHANGED
 
 
 def test_telemetry_dry_run_enabled_file_reports_would_create(tmp_path: Path):
-    from settings_sync.codegraph import sync_codegraph_telemetry
+    from settings_sync.codegraph import plan_codegraph_telemetry
 
     paths = _paths(tmp_path)
     target = paths.codegraph_dir / "telemetry.json"
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps({"enabled": True}))
-    outcomes = sync_codegraph_telemetry(paths, dry_run=True)
+    outcomes = _apply(plan_codegraph_telemetry, paths, Mode.DRY_RUN)
     assert outcomes[0].status == Status.WOULD_CREATE
 
 
 def test_telemetry_real_run_invokes_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from settings_sync.codegraph import sync_codegraph_telemetry
+    from settings_sync.codegraph import plan_codegraph_telemetry
 
     paths = _paths(tmp_path)
     launcher = _install_fake_version(paths)
@@ -387,22 +432,23 @@ def test_telemetry_real_run_invokes_off(tmp_path: Path, monkeypatch: pytest.Monk
         assert check is True
 
     monkeypatch.setattr("settings_sync.codegraph.subprocess.run", fake_run)
-    outcomes = sync_codegraph_telemetry(paths, dry_run=False)
+    outcomes = _apply(plan_codegraph_telemetry, paths, Mode.APPLY)
     assert outcomes[0].status == Status.CREATED
     assert calls == [[str(launcher), "telemetry", "off"]]
 
 
 def test_telemetry_real_run_requires_binary(tmp_path: Path):
-    from settings_sync.codegraph import sync_codegraph_telemetry
+    from settings_sync.codegraph import plan_codegraph_telemetry
 
     paths = _paths(tmp_path)
-    with pytest.raises(ValueError, match="installed binary"):
-        sync_codegraph_telemetry(paths, dry_run=False)
+    outcome = _apply(plan_codegraph_telemetry, paths, Mode.APPLY)[0]
+    assert outcome.status == Status.FAILED
+    assert "installed binary" in outcome.detail
 
 
 def test_telemetry_off_failure_becomes_valueerror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import subprocess as subprocess_module
-    from settings_sync.codegraph import sync_codegraph_telemetry
+    from settings_sync.codegraph import plan_codegraph_telemetry
 
     paths = _paths(tmp_path)
     _install_fake_version(paths)
@@ -411,5 +457,6 @@ def test_telemetry_off_failure_becomes_valueerror(tmp_path: Path, monkeypatch: p
         raise subprocess_module.CalledProcessError(1, argv)
 
     monkeypatch.setattr("settings_sync.codegraph.subprocess.run", failing_run)
-    with pytest.raises(ValueError, match="codegraph telemetry off failed"):
-        sync_codegraph_telemetry(paths, dry_run=False)
+    outcome = _apply(plan_codegraph_telemetry, paths, Mode.APPLY)[0]
+    assert outcome.status == Status.FAILED
+    assert "telemetry" in outcome.detail

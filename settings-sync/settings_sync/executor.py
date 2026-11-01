@@ -5,6 +5,7 @@ import os
 import stat
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from settings_sync.actions import (
@@ -14,10 +15,54 @@ from settings_sync.actions import (
 from settings_sync.hooks import hook_groups, reconcile_hooks
 from settings_sync.merging import Codec, canonicalize, merge_defaults, strip_jsonc
 from settings_sync.ownership import ManagedEntry, OwnershipStore
+from settings_sync.paths import Paths
 from settings_sync.sync import write_text_atomic
+
+if TYPE_CHECKING:
+    from settings_sync.registry import Harness
 
 _FAILURES = (OSError, ValueError)
 _MISSING = object()
+
+
+def run(harnesses: tuple["Harness", ...], paths: Paths, mode: Mode, steps: tuple[str, ...] | None = None) -> list[Outcome]:
+    store = OwnershipStore()
+    # Validate step names BEFORE the lock so the CLI's BadParameter path never
+    # depends on store state; the store load happens inside the lock below.
+    if steps is not None:
+        for harness in harnesses:
+            if harness.destination(paths) is None:
+                continue
+            if set(steps) - {step.name for step in harness.steps}:
+                raise ValueError(f"unknown step for {harness.name}: {steps}")
+    try:
+        with store.lock(mode is Mode.DRY_RUN):
+            outcomes: list[Outcome] = []
+            for harness in harnesses:
+                if harness.destination(paths) is None:
+                    continue
+                selected = harness.steps if steps is None else tuple(step for step in harness.steps if step.name in steps)
+                for step in selected:
+                    missing = [paths.source_dir / name for name in step.required_sources
+                               if not (paths.source_dir / name).exists()]
+                    outcomes.extend(
+                        Outcome(path, Status.FAILED, f"required source missing for {harness.name} {step.name}; restore it in the source checkout")
+                        for path in missing
+                    )
+                    if missing:
+                        continue
+                    try:
+                        if step.plan is not None:
+                            outcomes.extend(execute(step.plan(paths), mode, store))
+                        else:
+                            outcomes.extend(step.run(paths, mode is Mode.FORCE, mode is Mode.DRY_RUN))
+                    except (OSError, ValueError) as exc:
+                        outcomes.append(Outcome(paths.source_dir, Status.FAILED, f"{harness.name} {step.name}: {exc}"))
+            return outcomes
+    except (OSError, ValueError) as exc:
+        # Only lock-time store loading/saving reaches here: step plans are caught
+        # per step above, so this is the whole-run corrupt-store failure (S20/S23).
+        return [Outcome(store.path, Status.FAILED, str(exc))]
 
 
 def _source_id(path: Path) -> str:

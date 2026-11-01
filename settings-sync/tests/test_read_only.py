@@ -13,7 +13,7 @@ def snapshot(root: Path) -> dict[Path, tuple[int, int, str | bytes]]:
 
 
 @pytest.mark.parametrize("installed", [False, True])
-@pytest.mark.parametrize("command", [["check"], ["sync", "--dry-run"]])
+@pytest.mark.parametrize("command", [["check"], ["sync", "--dry-run"], ["sync", "--dry-run", "--force"]])
 def test_preview_preserves_home(source_home: Path, isolated_home: Path, installed: bool, command: list[str]):
     runner = CliRunner()
     args = ["--source", str(source_home)]
