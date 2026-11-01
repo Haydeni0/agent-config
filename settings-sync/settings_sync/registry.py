@@ -6,18 +6,18 @@ from pathlib import Path
 
 from settings_sync.agents import sync_agents_dir
 from settings_sync.agents_md import sync_agents_md
-from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
+from settings_sync.agy import sync_agy_settings, sync_agy_skills
 from settings_sync.claude import claude_home, sync_claude_config, sync_claude_links, sync_shared_skills, sync_claude_entries
 from settings_sync.codegraph import sync_agy_mcp, sync_claude_mcp, sync_codegraph_binary, sync_codegraph_telemetry, sync_pi_mcp
 from settings_sync.commands import sync_commands
-from settings_sync.codex import sync_codex_agents_md, sync_codex_config, sync_codex_sqlite_home
+from settings_sync.codex import sync_codex_config, sync_codex_sqlite_home
 from settings_sync.config import sync_config, sync_tui
-from settings_sync.goose import sync_goose_config, sync_goose_hints, sync_goose_providers
+from settings_sync.goose import sync_goose_config, sync_goose_providers
 from settings_sync.hooks import sync_command_hooks
 from settings_sync.nomistakes import sync_nomistakes_config
 from settings_sync.ownership import sync_generated_symlink
 from settings_sync.paths import Paths, config_home
-from settings_sync.pi import sync_pi_config, sync_pi_context, sync_pi_keybindings
+from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.plugins import sync_plugins
 from settings_sync.skills import validate_skills
 from settings_sync.actions import Outcome, Status
@@ -66,13 +66,13 @@ HARNESSES = (
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "commands"), f, d), ("skills", "commands")),
         Step("config", lambda p, f, d: [sync_pi_config(p.target("pi") / "settings.json", p.source_dir / "harnesses/pi/settings.json", d, source_root=p.source_dir, runtime_home=claude_home(p))], ("harnesses/pi/settings.json",)),
         Step("mcp", lambda p, f, d: sync_pi_mcp(p, d), ("harnesses/pi/mcp.json",)),
-        Step("context", lambda p, f, d: [sync_pi_context(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
+        Step("context", lambda p, f, d: [sync_agents_md(p.target("pi") / "CLAUDE.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="pi")], ("rules/global.md",)),
         Step("keybindings", lambda p, f, d: [sync_pi_keybindings(p.target("pi") / "keybindings.json", p.source_dir / "harnesses/pi/keybindings.json", d, force=f)]),
     ), lambda p: p.pi_dir, "pi"),
     Harness("goose", (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "goose", d), ("harnesses/goose/hooks.json", "hooks/command.mjs")),
         Step("resources", lambda p, f, d: sync_claude_entries(p, ("skills", "agents"), f, d), ("skills", "agents")),
-        Step("hints", lambda p, f, d: [sync_goose_hints(p.target("goose") / ".goosehints", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
+        Step("hints", lambda p, f, d: [sync_agents_md(p.target("goose") / ".goosehints", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="goose")], ("rules/global.md",)),
         Step("config", lambda p, f, d: [sync_goose_config(p.target("goose") / "config.yaml", p.source_dir / "harnesses/goose/config.yaml", f, d)], ("harnesses/goose/config.yaml",)),
         Step("providers", lambda p, f, d: sync_goose_providers(p.target("goose") / "custom_providers", p.source_dir / "harnesses/goose/custom_providers", f, d), ("harnesses/goose/custom_providers",)),
     ), lambda p: p.goose_dir, "goose"),
@@ -80,7 +80,7 @@ HARNESSES = (
         Step("hooks", lambda p, f, d: sync_command_hooks(p, "agy", d), ("harnesses/gemini/hooks.json", "hooks/command.mjs")),
         Step("settings", lambda p, f, d: [sync_agy_settings((p.agy_cli_dir or p.target("agy")) / "settings.json", p.source_dir / "harnesses/gemini/settings.json", f, d)], ("harnesses/gemini/settings.json",)),
         Step("mcp", lambda p, f, d: sync_agy_mcp(p, d), ()),
-        Step("agents-md", lambda p, f, d: [sync_agy_agents_md(p.target("agy") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
+        Step("agents-md", lambda p, f, d: [sync_agents_md(p.target("agy") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="agy")], ("rules/global.md",)),
         Step("skills", lambda p, f, d: sync_agy_skills(p.target("agy") / "skills", p.source_dir / "skills", f, d), ("skills",)),
     ), lambda p: p.agy_dir, "agy"),
     Harness("no-mistakes", (
@@ -93,7 +93,7 @@ HARNESSES = (
             sync_codex_sqlite_home(p.source_dir / "harnesses/codex/config.toml", dry_run=d),
             sync_codex_config(p.target("codex") / "config.toml", p.source_dir / "harnesses/codex/config.toml", dry_run=d),
         ], ("harnesses/codex/config.toml",)),
-        Step("agents-md", lambda p, f, d: [sync_codex_agents_md(p.target("codex") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir)], ("rules/global.md",)),
+        Step("agents-md", lambda p, f, d: [sync_agents_md(p.target("codex") / "AGENTS.md", p.source_dir / "rules/global.md", f, d, source_root=p.source_dir, harness="codex")], ("rules/global.md",)),
     ), lambda p: p.codex_dir, "codex"),
 )
 

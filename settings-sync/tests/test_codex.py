@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 import settings_sync.codex as codex
 from settings_sync.cli import app
-from settings_sync.codex import sync_codex_agents_md, sync_codex_config
+from settings_sync.codex import sync_codex_config
 from settings_sync.actions import Status
 
 CONFIG_TEMPLATE = '[features]\nhooks = true\n'
@@ -20,15 +20,6 @@ def codex_template(tmp_path: pathlib.Path) -> pathlib.Path:
     template.parent.mkdir(parents=True)
     template.write_text(CONFIG_TEMPLATE)
     return template
-
-
-@pytest.fixture
-def claude_md(tmp_path: pathlib.Path) -> pathlib.Path:
-    """A CLAUDE.md with an @skills/ reference."""
-    claude_md = tmp_path / "claude" / "CLAUDE.md"
-    claude_md.parent.mkdir(parents=True)
-    claude_md.write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
-    return claude_md
 
 
 @pytest.fixture
@@ -171,48 +162,6 @@ def test_codex_sqlite_home_rejects_symlink(tmp_path: pathlib.Path):
 
     assert outcome.status == Status.FAILED
     assert stat.S_IMODE(real_directory.stat().st_mode) == 0o755
-
-
-# ---- sync_codex_agents_md (inlined CLAUDE.md; refuse-to-clobber without --force) ----
-
-
-def test_codex_agents_md_creates_inlined(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "codex" / "AGENTS.md"
-
-    outcome = sync_codex_agents_md(target, claude_md)
-
-    assert outcome.status == Status.CREATED
-    written = target.read_text()
-    assert "Extra rules." in written
-    assert "the `uv` skill" in written
-    assert "@skills/uv" not in written
-
-
-def test_codex_agents_md_unchanged_when_identical(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "codex" / "AGENTS.md"
-    target.parent.mkdir(parents=True)
-    sync_codex_agents_md(target, claude_md)
-
-    outcome = sync_codex_agents_md(target, claude_md)
-
-    assert outcome.status == Status.UNCHANGED
-
-
-def test_codex_agents_md_skips_diverging_without_force(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "codex" / "AGENTS.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("hand-edited AGENTS.md\n")
-
-    outcome = sync_codex_agents_md(target, claude_md)
-
-    assert outcome.status == Status.SKIPPED
-    assert target.read_text() == "hand-edited AGENTS.md\n"
-
-
-def test_codex_agents_md_no_source_when_claude_md_missing(tmp_path: pathlib.Path):
-    outcome = sync_codex_agents_md(tmp_path / "codex" / "AGENTS.md", tmp_path / "missing" / "CLAUDE.md")
-
-    assert outcome.status == Status.NO_SOURCE
 
 
 # ---- CLI ----

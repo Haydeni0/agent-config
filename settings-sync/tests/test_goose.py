@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.cli import app
-from settings_sync.goose import sync_goose_config, sync_goose_hints, sync_goose_providers
+from settings_sync.goose import sync_goose_config, sync_goose_providers
 from settings_sync.actions import Status
 
 
@@ -26,15 +26,6 @@ def goose_providers(tmp_path: pathlib.Path) -> pathlib.Path:
     source.mkdir(parents=True)
     (source / "glm.json").write_text(json.dumps({"name": "glm", "engine": "openai", "base_url": "http://example/v1"}))
     return source
-
-
-@pytest.fixture
-def claude_md(tmp_path: pathlib.Path) -> pathlib.Path:
-    """A CLAUDE.md with an @skills/ reference."""
-    claude_md = tmp_path / "claude" / "CLAUDE.md"
-    claude_md.parent.mkdir(parents=True)
-    claude_md.write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
-    return claude_md
 
 
 @pytest.fixture
@@ -58,59 +49,6 @@ def goose_home(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 runner = CliRunner()
-
-
-# ---- sync_goose_hints (inlined CLAUDE.md; refuse-to-clobber without --force) ----
-
-
-def test_goose_hints_creates_inlined(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "goose" / ".goosehints"
-
-    outcome = sync_goose_hints(target, claude_md)
-
-    assert outcome.status == Status.CREATED
-    written = target.read_text()
-    assert "Extra rules." in written
-    assert "the `uv` skill" in written
-    assert "@skills/uv" not in written
-
-
-def test_goose_hints_unchanged_when_identical(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "goose" / ".goosehints"
-    target.parent.mkdir(parents=True)
-    sync_goose_hints(target, claude_md)
-
-    outcome = sync_goose_hints(target, claude_md)
-
-    assert outcome.status == Status.UNCHANGED
-
-
-def test_goose_hints_skips_diverging_without_force(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "goose" / ".goosehints"
-    target.parent.mkdir(parents=True)
-    target.write_text("hand-edited hints\n")
-
-    outcome = sync_goose_hints(target, claude_md)
-
-    assert outcome.status == Status.SKIPPED
-    assert target.read_text() == "hand-edited hints\n"
-
-
-def test_goose_hints_force_overwrites_diverging(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "goose" / ".goosehints"
-    target.parent.mkdir(parents=True)
-    target.write_text("hand-edited hints\n")
-
-    outcome = sync_goose_hints(target, claude_md, force=True)
-
-    assert outcome.status == Status.REPLACED
-    assert "# Rules" in target.read_text()
-
-
-def test_goose_hints_no_source_when_claude_md_missing(tmp_path: pathlib.Path):
-    outcome = sync_goose_hints(tmp_path / "goose" / ".goosehints", tmp_path / "missing" / "CLAUDE.md")
-
-    assert outcome.status == Status.NO_SOURCE
 
 
 # ---- sync_goose_config (refuse-to-clobber without --force) ----

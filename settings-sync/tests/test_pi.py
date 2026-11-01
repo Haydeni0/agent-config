@@ -5,7 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from settings_sync.cli import app
-from settings_sync.pi import sync_pi_config, sync_pi_context, sync_pi_keybindings
+from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.actions import Status
 
 
@@ -25,15 +25,6 @@ def pi_keybindings(tmp_path: pathlib.Path) -> pathlib.Path:
     source.parent.mkdir(parents=True)
     source.write_text(json.dumps({"app.tree.foldOrUp": ["alt+left"], "app.tree.unfoldOrDown": ["alt+right"]}))
     return source
-
-
-@pytest.fixture
-def claude_md(tmp_path: pathlib.Path) -> pathlib.Path:
-    """A CLAUDE.md with an @skills/ reference."""
-    claude_md = tmp_path / "claude" / "CLAUDE.md"
-    claude_md.parent.mkdir(parents=True)
-    claude_md.write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
-    return claude_md
 
 
 @pytest.fixture
@@ -163,59 +154,6 @@ def test_pi_keybindings_dry_run_creates_nothing(tmp_path: pathlib.Path, pi_keybi
 
 def test_pi_keybindings_no_source_when_missing(tmp_path: pathlib.Path):
     outcome = sync_pi_keybindings(tmp_path / "agent" / "keybindings.json", tmp_path / "missing" / "keybindings.json")
-
-    assert outcome.status == Status.NO_SOURCE
-
-
-# ---- sync_pi_context (inlined CLAUDE.md; refuse-to-clobber without --force) ----
-
-
-def test_pi_context_creates_inlined(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "agent" / "CLAUDE.md"
-
-    outcome = sync_pi_context(target, claude_md)
-
-    assert outcome.status == Status.CREATED
-    written = target.read_text()
-    assert "Extra rules." in written
-    assert "the `uv` skill" in written
-    assert "@skills/uv" not in written
-
-
-def test_pi_context_unchanged_when_identical(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "agent" / "CLAUDE.md"
-    target.parent.mkdir(parents=True)
-    sync_pi_context(target, claude_md)
-
-    outcome = sync_pi_context(target, claude_md)
-
-    assert outcome.status == Status.UNCHANGED
-
-
-def test_pi_context_skips_diverging_without_force(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "agent" / "CLAUDE.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("hand-edited context\n")
-
-    outcome = sync_pi_context(target, claude_md)
-
-    assert outcome.status == Status.SKIPPED
-    assert target.read_text() == "hand-edited context\n"
-
-
-def test_pi_context_force_overwrites_diverging(tmp_path: pathlib.Path, claude_md: pathlib.Path):
-    target = tmp_path / "agent" / "CLAUDE.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("hand-edited context\n")
-
-    outcome = sync_pi_context(target, claude_md, force=True)
-
-    assert outcome.status == Status.REPLACED
-    assert "# Rules" in target.read_text()
-
-
-def test_pi_context_no_source_when_claude_md_missing(tmp_path: pathlib.Path):
-    outcome = sync_pi_context(tmp_path / "agent" / "CLAUDE.md", tmp_path / "missing" / "CLAUDE.md")
 
     assert outcome.status == Status.NO_SOURCE
 

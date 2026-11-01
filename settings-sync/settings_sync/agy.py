@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from settings_sync.actions import Outcome, Status
-from settings_sync.agents_md import sync_agents_md
 from settings_sync.merging import sync_json_defaults
 from settings_sync.ownership import prune_generated, sync_generated_symlink
 
@@ -18,17 +17,6 @@ def sync_agy_settings(
     if not source.is_file():
         return Outcome(target, Status.NO_SOURCE, f"settings source not found: {source}")
     return sync_json_defaults(target, source.read_text(), dry_run=dry_run)
-
-
-def sync_agy_agents_md(
-    target: Path,
-    claude_md: Path,
-    force: bool = False,
-    dry_run: bool = False,
-    *, source_root: Path | None = None,
-) -> Outcome:
-    """Sync CLAUDE.md -> AGENTS.md (rewriting @skills/<n> refs)."""
-    return sync_agents_md(target, claude_md, force=force, dry_run=dry_run, source_root=source_root, harness="agy")
 
 
 def sync_agy_skills(
@@ -51,3 +39,4 @@ def sync_agy_skills(
         outcomes.append(sync_generated_symlink(target_dir / source_sub.name, source_sub, force=force, dry_run=dry_run))
     outcomes.extend(prune_generated(target_dir, source_names, dry_run))
     return outcomes
+

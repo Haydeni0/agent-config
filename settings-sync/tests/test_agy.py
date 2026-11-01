@@ -3,7 +3,7 @@ import os
 import pathlib
 from typer.testing import CliRunner
 
-from settings_sync.agy import sync_agy_agents_md, sync_agy_settings, sync_agy_skills
+from settings_sync.agy import sync_agy_settings, sync_agy_skills
 from settings_sync.cli import Paths, app
 from settings_sync.actions import Status
 
@@ -19,18 +19,6 @@ def test_sync_agy_settings(tmp_path: pathlib.Path):
     assert outcome.status == Status.CREATED
     assert target.is_file()
     assert '"model": "gemini-3.7-flash"' in target.read_text()
-
-
-def test_sync_agy_agents_md(tmp_path: pathlib.Path):
-    claude_md = tmp_path / "CLAUDE.md"
-    claude_md.write_text("# Rules\nSee @skills/uv for info.\n")
-    target = tmp_path / "AGENTS.md"
-
-    outcome = sync_agy_agents_md(target, claude_md)
-
-    assert outcome.status == Status.CREATED
-    assert target.is_file()
-    assert "the `uv` skill" in target.read_text()
 
 
 def test_sync_agy_skills_symlinks(tmp_path: pathlib.Path):
