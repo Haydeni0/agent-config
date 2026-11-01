@@ -4,7 +4,7 @@ import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 from settings_sync.merging import sync_json_defaults
 from settings_sync.actions import Status
 
@@ -22,7 +22,7 @@ def test_invalid_mapping_preserves_target(source_home: Path, isolated_home: Path
     installed.write_text('{}')
     (source_home / source if invalid_side == "source" else installed).write_text('[broken')
     before = installed.read_bytes()
-    result = CliRunner().invoke(app, ["--source", str(source_home), harness, step, "--force"])
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", harness, step, "--force"])
     assert result.exit_code == 1, result.output
     assert installed.read_bytes() == before
 

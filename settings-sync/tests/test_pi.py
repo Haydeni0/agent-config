@@ -4,7 +4,7 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 from settings_sync.pi import sync_pi_config, sync_pi_keybindings
 from settings_sync.actions import Status
 
@@ -164,7 +164,7 @@ def test_pi_keybindings_no_source_when_missing(tmp_path: pathlib.Path):
 def test_cli_pi_config_creates_settings(tmp_path: pathlib.Path, pi_home: pathlib.Path):
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "pi", "config"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "sync", "pi", "config"])
 
     assert result.exit_code == 0
     assert json.loads((pi_dir / "settings.json").read_text())["skills"] == ["~/.claude/skills"]
@@ -173,7 +173,7 @@ def test_cli_pi_config_creates_settings(tmp_path: pathlib.Path, pi_home: pathlib
 def test_cli_pi_context_creates_inlined_claude_md(tmp_path: pathlib.Path, pi_home: pathlib.Path):
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "pi", "context"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "sync", "pi", "context"])
 
     assert result.exit_code == 0
     written = (pi_dir / "CLAUDE.md").read_text()
@@ -184,7 +184,7 @@ def test_cli_pi_context_creates_inlined_claude_md(tmp_path: pathlib.Path, pi_hom
 def test_cli_pi_bare_runs_config_and_context(tmp_path: pathlib.Path, pi_home: pathlib.Path):
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "pi"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "sync", "pi"])
 
     assert result.exit_code == 0
     assert (pi_dir / "settings.json").is_file()
@@ -196,7 +196,7 @@ def test_cli_pi_config_check_detects_drift(tmp_path: pathlib.Path, pi_home: path
     pi_dir.mkdir(parents=True)
     (pi_dir / "settings.json").write_text(json.dumps({"hand": "edited"}))
 
-    result = runner.invoke(app, ["--check", "--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "pi", "config"])
+    result = runner.invoke(agent_config_app, ["--check", "--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "check", "pi", "config"])
 
     assert result.exit_code != 0
     assert json.loads((pi_dir / "settings.json").read_text()) == {"hand": "edited"}
@@ -205,7 +205,7 @@ def test_cli_pi_config_check_detects_drift(tmp_path: pathlib.Path, pi_home: path
 def test_cli_pi_keybindings_creates(tmp_path: pathlib.Path, pi_home: pathlib.Path):
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "pi", "keybindings"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "sync", "pi", "keybindings"])
 
     assert result.exit_code == 0
     assert json.loads((pi_dir / "keybindings.json").read_text())["app.tree.foldOrUp"] == ["alt+left"]
@@ -214,7 +214,7 @@ def test_cli_pi_keybindings_creates(tmp_path: pathlib.Path, pi_home: pathlib.Pat
 def test_cli_pi_bare_writes_keybindings(tmp_path: pathlib.Path, pi_home: pathlib.Path):
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "pi"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(pi_home), "--pi-dir", str(pi_dir), "sync", "pi"])
 
     assert result.exit_code == 0
     assert (pi_dir / "keybindings.json").is_file()

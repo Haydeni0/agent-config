@@ -4,7 +4,7 @@ import pathlib
 
 from typer.testing import CliRunner
 
-from settings_sync.cli import Paths, app, run_opencode
+from settings_sync.cli import Paths, agent_config_app, run_opencode
 
 
 def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -53,7 +53,7 @@ def test_all_creates_everything(tmp_path: pathlib.Path):
     agy_dir = tmp_path / "gemini-config"
     agy_cli_dir = tmp_path / "gemini-cli"
 
-    result = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex")])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex"), "sync"])
 
     assert result.exit_code == 0
     assert (opencode / "opencode.json").is_file()
@@ -88,9 +88,11 @@ def test_all_exits_nonzero_on_conflict(tmp_path: pathlib.Path):
     opencode.mkdir(parents=True)
     (opencode / "AGENTS.md").write_text("Hand edited instructions")
 
-    result = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex")])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex"), "sync"])
 
     assert result.exit_code == 1
+    # S25: per-action conflicts skip only the edited file; other harnesses still write.
+    assert (tmp_path / "codex" / "AGENTS.md").is_file()
 
 
 def test_force_resolves_conflicts(tmp_path: pathlib.Path):
@@ -103,7 +105,7 @@ def test_force_resolves_conflicts(tmp_path: pathlib.Path):
     opencode.mkdir(parents=True)
     (opencode / "opencode.json").write_text(json.dumps({"hand": "edited"}))
 
-    result = runner.invoke(app, ["--force", "--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex")])
+    result = runner.invoke(agent_config_app, ["--force", "--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex"), "sync"])
 
     assert result.exit_code == 0
     assert json.loads((opencode / "opencode.json").read_text())["model"] == "test/model"
@@ -117,7 +119,7 @@ def test_check_exits_nonzero_on_drift_without_writing(tmp_path: pathlib.Path):
     agy_dir = tmp_path / "gemini-config"
     agy_cli_dir = tmp_path / "gemini-cli"
 
-    result = runner.invoke(app, ["--check", "--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex")])
+    result = runner.invoke(agent_config_app, ["--check", "--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex"), "sync"])
 
     assert result.exit_code == 1
     assert not (opencode / "opencode.json").exists()
@@ -131,7 +133,7 @@ def test_dry_run_creates_nothing(tmp_path: pathlib.Path):
     agy_dir = tmp_path / "gemini-config"
     agy_cli_dir = tmp_path / "gemini-cli"
 
-    result = runner.invoke(app, ["--dry-run", "--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex")])
+    result = runner.invoke(agent_config_app, ["--dry-run", "--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "--codex-dir", str(tmp_path / "codex"), "sync"])
 
     assert result.exit_code == 1
     assert not (opencode / "opencode.json").exists()
@@ -146,7 +148,7 @@ def test_opencode_agents_only(tmp_path: pathlib.Path):
     opencode = tmp_path / "config" / "opencode"
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "opencode", "agents"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "sync", "opencode", "agents"])
 
     assert result.exit_code == 0
     assert (opencode / "agents" / "reviewer.md").is_file()
@@ -159,7 +161,7 @@ def test_opencode_config_only(tmp_path: pathlib.Path):
     opencode = tmp_path / "config" / "opencode"
     pi_dir = tmp_path / "pi-agent"
 
-    result = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "opencode", "config"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "sync", "opencode", "config"])
 
     assert result.exit_code == 0
     assert (opencode / "opencode.json").is_file()
@@ -188,12 +190,12 @@ def test_subcommand_flags_after_group(tmp_path: pathlib.Path):
     agy_cli_dir = tmp_path / "gemini-cli"
 
     # --check on subcommand
-    result_check = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "agy", "--check"])
+    result_check = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "check", "agy"])
     assert result_check.exit_code == 1
     assert not (agy_cli_dir / "settings.json").exists()
 
     # --force on subcommand
-    result_force = runner.invoke(app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "agy", "--force"])
+    result_force = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--opencode-dir", str(opencode), "--pi-dir", str(pi_dir), "--goose-dir", str(goose_dir), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "sync", "agy", "--force"])
     assert result_force.exit_code == 0
     assert (agy_cli_dir / "settings.json").is_file()
 
@@ -203,7 +205,7 @@ def test_leaf_command_flags(tmp_path: pathlib.Path):
     agy_dir = tmp_path / "gemini-config"
     agy_cli_dir = tmp_path / "gemini-cli"
 
-    result = runner.invoke(app, ["--claude-dir", str(claude), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "agy", "settings", "--force"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "sync", "agy", "settings", "--force"])
     assert result.exit_code == 0
     assert (agy_cli_dir / "settings.json").is_file()
     assert not (agy_dir / "AGENTS.md").exists()

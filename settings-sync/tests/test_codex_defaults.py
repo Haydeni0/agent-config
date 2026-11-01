@@ -5,7 +5,7 @@ import tomllib
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_defaults_merge_preserves_local_state(tmp_path: Path, defaults_source: P
         '[tui]\nstatus_line = ["model-name", "context-remaining"]\n'
     )
 
-    result = CliRunner().invoke(app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "codex", *flags])
+    result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "sync", "codex", *flags])
 
     assert result.exit_code == 0, result.output
     assert tomllib.loads(config.read_text()) == {
@@ -48,15 +48,15 @@ def test_defaults_merge_preserves_local_state(tmp_path: Path, defaults_source: P
     assert (target / "AGENTS.md").read_text().endswith("# Rules\nSee the `uv` skill.\n")
 
 
-@pytest.mark.parametrize("flag", ["--check", "--dry-run"])
-def test_defaults_drift_leaves_target_unchanged(tmp_path: Path, defaults_source: Path, flag: str):
+@pytest.mark.parametrize("command", [["check", "codex", "config"], ["sync", "codex", "config", "--dry-run"]])
+def test_defaults_drift_leaves_target_unchanged(tmp_path: Path, defaults_source: Path, command: list[str]):
     target = tmp_path / "codex"
     target.mkdir()
     config = target / "config.toml"
     original = 'model = "old-model"\n'
     config.write_text(original)
 
-    result = CliRunner().invoke(app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "codex", "config", flag])
+    result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), *command])
 
     assert result.exit_code == 1, result.output
     assert "would_replace" in result.output
@@ -73,7 +73,7 @@ def test_invalid_toml_preserves_target(tmp_path: Path, defaults_source: Path, in
     invalid.write_text('model = "unterminated\n')
     original = config.read_bytes()
 
-    result = CliRunner().invoke(app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "codex", "config", "--force"])
+    result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "sync", "codex", "config", "--force"])
 
     assert result.exit_code == 1, result.output
     assert "invalid" in result.output.lower()
@@ -87,7 +87,7 @@ def test_matching_defaults_preserve_formatting(tmp_path: Path, defaults_source: 
     original = "# Local preferences\nmodel = 'example-model'\n[features]\nhooks=true\ncustom_flag=true\n"
     config.write_text(original)
 
-    result = CliRunner().invoke(app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "codex", "config", "--check"])
+    result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "check", "codex", "config"])
 
     assert result.exit_code == 0, result.output
     assert "unchanged" in result.output
@@ -100,7 +100,7 @@ def test_defaults_merge_inline_table(tmp_path: Path, defaults_source: Path):
     config = target / "config.toml"
     config.write_text('features = {hooks = false, custom_flag = true}\n')
 
-    result = CliRunner().invoke(app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "codex", "config"])
+    result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "sync", "codex", "config"])
 
     assert result.exit_code == 0, result.output
     assert tomllib.loads(config.read_text())["features"] == {"hooks": True, "custom_flag": True}
@@ -112,7 +112,7 @@ def test_codex_sync_accepts_native_nested_skills(tmp_path: Path, defaults_source
     (skill / "SKILL.md").write_text("---\nname: example\ndescription: Example workflow\n---\nBody.\n")
     target = tmp_path / "codex"
 
-    result = CliRunner().invoke(app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "codex", "agents-md"])
+    result = CliRunner().invoke(agent_config_app, ["--claude-dir", str(defaults_source), "--codex-dir", str(target), "sync", "codex", "agents-md"])
 
     assert result.exit_code == 0, result.output
     assert (target / "AGENTS.md").is_file()

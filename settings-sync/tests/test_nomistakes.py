@@ -5,7 +5,7 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 from settings_sync.nomistakes import merge_yaml, sync_nomistakes_config
 from settings_sync.actions import Status
 from settings_sync.sync import sync_yaml
@@ -238,7 +238,7 @@ def test_cli_no_mistakes_end_to_end(tmp_path: Path, isolated_home: Path):
 
     runner = CliRunner()
     result = runner.invoke(
-        app,
+        agent_config_app,
         [
             "--claude-dir", str(claude),
             "--opencode-dir", str(tmp_path / "opencode"),
@@ -246,7 +246,7 @@ def test_cli_no_mistakes_end_to_end(tmp_path: Path, isolated_home: Path):
             "--goose-dir", str(tmp_path / "goose"),
             "--agy-dir", str(tmp_path / "agy"),
             "--nomistakes-dir", str(nm_dir),
-            "no-mistakes",
+            "sync", "no-mistakes",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -266,7 +266,7 @@ def test_cli_bare_sync_includes_nomistakes(tmp_path: Path, source_home: Path):
 
     runner = CliRunner()
     result = runner.invoke(
-        app,
+        agent_config_app,
         [
             "--claude-dir", str(claude),
             "--opencode-dir", str(tmp_path / "opencode"),
@@ -276,6 +276,7 @@ def test_cli_bare_sync_includes_nomistakes(tmp_path: Path, source_home: Path):
             "--agy-cli-dir", str(tmp_path / "agy-cli"),
             "--nomistakes-dir", str(nm_dir),
             "--codex-dir", str(tmp_path / "codex"),
+            "sync",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -293,14 +294,13 @@ def test_cli_check_reports_drift_nonzero(tmp_path):
 
     runner = CliRunner()
     result = runner.invoke(
-        app,
+        agent_config_app,
         [
             "--claude-dir", str(claude),
             "--opencode-dir", str(tmp_path / "opencode"),
             "--pi-dir", str(tmp_path / "pi"),
             "--nomistakes-dir", str(nm_dir),
-            "no-mistakes",
-            "--check",
+            "check", "no-mistakes",
         ],
     )
     assert result.exit_code == 1

@@ -4,7 +4,7 @@ import pathlib
 from typer.testing import CliRunner
 
 from settings_sync.agy import sync_agy_settings, sync_agy_skills
-from settings_sync.cli import Paths, app
+from settings_sync.cli import Paths, agent_config_app
 from settings_sync.actions import Status
 
 
@@ -114,7 +114,7 @@ def test_cli_agy_all(tmp_path: pathlib.Path):
     agy_dir = tmp_path / "gemini" / "config"
     agy_cli_dir = tmp_path / "gemini" / "antigravity-cli"
 
-    result = runner.invoke(app, ["--claude-dir", str(claude), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "agy"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(claude), "--agy-dir", str(agy_dir), "--agy-cli-dir", str(agy_cli_dir), "sync", "agy"])
 
     assert result.exit_code == 0
     assert (agy_dir / "AGENTS.md").is_file()

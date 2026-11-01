@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 import settings_sync.codex as codex
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 from settings_sync.codex import sync_codex_config
 from settings_sync.actions import Status
 
@@ -169,7 +169,7 @@ def test_codex_sqlite_home_rejects_symlink(tmp_path: pathlib.Path):
 
 def test_cli_codex_config_creates_config(tmp_path: pathlib.Path, codex_home: pathlib.Path):
     codex_dir = tmp_path / "codex-target"
-    result = runner.invoke(app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "codex", "config"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "sync", "codex", "config"])
 
     assert result.exit_code == 0
     assert (codex_dir / "config.toml").read_text() == CONFIG_TEMPLATE
@@ -180,7 +180,7 @@ def test_cli_codex_config_provisions_sqlite_home(tmp_path: pathlib.Path, codex_h
     write_sqlite_template(codex_home / "harnesses/codex/config.toml", sqlite_home)
     codex_dir = tmp_path / "codex-target"
 
-    result = runner.invoke(app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "codex", "config"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "sync", "codex", "config"])
 
     assert result.exit_code == 0
     assert sqlite_home.is_dir()
@@ -189,7 +189,7 @@ def test_cli_codex_config_provisions_sqlite_home(tmp_path: pathlib.Path, codex_h
 
 def test_cli_codex_agents_md_creates_inlined(tmp_path: pathlib.Path, codex_home: pathlib.Path):
     codex_dir = tmp_path / "codex-target"
-    result = runner.invoke(app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "codex", "agents-md"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "sync", "codex", "agents-md"])
 
     assert result.exit_code == 0
     written = (codex_dir / "AGENTS.md").read_text()
@@ -199,7 +199,7 @@ def test_cli_codex_agents_md_creates_inlined(tmp_path: pathlib.Path, codex_home:
 
 def test_cli_codex_bare_runs_config_and_agents_md(tmp_path: pathlib.Path, codex_home: pathlib.Path):
     codex_dir = tmp_path / "codex-target"
-    result = runner.invoke(app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "codex"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(codex_home), "--codex-dir", str(codex_dir), "sync", "codex"])
 
     assert result.exit_code == 0
     assert (codex_dir / "config.toml").read_text() == CONFIG_TEMPLATE

@@ -5,7 +5,7 @@ import pathlib
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 from settings_sync.goose import sync_goose_config, sync_goose_providers
 from settings_sync.actions import Status
 
@@ -208,7 +208,7 @@ def test_goose_providers_dry_run_reports_orphan(tmp_path: pathlib.Path, goose_pr
 def test_cli_goose_hints_creates(tmp_path: pathlib.Path, goose_home: pathlib.Path):
     goose_dir = tmp_path / "goose-config"
 
-    result = runner.invoke(app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "goose", "hints"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "sync", "goose", "hints"])
 
     assert result.exit_code == 0
     written = (goose_dir / ".goosehints").read_text()
@@ -219,7 +219,7 @@ def test_cli_goose_hints_creates(tmp_path: pathlib.Path, goose_home: pathlib.Pat
 def test_cli_goose_config_creates(tmp_path: pathlib.Path, goose_home: pathlib.Path):
     goose_dir = tmp_path / "goose-config"
 
-    result = runner.invoke(app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "goose", "config"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "sync", "goose", "config"])
 
     assert result.exit_code == 0
     assert (goose_dir / "config.yaml").read_text() == "GOOSE_TELEMETRY_ENABLED: false\n"
@@ -228,7 +228,7 @@ def test_cli_goose_config_creates(tmp_path: pathlib.Path, goose_home: pathlib.Pa
 def test_cli_goose_providers_creates(tmp_path: pathlib.Path, goose_home: pathlib.Path):
     goose_dir = tmp_path / "goose-config"
 
-    result = runner.invoke(app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "goose", "providers"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "sync", "goose", "providers"])
 
     assert result.exit_code == 0
     assert json.loads((goose_dir / "custom_providers" / "glm.json").read_text())["name"] == "glm"
@@ -237,7 +237,7 @@ def test_cli_goose_providers_creates(tmp_path: pathlib.Path, goose_home: pathlib
 def test_cli_goose_bare_runs_all_steps(tmp_path: pathlib.Path, goose_home: pathlib.Path):
     goose_dir = tmp_path / "goose-config"
 
-    result = runner.invoke(app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "goose"])
+    result = runner.invoke(agent_config_app, ["--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "sync", "goose"])
 
     assert result.exit_code == 0
     assert (goose_dir / ".goosehints").is_file()
@@ -250,7 +250,7 @@ def test_cli_goose_config_check_detects_drift(tmp_path: pathlib.Path, goose_home
     goose_dir.mkdir(parents=True)
     (goose_dir / "config.yaml").write_text("GOOSE_TELEMETRY_ENABLED: true\n")
 
-    result = runner.invoke(app, ["--check", "--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "goose", "config"])
+    result = runner.invoke(agent_config_app, ["--check", "--claude-dir", str(goose_home), "--goose-dir", str(goose_dir), "check", "goose", "config"])
 
     assert result.exit_code != 0
     assert "true" in (goose_dir / "config.yaml").read_text()
@@ -263,7 +263,7 @@ def test_cli_all_includes_goose(tmp_path: pathlib.Path, source_home: pathlib.Pat
     pi_dir = tmp_path / "pi-agent"
 
     result = runner.invoke(
-        app,
+        agent_config_app,
         [
             "--claude-dir", str(source_home),
             "--opencode-dir", str(opencode_dir),
@@ -272,7 +272,7 @@ def test_cli_all_includes_goose(tmp_path: pathlib.Path, source_home: pathlib.Pat
             "--agy-dir", str(tmp_path / "gemini-config"),
             "--agy-cli-dir", str(tmp_path / "gemini-cli"),
             "--codex-dir", str(tmp_path / "codex"),
-            "all",
+            "sync",
         ],
     )
 

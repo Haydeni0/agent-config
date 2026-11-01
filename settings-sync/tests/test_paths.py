@@ -7,7 +7,7 @@ from textwrap import dedent
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 
 
 @pytest.mark.parametrize("override", ["HOME", "CODEX_HOME"])
@@ -23,9 +23,9 @@ def test_destination_uses_invocation_environment(tmp_path: Path, override: str):
     script = dedent("""\
         import os
         from typer.testing import CliRunner
-        from settings_sync.cli import app
+        from settings_sync.cli import agent_config_app
         os.environ[os.environ['TEST_OVERRIDE']] = os.environ['TEST_DESTINATION']
-        result = CliRunner().invoke(app, ['--claude-dir', os.environ['TEST_SOURCE'], 'codex', 'agents-md'])
+        result = CliRunner().invoke(agent_config_app, ['--claude-dir', os.environ['TEST_SOURCE'], 'sync', 'codex', 'agents-md'])
         print(result.output)
         raise SystemExit(result.exit_code)
     """)
@@ -48,15 +48,15 @@ def test_source_selection(tmp_path: Path, isolated_home: Path, source_option: st
     script = dedent("""\
         import os
         from typer.testing import CliRunner
-        from settings_sync.cli import app
+        from settings_sync.cli import agent_config_app
         mode = os.environ['TEST_MODE']
-        args = ['codex', 'agents-md']
+        args = ['sync', 'codex', 'agents-md']
         if mode == 'flag':
             args = ['--source', os.environ['TEST_SOURCE'], *args]
             os.environ['AGENT_CONFIG_REPO'] = '/missing-env-source'
         elif mode == 'environment':
             os.environ['AGENT_CONFIG_REPO'] = os.environ['TEST_SOURCE']
-        result = CliRunner().invoke(app, args)
+        result = CliRunner().invoke(agent_config_app, args)
         print(result.output)
         raise SystemExit(result.exit_code)
     """)
@@ -72,7 +72,7 @@ def test_explicit_destination_wins(tmp_path: Path, isolated_home: Path, monkeypa
     (source / "rules/global.md").write_text("# Rules\n")
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "unused"))
     target = tmp_path / "chosen"
-    result = CliRunner().invoke(app, ["--source", str(source), "--codex-dir", str(target), "codex", "agents-md"])
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source), "--codex-dir", str(target), "sync", "codex", "agents-md"])
     assert result.exit_code == 0, result.output
     assert (target / "AGENTS.md").read_text().endswith("# Rules\n")
     assert not (tmp_path / "unused").exists()
@@ -84,7 +84,7 @@ def test_configured_missing_source_is_an_error(isolated_home: Path, monkeypatch:
     fallback.mkdir()
     (fallback / "CLAUDE.md").write_text("Wrong source\n")
     monkeypatch.setenv("AGENT_CONFIG_REPO", str(isolated_home / "missing"))
-    result = CliRunner().invoke(app, ["codex", "agents-md"])
+    result = CliRunner().invoke(agent_config_app, ["sync", "codex", "agents-md"])
     assert result.exit_code != 0
     assert "source directory does not exist" in result.output
     assert not (isolated_home / ".codex").exists()
@@ -94,7 +94,7 @@ def test_empty_xdg_uses_home_defaults(source_home: Path, isolated_home: Path, mo
     monkeypatch.setenv("XDG_CONFIG_HOME", "")
     monkeypatch.setenv("XDG_STATE_HOME", "")
     monkeypatch.chdir(isolated_home)
-    result = CliRunner().invoke(app, ["--source", str(source_home), "opencode", "agents-md"])
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "opencode", "agents-md"])
     assert result.exit_code == 0, result.output
     assert (isolated_home / ".config/opencode/AGENTS.md").is_file()
     assert (isolated_home / ".local/state/agent-config/managed.json").is_file()
@@ -109,7 +109,7 @@ def test_opencode_destination_precedence(source_home: Path, isolated_home: Path,
     args = ["--source", str(source_home)]
     if explicit:
         args += ["--opencode-dir", str(chosen)]
-    result = CliRunner().invoke(app, [*args, "opencode", "agents-md"])
+    result = CliRunner().invoke(agent_config_app, [*args, "sync", "opencode", "agents-md"])
     assert result.exit_code == 0, result.output
     assert ((chosen if explicit else native) / "AGENTS.md").is_file()
     assert not (isolated_home / ".config/opencode").exists()

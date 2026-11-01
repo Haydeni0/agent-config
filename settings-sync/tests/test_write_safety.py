@@ -6,7 +6,7 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from settings_sync.actions import Outcome, Status
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 from settings_sync.sync import sync_yaml
 
 
@@ -19,19 +19,19 @@ def test_jsonc_survives_conflicting_destination(tmp_path: Path):
     legacy = target / "opencode.jsonc"
     legacy.write_text('{"model":"legacy"}')
     (target / "opencode.json").write_text('{"model":"local"}')
-    result = CliRunner().invoke(app, ["--source", str(source), "--opencode-dir", str(target), "opencode", "config"])
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source), "--opencode-dir", str(target), "sync", "opencode", "config"])
     assert result.exit_code == 1
     assert legacy.read_text() == '{"model":"legacy"}'
     assert (target / "opencode.json").read_text() == '{"model":"local"}'
 
 
-@pytest.mark.parametrize("flag", ["--check", "--dry-run"])
-def test_preview_does_not_create_directories(tmp_path: Path, flag: str):
+@pytest.mark.parametrize("command", [["check", "opencode", "commands"], ["sync", "opencode", "commands", "--dry-run"]])
+def test_preview_does_not_create_directories(tmp_path: Path, command: list[str]):
     source = tmp_path / "source"
     (source / "commands").mkdir(parents=True)
     (source / "commands" / "example.md").write_text("---\ndescription: example\n---\nRun.\n")
     target = tmp_path / "opencode"
-    result = CliRunner().invoke(app, ["--source", str(source), "--opencode-dir", str(target), "opencode", "commands", flag])
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source), "--opencode-dir", str(target), *command])
     assert result.exit_code == 1
     assert not target.exists()
 
@@ -68,7 +68,7 @@ def test_jsonc_preview_includes_migration(tmp_path: Path):
     (target / "opencode.json").write_text('{"model":"local"}')
     legacy = target / "opencode.jsonc"
     legacy.write_text('{"local_only":"keep-me"}')
-    result = CliRunner().invoke(app, ["--source", str(source), "--opencode-dir", str(target), "opencode", "config", "--check", "--verbose"])
+    result = CliRunner().invoke(agent_config_app, ["--verbose", "--source", str(source), "--opencode-dir", str(target), "check", "opencode", "config"])
     assert result.exit_code == 1
     assert "keep-me" in result.output
     assert legacy.exists()
@@ -82,7 +82,7 @@ def test_nonregular_jsonc_preserved(source_home: Path, isolated_home: Path, kind
         target.mkdir()
     else:
         target.symlink_to("absent")
-    result = CliRunner().invoke(app, ["--source", str(source_home), "opencode", "config", "--force"])
+    result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", "opencode", "config", "--force"])
     assert result.exit_code == 1
     assert target.is_dir() if kind == "directory" else target.is_symlink()
     assert not target.with_suffix(".json").exists()

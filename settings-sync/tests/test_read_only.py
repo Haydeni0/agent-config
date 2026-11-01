@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from settings_sync.cli import app
+from settings_sync.cli import agent_config_app
 
 
 def snapshot(root: Path) -> dict[Path, tuple[int, int, str | bytes]]:
@@ -13,17 +13,17 @@ def snapshot(root: Path) -> dict[Path, tuple[int, int, str | bytes]]:
 
 
 @pytest.mark.parametrize("installed", [False, True])
-@pytest.mark.parametrize("flag", ["--check", "--dry-run"])
-def test_preview_preserves_home(source_home: Path, isolated_home: Path, installed: bool, flag: str):
+@pytest.mark.parametrize("command", [["check"], ["sync", "--dry-run"]])
+def test_preview_preserves_home(source_home: Path, isolated_home: Path, installed: bool, command: list[str]):
     runner = CliRunner()
     args = ["--source", str(source_home)]
     if installed:
-        result = runner.invoke(app, args)
+        result = runner.invoke(agent_config_app, [*args, "sync"])
         assert result.exit_code == 0, result.output
         (source_home / "rules").mkdir(parents=True, exist_ok=True)
         (source_home / "rules/global.md").write_text("Updated shared rules\n")
     before = snapshot(isolated_home)
-    result = runner.invoke(app, [*args, flag])
+    result = runner.invoke(agent_config_app, [*args, *command])
     assert result.exit_code == 1, result.output
     assert snapshot(isolated_home) == before
 
