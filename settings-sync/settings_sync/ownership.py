@@ -216,14 +216,14 @@ class OwnershipStore:
         record = self.configs.get(Path(os.path.abspath(destination)))
         return dict(record.hooks) if record is not None and record.hooks is not None else {}
 
-    def record_hooks(self, destination: Path, codec: str, groups: HookGroups) -> None:
-        key = Path(os.path.abspath(destination))
+    def record_config(self, record: ConfigRecord) -> None:
+        key = Path(os.path.abspath(record.destination))
         current = self.configs.get(key)
-        if current is not None and current.hooks == groups:
+        if current is not None and current.keys == record.keys and current.hooks == record.hooks:
             return
-        if self.path.exists():
+        if current is not None and current.hooks != record.hooks and self.path.exists():
             self.backup(self.path)
-        self.configs[key] = ConfigRecord(key, codec, current.keys if current is not None else (), groups)
+        self.configs[key] = record
         self.save()
 
     # -- backups and locking --

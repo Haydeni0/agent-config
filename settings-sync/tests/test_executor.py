@@ -184,7 +184,7 @@ def test_merged_config_legacy_migration_template_wins_and_cleans_up(isolated_hom
     assert written["localOnly"] == "keep"        # migrating key carried untracked
     assert not legacy.exists()
     migrated_keys = [k.path for rec in [store.configs.get(target)] if rec for k in rec.keys]
-    assert migrated_keys == []                    # migrating keys never recorded
+    assert ("localOnly",) not in migrated_keys    # migrating keys never recorded
 
 
 def test_merged_config_hooks_conflict_is_force_immune(isolated_home: Path):

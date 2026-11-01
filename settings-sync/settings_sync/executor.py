@@ -13,8 +13,8 @@ from settings_sync.actions import (
     Regenerate, Report, Status, Symlink,
 )
 from settings_sync.hooks import hook_groups, reconcile_hooks
-from settings_sync.merging import Codec, canonicalize, merge_defaults, strip_jsonc
-from settings_sync.ownership import ManagedEntry, OwnershipStore
+from settings_sync.merging import Codec, canonicalize, leaf_paths, merge_defaults, strip_jsonc
+from settings_sync.ownership import ConfigRecord, KeyRecord, ManagedEntry, OwnershipStore
 from settings_sync.paths import Paths
 from settings_sync.fsutil import write_text_atomic
 
@@ -104,7 +104,7 @@ def execute(actions: list[Action], mode: Mode, store: OwnershipStore) -> list[Ou
                 elif isinstance(action, Symlink):
                     outcomes.append(_apply_symlink(action, mode, store))
                 elif isinstance(action, MergedConfig):
-                    outcomes.append(_apply_merged(action, mode, store))
+                    outcomes.extend(_apply_merged(action, mode, store))
                 elif isinstance(action, Directory):
                     outcomes.append(_apply_directory(action, mode))
                 elif isinstance(action, Regenerate):
@@ -267,11 +267,11 @@ def _apply_effect(action: Effect, mode: Mode) -> Outcome:
     return Outcome(action.path, Status.CREATED, action.detail)
 
 
-def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> Outcome:
+def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> list[Outcome]:
     path = action.path
     codec = action.codec
     if path.is_symlink() or path.is_dir():
-        return Outcome(path, Status.FAILED, "expected a regular configuration file")
+        return [Outcome(path, Status.FAILED, "expected a regular configuration file")]
     existing_text = path.read_text() if path.exists() else None
     try:
         config: MutableMapping[str, object] = codec.loads(existing_text) if existing_text is not None else {}
@@ -297,9 +297,10 @@ def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> Ou
                 merge_defaults(config, {key: value})
         if legacy_conflict and mode is not Mode.FORCE:
             # DRY_RUN previews the conflict; APPLY skips it; FORCE falls through to backup + merge (S30)
-            return Outcome(path, Status.SKIPPED, "legacy config conflicts; reconcile or use --force",
-                           old_content=existing_text)
+            return [Outcome(path, Status.SKIPPED, "legacy config conflicts; reconcile or use --force",
+                            old_content=existing_text)]
         changed = _merge_declared(config, declared)
+        removed, warned, forced_removal = _drop_undeclared(config, declared, store, path, mode)
         hooks_backup = False
         if action.hook_key is not None:
             desired_groups = hook_groups(action.keys.get(action.hook_key, {}))
@@ -307,7 +308,7 @@ def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> Ou
             enabled: dict[str, object] = {}
             if action.hook_key == "agent-config" and isinstance(current, dict) and "enabled" in current:
                 if not isinstance(current["enabled"], bool):
-                    return Outcome(path, Status.FAILED, "hook enabled flag must be boolean")
+                    return [Outcome(path, Status.FAILED, "hook enabled flag must be boolean")]
                 enabled = {"enabled": current["enabled"]}
                 current = {key: value for key, value in current.items() if key != "enabled"}
             reconciled = reconcile_hooks(hook_groups(current), store.hooks_of(path), desired_groups)
@@ -321,26 +322,30 @@ def _apply_merged(action: MergedConfig, mode: Mode, store: OwnershipStore) -> Ou
             rendered = existing_text
         if rendered == existing_text:
             if mode is not Mode.DRY_RUN:
-                _record_config(store, path, codec, action)
-            return Outcome(path, Status.UNCHANGED, "identical")
+                _record_config(store, path, codec, action, config)
+            if warned and mode is not Mode.FORCE:
+                return [Outcome(path, Status.UNCHANGED, "identical"), *_drop_warnings(path, warned)]
+            return [Outcome(path, Status.UNCHANGED, "identical")]
         if mode is Mode.DRY_RUN:
-            return Outcome(path, Status.WOULD_MERGE if existing_text is not None else Status.WOULD_CREATE,
-                           _merge_detail(changed, []), old_content=existing_text, new_content=rendered)
-        if legacy_conflict or (hooks_backup and existing_text is not None):
+            outcomes = [Outcome(path, Status.WOULD_MERGE if existing_text is not None else Status.WOULD_CREATE,
+                                _merge_detail(changed, removed), old_content=existing_text, new_content=rendered)]
+            outcomes.extend(_drop_warnings(path, warned))
+            return outcomes
+        if legacy_conflict or forced_removal or (hooks_backup and existing_text is not None):
             store.backup(path)
         outcome = _atomic_write(path, rendered, existing_text)
         if outcome.status in (Status.CREATED, Status.REPLACED, Status.UNCHANGED):
             outcome.status = Status.MERGED
-            outcome.detail = _merge_detail(changed, [])
+            outcome.detail = _merge_detail(changed, removed)
             if mode is not Mode.DRY_RUN:
-                _record_config(store, path, codec, action)
+                _record_config(store, path, codec, action, config)
         if outcome.status in (Status.CREATED, Status.REPLACED, Status.MERGED, Status.UNCHANGED) and action.remove_after is not None:
             failed = _remove_after(action.remove_after, mode, action.migrate, store)
             if failed is not None:
-                return failed
-        return outcome
+                outcome = failed
+        return [outcome] if not warned or mode is Mode.FORCE else [outcome, *_drop_warnings(path, warned)]
     except (OSError, ValueError) as exc:
-        return Outcome(path, Status.FAILED, f"could not merge configuration: {exc}")
+        return [Outcome(path, Status.FAILED, f"could not merge configuration: {exc}")]
 
 
 def _merge_declared(config: dict[str, object], declared: dict[str, object]) -> list[str]:
@@ -379,9 +384,101 @@ def _semantically_equal(codec: Codec, left: str, right: str) -> bool:
         return False
 
 
-def _record_config(store: OwnershipStore, path: Path, codec: Codec, action: MergedConfig) -> None:
-    if action.hook_key is not None:
-        store.record_hooks(path, codec.name, hook_groups(action.keys.get(action.hook_key, {})))
+def _record_config(store: OwnershipStore, path: Path, codec: Codec, action: MergedConfig, config: MutableMapping[str, object]) -> None:
+    declared = {key: value for key, value in action.keys.items() if key != action.hook_key}
+    records: list[KeyRecord] = []
+    for leaf in sorted(leaf_paths(declared)):
+        value = _leaf_value(config, leaf)
+        if value is _MISSING:
+            continue
+        records.append(KeyRecord(leaf, value))
+    hooks = hook_groups(action.keys.get(action.hook_key, {})) if action.hook_key is not None else None
+    store.record_config(ConfigRecord(Path(os.path.abspath(path)), codec.name, tuple(records), hooks))
+
+
+def _leaf_value(config: Mapping[str, object], leaf: tuple[str, ...]) -> object:
+    node: object = config
+    for segment in leaf:
+        if not isinstance(node, Mapping) or segment not in node:
+            return _MISSING
+        node = node[segment]
+    if not isinstance(node, bool):  # int(True) would erase the bool type (S6)
+        for plain in (int, float, str, list, dict):
+            # tomlkit wraps scalars in subclasses of the builtins; records must
+            # compare type-stable across the JSON round-trip, so normalize them.
+            if isinstance(node, plain) and type(node) is not plain:
+                node = plain(node)
+                break
+    return canonicalize(node)
+
+
+def _drop_undeclared(
+    config: MutableMapping[str, object],
+    declared: Mapping[str, object],
+    store: OwnershipStore,
+    path: Path,
+    mode: Mode,
+) -> tuple[list[str], list[str], bool]:
+    """D19 remove-vs-keep: returns (removed dotted paths, warned dotted paths, force removed an edited key)."""
+    declared_leaves = leaf_paths(declared)
+    record = store.configs.get(Path(os.path.abspath(path)))
+    removed: list[str] = []
+    warned: list[str] = []
+    forced = False
+    if record is None:
+        return removed, warned, forced
+    for key_record in record.keys:
+        if key_record.path in declared_leaves:
+            continue
+        installed = _leaf_value(config, key_record.path)
+        if installed is _MISSING:
+            continue
+        dotted = ".".join(key_record.path)
+        unchanged = type(installed) is type(key_record.value) and installed == key_record.value
+        if unchanged:
+            _remove_leaf(config, key_record.path, declared_leaves)
+            removed.append(dotted)
+        elif mode is Mode.FORCE:
+            _remove_leaf(config, key_record.path, declared_leaves)
+            removed.append(dotted)
+            forced = True
+        else:
+            warned.append(dotted)
+    return removed, warned, forced
+
+
+def _remove_leaf(config: MutableMapping[str, object], leaf: tuple[str, ...], declared_leaves: set[tuple[str, ...]]) -> None:
+    node: object = config
+    for segment in leaf[:-1]:
+        if not isinstance(node, Mapping) or segment not in node:
+            return
+        node = node[segment]
+    if isinstance(node, MutableMapping):
+        node.pop(leaf[-1], None)
+    for depth in range(len(leaf) - 1, 0, -1):
+        parent_path = leaf[:depth]
+        parent: object = config
+        for segment in parent_path[:-1]:
+            if not isinstance(parent, Mapping) or segment not in parent:
+                return
+            parent = parent[segment]
+        if not isinstance(parent, Mapping) or parent_path[-1] not in parent:
+            return
+        child = parent[parent_path[-1]]
+        if isinstance(child, dict) and not child and not any(
+            declared_leaf[:depth] == parent_path for declared_leaf in declared_leaves
+        ):
+            del parent[parent_path[-1]]
+        else:
+            return
+
+
+def _drop_warnings(path: Path, warned: list[str]) -> list[Outcome]:
+    return [
+        Outcome(path, Status.WARNED,
+                f"template dropped locally-edited key: {dotted}; kept and released to local state")
+        for dotted in warned
+    ]
 
 
 def _remove_after(legacy: Path, mode: Mode, migrate: Mapping[str, object] | None, store: OwnershipStore) -> Outcome | None:

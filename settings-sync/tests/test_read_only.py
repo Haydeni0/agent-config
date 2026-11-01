@@ -12,14 +12,21 @@ def snapshot(root: Path) -> dict[Path, tuple[int, int, str | bytes]]:
             for path in root.rglob("*")}
 
 
-@pytest.mark.parametrize("installed", [False, True])
+@pytest.mark.parametrize("installed", [False, True, "pending-removal"])
 @pytest.mark.parametrize("command", [["check"], ["sync", "--dry-run"], ["sync", "--dry-run", "--force"]])
-def test_preview_preserves_home(source_home: Path, isolated_home: Path, installed: bool, command: list[str]):
+def test_preview_preserves_home(source_home: Path, isolated_home: Path, installed, command: list[str]):
     runner = CliRunner()
     args = ["--source", str(source_home)]
     if installed:
         result = runner.invoke(agent_config_app, [*args, "sync"])
         assert result.exit_code == 0, result.output
+    if installed == "pending-removal":
+        (source_home / "harnesses/gemini/settings.json").write_text('{"model": "shared", "extra": 1}')
+        assert runner.invoke(agent_config_app, [*args, "sync", "agy", "settings"]).exit_code == 0
+        (source_home / "harnesses/gemini/settings.json").write_text('{"model": "shared"}')
+        result = runner.invoke(agent_config_app, [*args, "check", "agy", "settings"])
+        assert result.exit_code == 1, result.output
+    elif installed:
         (source_home / "rules").mkdir(parents=True, exist_ok=True)
         (source_home / "rules/global.md").write_text("Updated shared rules\n")
     before = snapshot(isolated_home)

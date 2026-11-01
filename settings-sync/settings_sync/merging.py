@@ -104,6 +104,18 @@ def strip_jsonc(text: str) -> str:
     return _TRAILING_COMMA.sub(r"\1", stripped)
 
 
+def leaf_paths(value: Mapping[str, object], prefix: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
+    """Declared key paths: descend mappings only; arrays, scalars, nulls, and empty mappings are leaves."""
+    leaves: set[tuple[str, ...]] = set()
+    for key, item in value.items():
+        path = (*prefix, key)
+        if isinstance(item, Mapping) and item:
+            leaves.update(leaf_paths(item, path))
+        else:
+            leaves.add(path)
+    return leaves
+
+
 def canonicalize(value: object) -> object:
     """Map TOML-only value types onto JSON-native ones so record equality is stable."""
     if isinstance(value, datetime.datetime):
