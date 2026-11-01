@@ -34,6 +34,28 @@
       ]
     },
     {
+      "name": "s3_mv_blocked",
+      "label": "aws s3 mv removes its source, blocked in every direction",
+      "expect": "deny",
+      "needle": "S3",
+      "commands": [
+        "aws s3 mv s3://bucket/prefix ./local",
+        "aws s3 mv ./local-file s3://bucket/prefix",
+        "aws s3 mv s3://bucket/a s3://other/b",
+        "aws --profile p s3 mv s3://bucket/x ./local",
+        "aws s3 mv s3://bucket/x ./local --recursive"
+      ]
+    },
+    {
+      "name": "s3api_move_object_blocked",
+      "label": "aws s3api move-object blocked (safe-side: no such S3 API today)",
+      "expect": "deny",
+      "needle": "S3",
+      "commands": [
+        "aws s3api move-object --bucket b --key k --destination-bucket b2"
+      ]
+    },
+    {
       "name": "s3_non_deletes_allowed",
       "label": "S3 non-delete allowed",
       "expect": "allow",

@@ -1,9 +1,10 @@
 // Shared command policy. Passing decisions defer to the harness permission engine.
 //
 // Scope:
-//   S3:       deletes only blocked (s3 rm, s3 rb, s3 sync --delete, s3api
-//             delete-*). Uploads (cp ./x s3://..., s3api put-*) and read ops
-//             (ls, cp download, sync download, list-*/get-*) allowed.
+//   S3:       deletes only blocked (s3 rm, s3 rb, s3 mv, s3 sync --delete,
+//             s3api delete-*/move-object). Uploads (cp ./x s3://..., s3api
+//             put-*) and read ops (ls, cp download, sync download, list-*/get-*)
+//             allowed.
 //   sudo/dd/mkfs, chmod 777, forced git push, gh api writes and kubectl
 //   mutations are blocked by the guards below.
 //   Git gate: commit-creating subcommands (commit, merge, cherry-pick,
@@ -403,10 +404,10 @@ function s3Guard(tokens) {
     const k = findSubcommand(tokens, j + 1, AWS_OPTIONS)
     const sub = tokens[k]
     if (service === "s3api") {
-      if (sub?.startsWith("delete-")) return `Blocked: aws s3api ${sub} deletes S3 data. ${S3_REASON}`
+      if (sub === "move-object" || sub?.startsWith("delete-")) return `Blocked: aws s3api ${sub} deletes S3 data. ${S3_REASON}`
       continue
     }
-    if (sub === "rm" || sub === "rb") return `Blocked: aws s3 ${sub} deletes S3 data. ${S3_REASON}`
+    if (sub === "rm" || sub === "rb" || sub === "mv") return `Blocked: aws s3 ${sub} deletes S3 data. ${S3_REASON}`
     if (sub === "sync" && tokens.slice(k + 1).some(isDeleteOptionPrefix)) {
       return `Blocked: aws s3 sync --delete removes S3 objects. ${S3_REASON}`
     }
