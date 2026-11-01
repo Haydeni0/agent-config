@@ -188,7 +188,7 @@ flowchart LR
     %% caveman_review[caveman-review]
     claim_verification[claim-verification]
     code_review[code-review]
-    %% codebase_review[codebase-review]
+    codebase_review[codebase-review]
     design_log[design-log]
     dev_cycle[dev-cycle]
     doc_reformat[doc-reformat]
@@ -250,6 +250,7 @@ flowchart LR
     agent_config --> writing_skills
     attack_claims --> work_package
     attack_claims --> claim_verification
+    codebase_review --> code_review
     design_log --> grill_me
     design_log --> test_plan
     design_log --> write_spec
@@ -277,6 +278,7 @@ flowchart LR
     m_pair --> marimo_pair
     mailbox --> work_package
     mailbox_overseer --> mailbox
+    mailbox_overseer --> orchestrator
     orchestrator --> grill_me
     orchestrator --> backlog
     orchestrator --> dev_cycle

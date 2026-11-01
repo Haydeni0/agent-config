@@ -1,7 +1,7 @@
 ---
 name: mailbox-overseer
 description: Use when the user wants this session to be the overseer - the planning and reasoning agent that talks to the user while a worker agent in another herdr pane, itself an orchestrator running subagents, does all the execution - "you plan and think, the worker executes", "be the brain, delegate everything to the worker agent", "let the planner delegate to the worker pane", "oversee this project through the worker". Not for single-session subagent orchestration and not for a mesh of equal peers.
-deps: [mailbox]
+deps: [mailbox, orchestrator]
 ---
 
 # mailbox-overseer

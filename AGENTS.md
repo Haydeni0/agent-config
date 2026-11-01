@@ -22,6 +22,7 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 ## Working rules
 
 - Never hand-edit generated native targets when their source lives here. Edit the source, then run `agent-config sync` and `agent-config check`.
+- Vendored plugins live in submodules: run `git submodule update --init --recursive` after clone, pull, or worktree add - the skill links and `test_read_only` need them.
 - Preserve local runtime entries, generated instructions, and explicit permission choices. Do not put credentials, project trust, hook approval hashes, or UI state in shared templates.
 - Use `--force`, including selected-step force, only after inspecting the conflicting generated file and its backup path.
 - When running inside `local-codex`, `CODEX_HOME` points to a temporary runtime. Pass the real native home explicitly, for example `agent-config --codex-dir "$HOME/.codex" check codex`.
@@ -31,7 +32,7 @@ Use targeted tests matching the changed area while iterating. Run the full suite
 - The README skill map is generated: declare cross-skill dependencies in each skill's `deps:` frontmatter, regenerate with `uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py --write`, and commit the result. verify.sh fails on a stale graph. Vendored skills are never edited; they appear as nodes only.
 - Requirements live in `docs/requirements.md` (ID / Requirement / Verification tables). Update it with or before any behavior change it covers, cite entries as ID plus one-line meaning, and never mark work complete without running the cited verification.
 - Test suites stay fast (REQ-PROCESS-06): a suite's full run completes under 20s wall on an idle box on a single core - aim under 10s. When a suite crosses the line, cut process spawns or I/O, never buy speed with core count (8 workers max).
-- Commit and push only under the active authorization gate. Branches use `hayden/`.
+- Commit and push only under the active authorization gate.
 
 ## Documents
 

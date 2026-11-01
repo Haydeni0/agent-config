@@ -125,6 +125,22 @@ def test_s4_warn_lint_hyphen_sibling_no_false_positive(graph_module: types.Modul
     assert not any("writer" in w for w in warnings)
 
 
+def test_s4_warn_lint_colliding_name_needs_skill_like_reference(graph_module: types.ModuleType, tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    # colliding names: bare mentions are CLI text or role nouns, not directions
+    make_skill(skills, "uv")
+    make_skill(skills, "orchestrator")
+    make_skill(skills, "cli-user", body="run it with `uv run --script tool.py`")
+    make_skill(skills, "prose-user", body="dispatch one orchestrator agent to run the stages")
+    # skill-like references (backticked, slash-command, "<name> skill") do warn
+    make_skill(skills, "ref-user", body="load the `orchestrator` skill, then use the uv skill")
+    warnings = graph_module.warn_lint(skills, graph_module.load_skills(skills))
+    assert not any("cli-user" in w for w in warnings)
+    assert not any("prose-user" in w for w in warnings)
+    assert any("ref-user" in w and "orchestrator" in w for w in warnings)
+    assert any("ref-user" in w and "uv" in w for w in warnings)
+
+
 def test_s11_gitignored_skills_excluded(graph_module: types.ModuleType, tmp_path: Path) -> None:
     # machine-local skill is gitignored: it must not become a node that a
     # fresh CI clone (without the skill) gates as stale

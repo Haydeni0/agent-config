@@ -1,7 +1,7 @@
 [project]
 name = "settings-sync"
 version = "0.1.0"
-description = "Sync ~/.claude config into ~/.config/opencode and ~/.pi/agent. Single source of truth lives in ~/.claude."
+description = "Sync shared agent rules, skills, commands, hooks, and harness settings from this source checkout into native agent homes. Single source of truth lives in this repository."
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",

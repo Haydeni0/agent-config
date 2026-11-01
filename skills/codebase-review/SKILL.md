@@ -1,6 +1,7 @@
 ---
 name: codebase-review
 description: Use when reviewing a module, directory, or file for structural issues - complexity, duplication, dead code, coupling, cohesion, module boundaries - without a diff or PR
+deps: [code-review]
 ---
 
 # codebase-review
