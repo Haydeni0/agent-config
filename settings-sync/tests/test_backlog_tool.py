@@ -1,12 +1,15 @@
 """Tests for skills/backlog/backlog.py: serialized add/close lifecycle
-(S1-S5). Fixtures are tmpdir copies of the real file shapes - never the
-machine-local original (it is gitignored state)."""
+(S1-S5), and skills/backlog/lint.py: structural lint (S6-S7). Fixtures are
+tmpdir copies of the real file shapes - never the machine-local original
+(it is gitignored state)."""
 
 import importlib.util
+import io
 import re
 import subprocess
 import sys
 import types
+from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
 
@@ -14,6 +17,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BACKLOG = REPO_ROOT / "skills" / "backlog" / "backlog.py"
+LINT = REPO_ROOT / "skills" / "backlog" / "lint.py"
 
 
 @pytest.fixture(scope="module")
@@ -135,3 +139,91 @@ def test_concurrent_adds_serialize(tmp_path: Path, backlog: types.ModuleType):
     text = p.read_text()
     ids = sorted(int(m) for m in re.findall(r"^- #(\d+) \[", text, re.M))
     assert len(ids) == len(set(ids)) == 3  # 1 original + 2 distinct racers
+
+
+@pytest.fixture(scope="module")
+def lint() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location("backlog_lint", LINT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["backlog_lint"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_lint(lint: types.ModuleType, p: Path, *extra: str) -> tuple[int, str]:
+    buf = io.StringIO()
+    with redirect_stdout(buf), pytest.raises(SystemExit) as exc:
+        lint.main([str(p), *extra])
+    return exc.value.code, buf.getvalue()
+
+
+def test_lint_clean_file_exits_zero(tmp_path: Path, lint: types.ModuleType):
+    p = write_backlog(
+        tmp_path,
+        "- #1 [2026-11-01] one",
+        done="- #2 [2026-11-01] two\n  -> DONE 2026-11-01: landed",
+    )
+    code, out = run_lint(lint, p)
+    assert code == 0 and out == ""
+
+
+def test_lint_flags_duplicate_ids_across_sections(tmp_path: Path, lint: types.ModuleType):
+    p = write_backlog(
+        tmp_path,
+        "- #1 [2026-11-01] one",
+        done="- #1 [2026-11-01] also one\n  -> DONE 2026-11-01: x",
+    )
+    code, out = run_lint(lint, p)
+    assert code == 1
+    assert "duplicate" in out and "#1" in out
+
+
+def test_lint_flags_done_item_without_record(tmp_path: Path, lint: types.ModuleType):
+    p = write_backlog(tmp_path, "- #1 [2026-11-01] one", done="- #2 [2026-11-01] bare")
+    code, out = run_lint(lint, p)
+    assert code == 1
+    assert "#2" in out and "Done" in out
+
+
+def test_lint_flags_done_record_under_open(tmp_path: Path, lint: types.ModuleType):
+    p = write_backlog(
+        tmp_path,
+        "- #1 [2026-11-01] one\n  -> DONE 2026-11-01: early",
+        done="- #2 [2026-11-01] two\n  -> DONE 2026-11-01: x",
+    )
+    code, out = run_lint(lint, p)
+    assert code == 1
+    assert "#1" in out and "Open" in out
+
+
+def test_lint_accepts_closed_records_and_skips_foreign_sections(tmp_path: Path, lint: types.ModuleType):
+    p = tmp_path / "backlog.md"
+    p.write_text(
+        "# Backlog\n\n## Open\n\n- #1 [2026-11-01] one\n\n"
+        "## Imported legacy\n\n- #5 [2026-11-01] no record here\n  -> CLOSED 2026-11-01: fine\n\n"
+        "## Done\n\n- #2 [2026-11-01] two\n  -> CLOSED 2026-11-01: done\n"
+    )
+    code, out = run_lint(lint, p)
+    assert code == 0 and out == ""
+
+
+def test_lint_requirements_dangling_pointer(tmp_path: Path, lint: types.ModuleType):
+    p = write_backlog(
+        tmp_path,
+        "- #70 [2026-11-01] seventy",
+        done="- #2 [2026-11-01] two\n  -> DONE 2026-11-01: x",
+    )
+    req = tmp_path / "requirements.md"
+    req.write_text(
+        "# Requirements\n\n"
+        "| ID | Requirement | Verification |\n"
+        "|---|---|---|\n"
+        "| REQ-X-01 | Cites a missing backlog item #999 in a row. | manual |\n"
+        "| REQ-X-02 | Cites an existing item (#70) - fine. | manual |\n"
+        "| REQ-X-03 | Not a citation: anthropics/claude-code#74708. | manual |\n"
+        "```markdown\n| REQ-X-04 | Fenced row citing #888 - skipped. | manual |\n```\n"
+    )
+    code, out = run_lint(lint, p, "--requirements", str(req))
+    assert code == 1
+    assert "#999" in out
+    assert "#70" not in out and "#74708" not in out and "#888" not in out

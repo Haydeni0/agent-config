@@ -19,7 +19,7 @@ Append deferred side topics to `.agents/backlog.md` at the git root so they surv
 
 1. Resolve target: git root + `.agents/backlog.md`. If cwd is not a git repo, cwd + `.agents/backlog.md`.
 2. If only `.claude/backlog.md` exists, read and keep using that legacy file until this project is deliberately migrated. If both files exist, surface both and reconcile before editing. Preserve IDs. The canonical file needs no hand-creation - the add tool creates it when absent.
-3. Add with `uv run --script <skill dir>/backlog.py <file> add "<text>"` - it allocates the next ID (max existing + 1, never reused, so deletions don't renumber), inserts under `## Open`, and serializes concurrent writers. Longer thoughts get continuation lines indented under the bullet. Concise by default; no hard cap.
+3. Add with `uv run --script <skill dir>/backlog.py <file> add "<text>"` - it allocates the next ID (max existing + 1, never reused, so deletions don't renumber), inserts under `## Open`, and serializes concurrent writers. Longer thoughts get continuation lines indented under the bullet. Concise by default; no hard cap. After any add, run `uv run --script <skill dir>/lint.py <file>` - the structural check home.
 4. Mention in chat in one clause ("noted to backlog as #7").
 5. Resume the flow exactly as it stood:
    - Capture scope: only what the user deferred. Never capture conversation or agent state on your own initiative - pending questions, options awaiting a choice, the agent's own analysis, in-flight work. Those live in the conversation, not the backlog.
@@ -34,7 +34,7 @@ If the trigger arrives mid-flow (interview, review, task), resume the pending st
 
 ## Close
 
-- `/backlog done <id>` → `uv run --script <skill dir>/backlog.py <file> close <id> "<record>"` - it requires the item to sit under `## Open` (unknown ID, already-Done, or misfiled → nonzero exit, file unchanged), appends the done record as the item's last continuation line, and moves the whole block to the end of `## Done` (created when missing), keeping ID and date.
+- `/backlog done <id>` → `uv run --script <skill dir>/backlog.py <file> close <id> "<record>"` - it requires the item to sit under `## Open` (unknown ID, already-Done, or misfiled → nonzero exit, file unchanged), appends the done record as the item's last continuation line, and moves the whole block to the end of `## Done` (created when missing), keeping ID and date. After any close, run `uv run --script <skill dir>/lint.py <file>`.
 - `/backlog clear` → delete the `## Done` section contents.
 - Closing is user-disposed: when the agent notices an open item was clearly addressed by work just done, it suggests closing ("#3 looks covered - close it?") and moves it only on confirmation. User-initiated close is unconditional.
 
