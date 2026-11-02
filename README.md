@@ -200,7 +200,7 @@ flowchart LR
     %% handoff[handoff]
     %% herdr[herdr]
     %% jupyter_to_marimo[jupyter-to-marimo]
-    %% knowledge[knowledge]
+    knowledge[knowledge]
     %% kubectl[kubectl]
     %% lavish[lavish]
     librarian[librarian]
@@ -295,6 +295,7 @@ flowchart LR
     repo_agent_setup --> grill_me
     repo_agent_setup --> backlog
     repo_agent_setup --> requirements
+    research_spike --> knowledge
     research_spike --> librarian
     research_spike --> living_doc
     research_spike --> work_package

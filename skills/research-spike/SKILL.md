@@ -2,7 +2,7 @@
 name: research-spike
 layer: orchestrator
 description: Run a research spike - decompose an open question into independent investigation streams, fan them out (capped), and synthesize evidence-backed findings into a work-package. Invoke only via /research-spike or an explicit request to run a research spike.
-deps: [librarian, living-doc, work-package]
+deps: [knowledge, librarian, living-doc, work-package]
 exits: ['context.md', 'decisions.md Q entries (when the research surfaces open forks)']
 ---
 
@@ -18,8 +18,9 @@ entries. Disk is the record: a compacted or dead session resumes the
 spike from the package, never from memory.
 
 Load work-package before creating or writing any package file. Load
-librarian and living-doc only as the briefs below direct - their bodies
-are the contract for the streams, restated nowhere here.
+knowledge, librarian, and living-doc only as the briefs and Synthesis
+below direct - their bodies are the contract for the streams, restated
+nowhere here.
 
 ## On invocation: package selection
 
@@ -142,6 +143,9 @@ user's working tree, remotes, shared services, or global environment
 (global package installs, PATH or shell config, system state); label
 anything built throwaway; report carries evidence (commands run,
 outputs, permalinks).
+Load the knowledge skill: search the store first for settled claims on
+this sub-question - a hit is prior evidence, cite the entry; a no-hit
+gets one line in the doc's Steps.
 Load the living-doc skill: your output file is a living doc. Create the
 skeleton at <package>/<stream>.md (filename kebab-case, never a
 work-package contract filename); this brief's question + done-condition
@@ -189,6 +193,9 @@ When Sources shows no `pending`:
    Synthesis states the claim as single-sourced in the same breath as
    any answer resting on it - never propping a headline the caveat
    contradicts.
+5. Verified load-bearing claims the spike settled go to the knowledge
+   store: load the knowledge skill and propose entries via its add
+   flow, selecting claims a future session would otherwise re-derive.
 
 ## Terminal state
 
