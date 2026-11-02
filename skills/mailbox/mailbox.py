@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -75,7 +76,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-10-31.03"
+MAILBOX_VERSION = "2026-11-02.01"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -586,20 +587,24 @@ def is_horizontal_rule(line: str) -> bool:
 ANSI_CSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
-def row_text_and_dim(row: str) -> tuple[str, list[bool]]:
-    """The row's text with its ANSI sequences stripped, plus a dim flag per
-    kept character. claude renders its own empty-composer suggestions - a fresh
-    session's `Try "..."` hint, a worked session's replay of a prior prompt -
-    dim (SGR 2) and a human's typed draft plain (the probe's captured bytes),
-    so the flags tell suggestion text from typed text where style-stripped
-    text cannot."""
+def row_text_and_dim(row: str) -> tuple[str, list[bool], list[bool]]:
+    """The row's text with its ANSI sequences stripped, plus a dim flag and a
+    reverse-video flag per kept character. claude renders its own
+    empty-composer suggestions - a fresh session's `Try "..."` hint, a worked
+    session's replay of a prior prompt - dim (SGR 2) and a human's typed draft
+    plain (the probe's captured bytes), so the flags tell suggestion text from
+    typed text where style-stripped text cannot. The reverse flag (SGR 7)
+    carries cursor-agent's reverse-video cursor letter and space cursor."""
     chars: list[str] = []
     dims: list[bool] = []
+    revs: list[bool] = []
     dim = False
+    rev = False
     pos = 0
     for seq in ANSI_CSI.finditer(row):
         chars.extend(row[pos:seq.start()])
         dims.extend([dim] * (seq.start() - pos))
+        revs.extend([rev] * (seq.start() - pos))
         if seq.group().endswith("m"):
             params = seq.group()[2:-1].split(";")
             i = 0
@@ -608,21 +613,33 @@ def row_text_and_dim(row: str) -> tuple[str, list[bool]]:
                 i += 1
                 if code in ("38", "48") and i < len(params):
                     # an SGR color's own arguments: 38/48;5;N and 38/48;2;R;G;B
-                    # - the colorspace's 2 is not the dim attribute
-                    i += 3 if params[i] == "2" else 2 if params[i] == "5" else 0
+                    # - the colorspace's 2 is not the dim attribute. The skip
+                    # is mode+3 for 2 and mode+1 for 5, counted from the mode
+                    # param: the pre-existing `3` left the blue component to
+                    # be parsed as an attribute code (harmless on every
+                    # captured shape - blues 55/59/69/153 hit no branch - but
+                    # a theme whose blue is 2 or 7 would flip dim or rev; the
+                    # retint test pins the fix)
+                    i += 4 if params[i] == "2" else 2 if params[i] == "5" else 0
                 elif code in ("0", "00"):
                     dim = False
+                    rev = False
                 elif code == "2":
                     dim = True
                 elif code == "22":
                     dim = False
+                elif code == "7":
+                    rev = True
+                elif code == "27":
+                    rev = False
         pos = seq.end()
     chars.extend(row[pos:])
     dims.extend([dim] * (len(row) - pos))
-    return "".join(chars), dims
+    revs.extend([rev] * (len(row) - pos))
+    return "".join(chars), dims, revs
 
 
-def prompt_box_state(screen: str) -> str | None:
+def claude_prompt_box_state(screen: str) -> str | None:
     """The claude composer as the pane's styled bytes show it: "empty",
     "typing", or None when the box cannot be seen - never a guess.
 
@@ -640,7 +657,7 @@ def prompt_box_state(screen: str) -> str | None:
     for line in lines[rules[-2] + 1:]:
         if is_horizontal_rule(ANSI_CSI.sub("", line)):
             break
-        text, dims = row_text_and_dim(line)
+        text, dims, _ = row_text_and_dim(line)
         if text.startswith(PROMPT_CURSOR):
             text = text[len(PROMPT_CURSOR):]
             dims = dims[len(PROMPT_CURSOR):]
@@ -649,6 +666,56 @@ def prompt_box_state(screen: str) -> str | None:
         if all(dim for dim, ch in zip(dims, text) if ch.strip()):
             continue
         return "typing"
+    return "empty"
+
+
+CURSOR_PROMPT_GLYPH = "→"
+TRUECOLOR_BG = re.compile(r"\x1b\[48;2;(\d+;\d+;\d+)m")
+
+
+def cursor_prompt_box_state(screen: str) -> str | None:
+    """The cursor-agent composer as the pane's styled bytes show it: "empty",
+    "typing", or None when the box cannot be seen - never a guess.
+
+    The composer is the box of contiguous rows sharing one exact SGR 48;2
+    background code; transcript user rows carry their own different background,
+    so the exact-code run keeps the locator off them. The prompt row is the
+    bottom-most backgrounded row whose plain text starts with → after leading
+    whitespace - the pane header's ❯ carries no background and never matches.
+    Box content beyond the prompt glyph that renders plain (not dim, not
+    reverse, not whitespace) is unsubmitted typing - a human draft, or a
+    queued or just-submitted line lingering in the box before it migrates to
+    the follow-ups panel; cursor renders its empty-composer suggestions dim
+    with a reverse-video cursor letter, the same dim/plain fact claude
+    renders. Every row of the box is scanned - a wrapped draft grows it."""
+    lines = screen.replace("\r\n", "\n").split("\n")
+    bg: dict[int, str] = {}
+    for i, line in enumerate(lines):
+        if (m := TRUECOLOR_BG.search(line)):
+            bg[i] = m.group(1)
+    prompt_idx = None
+    for i in sorted(bg, reverse=True):
+        if ANSI_CSI.sub("", lines[i]).strip().startswith(CURSOR_PROMPT_GLYPH):
+            prompt_idx = i
+            break
+    if prompt_idx is None:
+        return None
+    code = bg[prompt_idx]
+    lo = prompt_idx
+    while lo - 1 in bg and bg[lo - 1] == code:
+        lo -= 1
+    hi = prompt_idx
+    while hi + 1 in bg and bg[hi + 1] == code:
+        hi += 1
+    for i in range(lo, hi + 1):
+        text, dims, revs = row_text_and_dim(lines[i])
+        if i == prompt_idx:
+            glyph_at = text.find(CURSOR_PROMPT_GLYPH)
+            if glyph_at < 0:
+                continue
+            text, dims, revs = text[glyph_at + 1:], dims[glyph_at + 1:], revs[glyph_at + 1:]
+        if any(ch.strip() and not dim and not rev for ch, dim, rev in zip(text, dims, revs)):
+            return "typing"
     return "empty"
 
 
@@ -684,7 +751,64 @@ def is_pane_chrome(row: str) -> bool:
     return STATUS_ROW_SHAPE.match(stripped) is not None
 
 
-def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:
+# cursor-agent pane chrome - the follow-ups panel (borders and │ rows) that
+# carries a queued line's words, the braille spinner row with its Running/
+# Working label, tip rows, the task-count row, the model/status footer (its
+# pct drifts while a turn runs), and the box rows themselves (the → prefix)
+CURSOR_PANEL_BORDER = re.compile(r"^\s*[┌└]─")
+CURSOR_SPINNER = re.compile(r"^[⠀-⣿]+\s*(?:Running|Working)\b")
+CURSOR_TASK_ROW = re.compile(r"^\s*\d+\s+tasks?\b")
+CURSOR_FOOTER_PCT = re.compile(r"· \d+(?:\.\d+)?%")
+CURSOR_TIP = "Tip:"
+
+
+def is_cursor_pane_chrome(row: str) -> bool:
+    """The cursor pane's own status chrome, never a consumer response - the
+    same job is_pane_chrome does for claude, on cursor's captured shapes: the
+    follow-ups panel rows would otherwise read as a fresh consumer row
+    carrying the queued line's words (the false-delivered face)."""
+    if is_horizontal_rule(row):
+        return True
+    stripped = row.strip()
+    if stripped.startswith(("│", CURSOR_PROMPT_GLYPH, CURSOR_TIP)):
+        return True
+    if CURSOR_PANEL_BORDER.match(stripped) or CURSOR_SPINNER.match(stripped) or CURSOR_TASK_ROW.match(stripped):
+        return True
+    return CURSOR_FOOTER_PCT.search(stripped) is not None
+
+
+# The cwd row is deliberately not a shape: it is stable pane text, so the
+# readback's pre-rows membership check covers it (a `startswith("/")` shape
+# would eat a consumer reply that begins with a path).
+
+
+@dataclass(slots=True, frozen=True)
+class SeatGuard:
+    """The per-harness pair behind the ring guard: how to read that harness's
+    composer, and which rows of its pane are chrome for the readback. Adding
+    a harness = one entry here plus its fixtures - no guarded-path edits."""
+
+    box_state: Callable[[str], str | None]
+    pane_chrome: Callable[[str], bool]
+
+
+SEAT_GUARDS: dict[str, SeatGuard] = {
+    "claude": SeatGuard(claude_prompt_box_state, is_pane_chrome),
+    "cursor": SeatGuard(cursor_prompt_box_state, is_cursor_pane_chrome),
+}
+
+
+def prompt_box_state(screen: str, harness: str) -> str | None:
+    """The seat's composer via its harness's registered detector: "empty",
+    "typing", or None when the box cannot be seen. An unregistered harness is
+    never read - ring_seat routes unprobed seats around this dispatcher, so a
+    KeyError here is a wiring bug, not a fallback."""
+    return SEAT_GUARDS[harness].box_state(screen)
+
+
+def readback_classify(
+    sent: str, pre: str, post: str, chrome: Callable[[str], bool] = is_pane_chrome
+) -> tuple[str, str]:
     """The R140 classifier at ring scale (bin/lab-control.sh its landed
     readback_classify): delivered only when a row after the sent line's last
     trace is fresh against the pre-send read, queued when the line sits with
@@ -741,12 +865,14 @@ def readback_classify(sent: str, pre: str, post: str) -> tuple[str, str]:
         # response - and so is a row of the pane's own status chrome, whatever
         # it mutated into - the two discriminators the false-delivered face
         # turns on
-        if row and row != "❯" and row not in pre_rows and not is_pane_chrome(row):
+        if row and row != "❯" and row not in pre_rows and not chrome(row):
             return "delivered", f"delivered; fresh row: {row}"
     return "queued", f"queued-unverified; pane: {pane_state}"
 
 
-def ring_readback(pane: str, line: str, pre_read: str) -> tuple[RingOutcome, str]:
+def ring_readback(
+    pane: str, line: str, pre_read: str, chrome: Callable[[str], bool] = is_pane_chrome
+) -> tuple[RingOutcome, str]:
     """The post-send readback: pane reads polled 0.5 s apart to the 5 s cap,
     the sent line classified against the pre-send read - a vanished line
     names itself here, never at the next digest beat."""
@@ -756,7 +882,7 @@ def ring_readback(pane: str, line: str, pre_read: str) -> tuple[RingOutcome, str
             post = herdr("pane", "read", "--source", "visible", pane)
         except HerdrError:
             post = ""
-        verdict, evidence = readback_classify(line, pre_read, post)
+        verdict, evidence = readback_classify(line, pre_read, post, chrome=chrome)
         if verdict == "delivered":
             break
         if poll + 1 < RING_READBACK_POLLS:
@@ -804,7 +930,7 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> tuple[RingOu
             screen = herdr("pane", "read", "--source", "visible", "--format", "ansi", pane)
         except HerdrError:
             return RingOutcome.COMPOSER_UNSEEN, ""
-        state = prompt_box_state(screen)
+        state = prompt_box_state(screen, "claude")
         if state == "typing":
             return RingOutcome.TYPING, ""
         if state is None:
