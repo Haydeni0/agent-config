@@ -276,7 +276,7 @@ Before writing a claim about the codebase or environment, ask: can I verify this
 - **No, and the claim is blocking** → stop and ask. Don't proceed on a guess.
 - **No, and the claim is non-blocking** → flag the assumption explicitly: "Assuming X — correct me if wrong."
 
-Before sending any claim-bearing message (chat answer, peer-agent or subagent report, status file, doc, PR or Linear post), run the claim-verification skill.
+Before sending a terminal completion report, finalising a persisted artifact that asserts facts (report, status file, doc, PR or Linear post), or relaying a peer agent's or subagent's report, run the claim-verification skill. Chat answers verify inline per the rule above - no skill pass.
 
 **Blocking** means: the claim influences what tool call comes next, what code gets written, or what recommendation is made. If getting it wrong changes your next action, it's blocking.
 

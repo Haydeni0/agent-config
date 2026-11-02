@@ -1,7 +1,7 @@
 ---
 name: claim-verification
 layer: worker
-description: Use before sending any claim-bearing message - a chat answer, a message to a peer agent, a subagent return, a status file, a doc finalise, or a PR or Linear post that asserts facts about the codebase, environment or work state. Checks each claim against fresh evidence, through the verify_claims MCP when present, else a written self-pass plus, for terminal messages, a fresh-context judge.
+description: Use when finalising a persisted artifact that asserts facts about the codebase, environment, or work state - a work-package doc, report, spec, README, status file, or PR/Linear post - when sending a terminal completion report claiming work is done (tests pass, bug fixed, pushed, merged), or when relaying a subagent's or peer agent's report - its claims are claims to check, never evidence.
 deps: []
 ---
 
@@ -15,7 +15,6 @@ Every factual claim leaving this session is checked against evidence gathered in
 
 A **claim-bearing message** is any outgoing text asserting a fact about the codebase, environment or work state:
 
-- a chat answer to the user;
 - a message to a peer agent (mailbox, overseer, orchestrator) or a subagent's return;
 - persisted text read as status: a status file, a finalised doc, a PR description, a Linear post.
 
