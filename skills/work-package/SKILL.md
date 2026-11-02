@@ -115,13 +115,24 @@ edges only: plan tasks block plan tasks, Q entries block Q entries.
   a second `Blocked by` line on one task; a `Blocked by` line outside any
   task heading; an opted-in task with no checkboxes (it could never close);
   a duplicate task or Q ID; a cross-file reference; an unparseable
-  reference; an unknown type tag. Q entries parse only under an
-  `## Open questions` heading, and only D entries carry `Resolves` closure.
+  reference; an unknown type tag; a duplicate live D id or a live D colliding
+  with a struck one; step labels that duplicate or skip numbers within a task
+  (numbering starts at 1 and lettered variants count as their base). Q
+  entries parse only under an `## Open questions` heading, and only D entries
+  carry `Resolves` closure.
 - `frontier` - the open items whose blockers are all closed, as a JSON array
   in file order (plan tasks in plan order, then Qs in decisions order), each
   `{id, kind: task|q, type, title, blocked_by}`; plan-task items carry
   `type: null`, an untagged Q reads as grill. Exit 1 and no array when check
   reports findings. Pick the next item with jq: `frontier <dir> | jq '.[0]'`.
+- `tick` - flips a task's unchecked boxes to `[x]` in place (the tool's one
+  write): errors with no write on an unknown task number, an ambiguous plan
+  (duplicate task numbers), a task with no checkboxes, or one already fully
+  checked; fenced lines are never touched.
+- `detect` - JSON facts, no routing decision: the state line (or its
+  absence), `## Outcome` and `## Review findings` presence, live D count,
+  open Q count, and per-artifact existence/marker facts including plan box
+  counts; errors on an absent decisions.md or a malformed state line.
 
 This repo's package lint runs `check` across every package; other repos run
 the script directly.

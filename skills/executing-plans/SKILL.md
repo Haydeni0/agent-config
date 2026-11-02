@@ -46,7 +46,7 @@ For each task:
 2. Before writing any implementation code, invoke the `tdd` skill.
 3. Follow each step exactly (plan has bite-sized steps)
 4. Run verifications as specified
-5. Mark as completed
+5. Mark as completed with the work-package graph tool: `graph.py tick <dir> <task-num>` flips the task's unchecked boxes in the plan (it refuses an unknown, ambiguous, or already-complete task with no write).
 
 ### Step 3: Complete Development
 
