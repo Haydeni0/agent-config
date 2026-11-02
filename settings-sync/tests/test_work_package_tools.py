@@ -23,6 +23,15 @@ def advance() -> types.ModuleType:
     return module
 
 
+@pytest.fixture(scope="module")
+def sections() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location("wp_sections", SECTIONS)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["wp_sections"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def make_pkg(tmp_path: Path, decisions: str = "", spec: str = "", plan: str = "") -> Path:
     make_pkg.n += 1
     pkg = tmp_path / f"pkg{make_pkg.n}"
@@ -184,3 +193,66 @@ def test_flag_pairs_required_together(advance: types.ModuleType, tmp_path: Path)
     refused(advance, pkg, "--expect-state", "spec")  # --set-state missing
     refused(advance, pkg, "--set-state", "plan")     # --expect-state missing
     refused(advance, pkg)                            # nothing requested
+
+
+def test_s8_insert_appends_canonical_headings(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: verify-fix\n\n## Decisions\n\n- D1. A.\n")
+    for name, heading in (("outcome", "## Outcome"),
+                          ("deviation-log", "## Deviation log"),
+                          ("review-findings", "## Review findings")):
+        ok(sections, pkg, "insert", name)
+        assert (pkg / "decisions.md").read_text().rstrip("\n").endswith(heading)
+
+
+def test_s8_insert_refuses_existing_section(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: verify-fix\n\n## Outcome\n\nMet.\n")
+    before = (pkg / "decisions.md").read_text()
+    refused(sections, pkg, "insert", "outcome")
+    assert (pkg / "decisions.md").read_text() == before
+
+
+def test_s8_insert_refuses_malformed_decisions(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="## Decisions\n\n- D1. A.\n")  # no state line
+    refused(sections, pkg, "insert", "outcome")
+    malformed = make_pkg(tmp_path, decisions="state verify-fix\n")
+    refused(sections, pkg, "insert", "outcome")
+
+
+def test_s8_insert_map_is_closed(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: verify-fix\n")
+    refused(sections, pkg, "insert", "review-nits")  # append-per-round: stays prose
+    refused(sections, pkg, "insert", "bogus")
+
+
+def test_s9_disposition_appends_after_finding_block(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions=(
+        "state: verify-fix\n\n## Review findings\n\n"
+        "1. HIGH first finding\n   continuation line\n\n2. MEDIUM second\n"
+    ))
+    ok(sections, pkg, "disposition", "1", "fixed in 59011dd")
+    text = (pkg / "decisions.md").read_text()
+    assert "1. HIGH first finding\n   continuation line\n   Disposition: fixed in 59011dd" in text
+    assert text.index("Disposition: fixed in 59011dd") < text.index("2. MEDIUM second")
+
+
+def test_s9_disposition_last_finding_lands_at_section_end(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: verify-fix\n\n## Review findings\n\n1. HIGH only\n")
+    ok(sections, pkg, "disposition", "1", "discarded: not real")
+    assert (pkg / "decisions.md").read_text().rstrip("\n").endswith(
+        "1. HIGH only\n   Disposition: discarded: not real")
+
+
+def test_s9_disposition_refuses_unknown_and_duplicate(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions=(
+        "state: verify-fix\n\n## Review findings\n\n"
+        "1. HIGH one\n\n1. HIGH duplicate\n"
+    ))
+    before = (pkg / "decisions.md").read_text()
+    refused(sections, pkg, "disposition", "1")  # duplicate finding number
+    refused(sections, pkg, "disposition", "9")  # unknown finding number
+    assert (pkg / "decisions.md").read_text() == before
+
+
+def test_s9_disposition_requires_review_findings_section(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: verify-fix\n\n## Decisions\n\n- D1. A.\n")
+    refused(sections, pkg, "disposition", "1", "fixed")
