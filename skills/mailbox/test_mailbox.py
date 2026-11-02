@@ -1553,6 +1553,10 @@ def test_is_cursor_pane_chrome_names_the_captured_shapes(helper: ModuleType) -> 
     assert chrome("  Tip: Use /skills to give Cursor specialized knowledge for tasks.")
     assert chrome("  1 task")
     assert chrome("  Claude Haiku 5.5 300K Low No Thinking · MAX · 10.4%")
+    # the readback trims " \t%" from row ends - a narrow pane whose footer
+    # ends at the pct must still classify chrome, or the drifting row reads
+    # as a fresh consumer row (the false-delivered shape)
+    assert chrome("  Claude Haiku 5.5 300K Low No Thinking · MAX · 10.4")
     assert chrome("  → Add a follow-up")
     assert not chrome("Noted: transient inbox probe mno345. No action taken.")
 

@@ -613,13 +613,10 @@ def row_text_and_dim(row: str) -> tuple[str, list[bool], list[bool]]:
                 i += 1
                 if code in ("38", "48") and i < len(params):
                     # an SGR color's own arguments: 38/48;5;N and 38/48;2;R;G;B
-                    # - the colorspace's 2 is not the dim attribute. The skip
-                    # is mode+3 for 2 and mode+1 for 5, counted from the mode
-                    # param: the pre-existing `3` left the blue component to
-                    # be parsed as an attribute code (harmless on every
-                    # captured shape - blues 55/59/69/153 hit no branch - but
-                    # a theme whose blue is 2 or 7 would flip dim or rev; the
-                    # retint test pins the fix)
+                    # - the colorspace's 2 is not the dim attribute, and the
+                    # skip must consume mode+3 for 2 (mode+1 for 5) counted
+                    # from the mode param, or the blue component parses as an
+                    # attribute code - a blue of 2 or 7 would flip dim or rev
                     i += 4 if params[i] == "2" else 2 if params[i] == "5" else 0
                 elif code in ("0", "00"):
                     dim = False
@@ -758,7 +755,7 @@ def is_pane_chrome(row: str) -> bool:
 CURSOR_PANEL_BORDER = re.compile(r"^\s*[┌└]─")
 CURSOR_SPINNER = re.compile(r"^[⠀-⣿]+\s*(?:Running|Working)\b")
 CURSOR_TASK_ROW = re.compile(r"^\s*\d+\s+tasks?\b")
-CURSOR_FOOTER_PCT = re.compile(r"· \d+(?:\.\d+)?%")
+CURSOR_FOOTER_PCT = re.compile(r"· \d+(?:\.\d+)?")
 CURSOR_TIP = "Tip:"
 
 
