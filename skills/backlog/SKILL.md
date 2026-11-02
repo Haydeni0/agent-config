@@ -18,26 +18,10 @@ Append deferred side topics to `.agents/backlog.md` at the git root so they surv
 ## Capture
 
 1. Resolve target: git root + `.agents/backlog.md`. If cwd is not a git repo, cwd + `.agents/backlog.md`.
-2. If only `.claude/backlog.md` exists, read and keep using that legacy file until this project is deliberately migrated. If both files exist, surface both and reconcile before editing. Preserve IDs. Create the canonical file with this template only when neither exists:
-
-   ```markdown
-   # Backlog
-
-   Deferred items for this project. Surfaced when starting work here; picked up on request.
-
-   ## Open
-   ```
-
-3. Next ID = max existing `#N` in file + 1. IDs are never reused, so deletions don't renumber.
-4. Append under `## Open`:
-
-   ```markdown
-   - #7 [2026-08-31] <text>
-   ```
-
-   Longer thoughts get continuation lines indented under the bullet. Concise by default; no hard cap.
-5. Mention in chat in one clause ("noted to backlog as #7").
-6. Resume the flow exactly as it stood:
+2. If only `.claude/backlog.md` exists, read and keep using that legacy file until this project is deliberately migrated. If both files exist, surface both and reconcile before editing. Preserve IDs. The canonical file needs no hand-creation - the add tool creates it when absent.
+3. Add with `uv run --script <skill dir>/backlog.py <file> add "<text>"` - it allocates the next ID (max existing + 1, never reused, so deletions don't renumber), inserts under `## Open`, and serializes concurrent writers. Longer thoughts get continuation lines indented under the bullet. Concise by default; no hard cap.
+4. Mention in chat in one clause ("noted to backlog as #7").
+5. Resume the flow exactly as it stood:
    - Capture scope: only what the user deferred. Never capture conversation or agent state on your own initiative - pending questions, options awaiting a choice, the agent's own analysis, in-flight work. Those live in the conversation, not the backlog.
    - Restore that state unchanged: pending question re-presented with its options, half-done task continues. A deferral is never an answer, decision, or advance signal, so nothing about the pending state changes - it is not dropped, answered, or parked.
    - Exception - user orders the capture: "put this topic in the backlog", "let's leave this for later". The current topic itself goes to the backlog, recorded with its live state ("decision pending, options (a)/(b)/(c)"). This is a suspend, not a deferral: the conversation moves on - a pending question is recorded, not re-presented. Ask what's next (or let the user name it).
@@ -50,7 +34,7 @@ If the trigger arrives mid-flow (interview, review, task), resume the pending st
 
 ## Close
 
-- `/backlog done <id>` → move the line to a `## Done` section (create after Open if missing), keeping ID and date.
+- `/backlog done <id>` → `uv run --script <skill dir>/backlog.py <file> close <id> "<record>"` - it requires the item to sit under `## Open` (unknown ID, already-Done, or misfiled → nonzero exit, file unchanged), appends the done record as the item's last continuation line, and moves the whole block to the end of `## Done` (created when missing), keeping ID and date.
 - `/backlog clear` → delete the `## Done` section contents.
 - Closing is user-disposed: when the agent notices an open item was clearly addressed by work just done, it suggests closing ("#3 looks covered - close it?") and moves it only on confirmation. User-initiated close is unconditional.
 
