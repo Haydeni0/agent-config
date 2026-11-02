@@ -63,10 +63,12 @@ Debug packages carry a second line directly after `state:`:
 otherwise; incremented on each failed fix; re-read from disk after
 compaction, never trusted from memory.
 
-The cycle-driving skill writes the state line on stage completion
-(systematic-debugging in debug cycles; the dev pipeline's orchestrator in
-dev cycles). `scripts/check-packages.py` (CI) validates syntax;
-transitions are the driving skills' prose.
+On stage completion the dev cycle's driving skill runs the guarded writer in
+this directory: `uv run --script <this skill's directory>/advance.py <package-dir> --expect-state <cur> --set-state <next>`
+- it refuses on any mismatch (printing actual vs expected, no write) and
+validates the seven dev-pipeline chain transitions; debug-cycle and research
+transitions stay the driving skills' prose. `scripts/check-packages.py` (CI)
+validates syntax.
 
 ## Entry formats
 
@@ -139,10 +141,10 @@ the script directly.
 
 ## Markers
 
-Bytes that cycle-driving skills write on artifacts and read back; their *interpretation* (which stage consumes which marker) stays with the driving skill:
+Bytes that cycle-driving skills read back; the writes are `advance.py`/`sections.py` in this directory (the byte shapes stay this contract's). Their *interpretation* (which stage consumes which marker) stays with the driving skill:
 
-- `Reviewed: pass|fail <n>` - appended to an artifact footer after each reviewer round; `<n>` counts rounds over the artifact's lifetime.
-- `Implemented` - appended to a plan footer when implementation completes.
+- `Reviewed: pass|fail <n>` - appended to an artifact footer after each reviewer round by `advance.py --review <verdict> --artifact spec|plan` (round continuity enforced, gaps and duplicates refused, never renumbered); `<n>` counts rounds over the artifact's lifetime.
+- `Implemented` - appended to a plan footer by `advance.py --implemented` when implementation completes; an existing marker is refused, never duplicated.
 - `## Outcome` - section in `decisions.md` recording the confirmed outcome at the launch gate.
 - `## Deviation log` - section in `decisions.md` where the implement stage files the implementer's returned deviation log before writing `state: code-review`.
 - `## Review nits` - section in `decisions.md` where LOW review findings live.
