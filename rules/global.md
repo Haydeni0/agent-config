@@ -32,6 +32,10 @@
 ### Python
 
 - Assume all repositories use python and uv. See @skills/uv for full uv usage rules.
+- In git worktrees and second checkouts, reuse the repo's existing venv read-only (run its
+  binaries with cwd in the worktree, or `uv run --no-sync`); never sync a fresh `.venv` per
+  worktree unless the task changes the environment itself. See @skills/worktree-venv,
+  including the import-resolution probe that must precede reuse.
 
 ### Tooling
 
