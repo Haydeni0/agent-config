@@ -29,6 +29,19 @@ environment instead.
    - Prints the venv owner's tree (editable install pinned to one checkout) -> reuse is
      UNSAFE for that repo; fall back to an isolated env (below).
 
+## Tools with their own environment discovery
+
+Binaries run FROM the venv (pytest, ruff, python) work with cwd anywhere. But tools that
+*discover* an environment themselves look for a local `.venv` and fail without one:
+
+- **pyright**: pass the shared interpreter explicitly -
+  `<venv>/bin/python -m pyright --pythonpath <venv>/bin/python <paths>`. Without it,
+  expect a wall of `reportMissingImports`. (`--venvpath` is a different knob - the venv
+  search base - and does not fix this.)
+- Same pattern for any other resolver (mypy, pylint's venv detection, jupyter kernels):
+  point them at the shared interpreter or its site-packages explicitly rather than hoping
+  they discover the absent `.venv`.
+
 ## When an isolated venv is required
 
 Only when the task changes the environment itself: installing, upgrading or downgrading
