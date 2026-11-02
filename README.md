@@ -242,6 +242,7 @@ flowchart LR
     verification_before_completion[verification-before-completion]
     %% visual_explainer[visual-explainer]
     work_package[work-package]
+    %% worktree_venv[worktree-venv]
     %% worktrunk[worktrunk]
     write_spec[write-spec]
     writing_plans[writing-plans]
