@@ -58,12 +58,13 @@ EOF
 - A send never waits on the recipient's idle state: the ring checks once
   and falls through at once, so a busy recipient holds your send only for
   its short readback.
-- A busy claude recipient is prompted mid-turn anyway once its composer is
-  seen empty - the send's readback then names the line's pane state (delivered,
-  or queued-unverified with the pane state), never a bare success; a draft in
-  its composer means a human is mid-typing, idle or mid-turn, and it is not
-  rung. A busy recipient on any other harness is left for its next `take`.
-- An idle claude recipient that is mid-typing is not rung - a ring would
+- A busy claude or cursor-agent recipient is prompted mid-turn anyway once its
+  composer is seen empty - the send's readback then names the line's pane state
+  (delivered, or queued-unverified with the pane state), never a bare success;
+  a draft in its composer means a human is mid-typing, idle or mid-turn, and
+  it is not rung. A busy recipient on an unprobed harness is left for its next
+  `take`.
+- An idle claude or cursor-agent recipient that is mid-typing is not rung - a ring would
   splice into its draft and send it. The file waits for its next `take`
   (and the turn-end guard surfaces it).
 - Batch several items into one message - every ring costs the recipient a
@@ -116,9 +117,11 @@ naming the fresh row, or `rung: queued-unverified` with the pane state); exit 3
 means not submitted, the no-trace shape included - nothing waits anywhere,
 the caller resends (a heartbeat's next beat is a natural retry).
 `--wait-ms <ms>` bounds the idle wait before the mid-turn fallback;
-`--wait-ms 0` checks and falls through at once. The composer guard is
-claude-shaped: a busy seat on another harness is left alone and an idle one
-is prompted without the draft check.
+`--wait-ms 0` checks and falls through at once. The composer guard covers
+claude and cursor-agent seats through a per-harness detector registry (adding
+a harness = one detector plus fixtures, no guarded-path edits); a harness
+without a detector is unprobed - a busy unprobed seat is left alone and an
+idle one is prompted without the draft check.
 
 ## Leaving
 

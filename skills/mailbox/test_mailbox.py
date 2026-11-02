@@ -126,8 +126,12 @@ if verb == "prompt":
                     cur = f"{cur} {word}"
             rows.append(cur)
             line = rows[0] + "\n" + "\n".join("  " + row for row in rows[1:])
+        # per-agent post-prompt response bytes: a cursor pane returns
+        # cursor-shaped bytes (panel entry, delivered row); unset agents keep
+        # the claude-shaped defaults
+        resp = state.get("prompt_responses", {}).get(target) or {}
         state.setdefault("pane_screens", {})[pane] = screen + line + "\n" + (
-            BUSY_SPINNER + BUSY_HINT if busy else DEFAULT_RESPONSE
+            resp.get("busy", BUSY_SPINNER + BUSY_HINT) if busy else resp.get("idle", DEFAULT_RESPONSE)
         )
         with open(state_path, "w") as f:
             json.dump(state, f)
@@ -1658,6 +1662,72 @@ def test_ring_prompts_an_idle_unprobed_harness_seat_without_the_composer_read(me
         call[:4] == ["pane", "read", "--source", "visible"] and "ansi" in call
         for call in mesh.herdr.calls()
     )
+
+
+CURSOR_IDLE_RESPONSE = "Got it: the line.\n"
+CURSOR_BUSY_RESPONSE = (
+    " ┌─ follow-ups ────────────────────────────────────────────────────────\n"
+    " │ ○ the queued line waits here                                       \n"
+    " │ enter steer · ↑ select/edit · esc cancel                           \n"
+    " └────────────────────────────────────────────────────────────────────\n"
+    " ⠘⠣ Running  14 tokens\n"
+)
+
+
+def test_ring_names_a_delivered_cursor_line(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_EMPTY_IDLE})
+    mesh.herdr.set("prompt_responses", {"worker": {"idle": CURSOR_IDLE_RESPONSE}})
+
+    result = mesh.run("ring", WORKER_PANE, "the ring line", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "rung" in result.stdout
+    assert "delivered" in result.stdout  # the readback names evidence - never a bare rung
+
+
+def test_ring_names_a_busy_cursor_line_queued_unverified(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_BUSY_EMPTY})
+    mesh.herdr.set("wait", {"worker": "timeout"})
+    mesh.herdr.set("prompt_responses", {"worker": {"busy": CURSOR_BUSY_RESPONSE}})
+
+    result = mesh.run("ring", WORKER_PANE, "the queued line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "queued-unverified" in result.stdout
+    assert "delivered" not in result.stdout
+
+
+def test_ring_defers_a_re_ring_into_a_box_holding_text(mesh: Mesh) -> None:
+    # the in-flight shape: a submitted message lingers plain in the box while
+    # Working shows above - a re-ring must not splice into it
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_INFLIGHT_SUBMISSION})
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("ring", WORKER_PANE, "second line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "not rung" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_queues_a_second_line_into_a_migrated_busy_seat(mesh: Mesh) -> None:
+    # after the first line migrates to the follow-ups panel the box reads
+    # empty again - a second ring queues a second line, claude's mid-turn
+    # multi-queue behavior, never splices
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_BUSY_QUEUED_POSTSEND})
+    mesh.herdr.set("wait", {"worker": "timeout"})
+    mesh.herdr.set("prompt_responses", {"worker": {"busy": CURSOR_BUSY_RESPONSE}})
+
+    result = mesh.run("ring", WORKER_PANE, "second line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert ["agent", "prompt", WORKER_PANE, "second line"] in mesh.herdr.calls()
+    assert "queued-unverified" in result.stdout
+    assert "delivered" not in result.stdout
 
 
 def test_poke_reports_the_typing_outcome(mesh: Mesh) -> None:
