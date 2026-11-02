@@ -145,10 +145,10 @@ Bytes that cycle-driving skills read back; the writes are `advance.py`/`sections
 
 - `Reviewed: pass|fail <n>` - appended to an artifact footer after each reviewer round by `advance.py --review <verdict> --artifact spec|plan` (round continuity enforced, gaps and duplicates refused, never renumbered); `<n>` counts rounds over the artifact's lifetime.
 - `Implemented` - appended to a plan footer by `advance.py --implemented` when implementation completes; an existing marker is refused, never duplicated.
-- `## Outcome` - section in `decisions.md` recording the confirmed outcome at the launch gate (`sections.py insert outcome`).
-- `## Deviation log` - section in `decisions.md` where the implement stage files the implementer's returned deviation log (`sections.py insert deviation-log`) before the state moves to code-review.
+- `## Outcome` - section in `decisions.md` recording the confirmed outcome at the launch gate (`sections.py insert outcome` creates the heading; the driving stage writes the body under it).
+- `## Deviation log` - section in `decisions.md` where the implement stage files the implementer's returned deviation log (`sections.py insert deviation-log` creates the heading; the stage pastes the log under it) before the state moves to code-review.
 - `## Review nits` - section in `decisions.md` where LOW review findings live; appended per round by hand (the insert-once `sections.py` command cannot serve an append-per-round section).
-- `## Review findings` - section in `decisions.md` where the code-review stage files its scored findings (`sections.py insert review-findings`) before the state moves to verify-fix; the verify-fix stage triages from this copy, filing each finding's disposition with `sections.py disposition <n> "<text>"`.
+- `## Review findings` - section in `decisions.md` where the code-review stage files its scored findings (`sections.py insert review-findings` creates the heading; the stage writes the numbered findings under it) before the state moves to verify-fix; the verify-fix stage triages from this copy, filing each finding's disposition with `sections.py disposition <n> "<text>"`.
 
 ## Legacy conversion
 

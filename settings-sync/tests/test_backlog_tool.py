@@ -227,3 +227,35 @@ def test_lint_requirements_dangling_pointer(tmp_path: Path, lint: types.ModuleTy
     assert code == 1
     assert "#999" in out
     assert "#70" not in out and "#74708" not in out and "#888" not in out
+
+
+def test_add_skips_fenced_example_items(tmp_path: Path, backlog: types.ModuleType):
+    # A fenced example bullet is not an item: ID allocation ignores it and
+    # close never matches inside the fence.
+    p = tmp_path / "backlog.md"
+    p.write_text(
+        "# Backlog\n\n## Open\n\n- #3 [2026-11-01] three\n\n```markdown\n- #99 [2026-11-01] fenced example\n```\n\n## Done\n"
+    )
+    run(backlog, p, "add", "four")
+    assert "- #4 [" in p.read_text()
+    assert "#4" not in p.read_text().split("```")[1]
+    result = run_fails(backlog, p, "close", "99", "x")
+    assert "#99" in result.output
+
+
+def test_add_close_refuse_unclosed_fence(tmp_path: Path, backlog: types.ModuleType):
+    p = tmp_path / "backlog.md"
+    p.write_text("# Backlog\n\n## Open\n\n- #1 [2026-11-01] one\n\n```markdown\nstill open\n\n## Done\n")
+    before = p.read_text()
+    run_fails(backlog, p, "add", "two")
+    run_fails(backlog, p, "close", "1", "x")
+    assert p.read_text() == before
+
+
+def test_close_preserves_trailing_newline(tmp_path: Path, backlog: types.ModuleType):
+    p = tmp_path / "backlog.md"
+    p.write_text("# Backlog\n\n## Open\n\n- #5 [2026-11-01] five\n\n## Done\n")
+    run(backlog, p, "close", "5", "the fix landed")
+    out = p.read_text()
+    assert out.endswith("\n")
+    assert "  -> DONE" in out

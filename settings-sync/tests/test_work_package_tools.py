@@ -256,3 +256,62 @@ def test_s9_disposition_refuses_unknown_and_duplicate(sections: types.ModuleType
 def test_s9_disposition_requires_review_findings_section(sections: types.ModuleType, tmp_path: Path):
     pkg = make_pkg(tmp_path, decisions="state: verify-fix\n\n## Decisions\n\n- D1. A.\n")
     refused(sections, pkg, "disposition", "1", "fixed")
+
+
+def test_advance_refuses_unclosed_fence(advance: types.ModuleType, tmp_path: Path):
+    # An unclosed fence would swallow the marker; the next run would re-mint
+    # the same round number with no lint the wiser.
+    pkg = make_pkg(
+        tmp_path,
+        decisions="state: spec\n",
+        spec="# Spec\n\n```markdown\nstill open\n",
+    )
+    before = (pkg / "spec.md").read_text()
+    refused(advance, pkg, "--review", "pass", "--artifact", "spec")
+    assert (pkg / "spec.md").read_text() == before
+
+
+def test_advance_implemented_refuses_unclosed_fence(advance: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: implement\n", plan="# Plan\n\n```\nopen fence\n")
+    before = (pkg / "plan.md").read_text()
+    refused(advance, pkg, "--implemented")
+    assert (pkg / "plan.md").read_text() == before
+
+
+def test_sections_insert_refuses_unclosed_fence(sections: types.ModuleType, tmp_path: Path):
+    pkg = make_pkg(tmp_path, decisions="state: spec\n\n```markdown\nopen fence\n")
+    before = (pkg / "decisions.md").read_text()
+    refused(sections, pkg, "insert", "outcome")
+    assert (pkg / "decisions.md").read_text() == before
+
+
+def test_sections_insert_accepts_fenced_heading_quote(sections: types.ModuleType, tmp_path: Path):
+    # A CLOSED fence quoting the grammar is not a section - insert must not
+    # false-refuse on it (the writer agrees with its grammar lint here).
+    pkg = make_pkg(
+        tmp_path,
+        decisions="state: spec\n\nExample:\n\n```markdown\n## Outcome\n```\n",
+    )
+    ok(sections, pkg, "insert", "outcome")
+    text = (pkg / "decisions.md").read_text()
+    assert text.count("## Outcome") == 2  # one fenced quote, one real section
+    refused(sections, pkg, "insert", "outcome")  # now the real one exists
+
+
+def test_sections_disposition_ignores_fenced_section_line(sections: types.ModuleType, tmp_path: Path):
+    # A fenced `## ` line inside the findings section must not truncate the
+    # scan: later findings stay reachable and dispositions never land inside
+    # the fence.
+    pkg = make_pkg(
+        tmp_path,
+        decisions=(
+            "state: verify-fix\n\n"
+            "## Review findings\n\n"
+            "1. First finding.\n\n"
+            "```markdown\n## fenced example\n```\n\n"
+            "2. Second finding.\n"
+        ),
+    )
+    ok(sections, pkg, "disposition", "2", "fixed in commit abc123")
+    text = (pkg / "decisions.md").read_text()
+    assert "Disposition: fixed in commit abc123" in text.split("2. Second finding.")[1].split("```")[0]

@@ -49,14 +49,38 @@ def _lock(path: Path):
     return fh
 
 
+def _fenced_mask(lines: list[str]) -> list[bool]:
+    # True = inside a fence. Fenced lines are invisible to ID, heading, and
+    # section scans - a fenced example item is not an item, and a fenced
+    # heading does not open a section (matching lint.py's discipline).
+    mask = []
+    in_fence = False
+    for l in lines:
+        if l.strip().startswith("```"):
+            mask.append(True)
+            in_fence = not in_fence
+            continue
+        mask.append(in_fence)
+    return mask
+
+
+def _require_balanced_fences(lines: list[str]) -> None:
+    # An unclosed fence hides everything after it from the scans; refuse
+    # rather than allocate IDs or move blocks around a broken region.
+    if sum(1 for l in lines if l.strip().startswith("```")) % 2 == 1:
+        raise Refused("unclosed code fence - fix the fence before editing")
+
+
 def _ids(text: str) -> list[int]:
-    return [int(m) for m in ITEM_RE.findall(text)]
-
-
-def _section(text: str, name: str) -> str | None:
-    m = re.search(rf"^## {name}\s*$", text, re.M)  # line-start headings only -
-    # inline `## Done` mentions inside item prose must not split sections
-    return None if m is None else text[m.end():].split("\n## ", 1)[0]
+    lines = text.split("\n")
+    mask = _fenced_mask(lines)
+    out = []
+    for l, fenced in zip(lines, mask):
+        if not fenced:
+            m = ITEM_RE.match(l)
+            if m:
+                out.append(int(m.group(1)))
+    return out
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -70,10 +94,13 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def _heading_of(lines: list[str], i: int) -> str | None:
-    """Name of the last `## ` heading above line i; None before any heading."""
+def _heading_of(lines: list[str], i: int, mask: list[bool] | None = None) -> str | None:
+    """Name of the last `## ` heading above line i; None before any heading.
+    Fenced heading lines are not headings."""
     name = None
-    for l in lines[:i]:
+    for k, l in enumerate(lines[:i]):
+        if mask is not None and mask[k]:
+            continue
         m = HEADING_RE.match(l)
         if m:
             name = m.group(1)
@@ -86,17 +113,17 @@ def add_item(path: Path, text: str) -> None:
         if not path.exists():
             path.write_text(CANONICAL)
         raw = path.read_text()
-        if _section(raw, "Open") is None:
+        lines = raw.split("\n")
+        _require_balanced_fences(lines)
+        mask = _fenced_mask(lines)
+        heading = next((i for i, l in enumerate(lines) if not mask[i] and re.match(r"^## Open\s*$", l)), None)
+        if heading is None:
             raise Refused("no ## Open marker")
         ids = _ids(raw)
         nid = (max(ids) + 1) if ids else 1
         if nid in ids:
             raise Refused(f"next id #{nid} already taken")
         line = f"- #{nid} [{date.today():%Y-%m-%d}] {text}"
-        lines = raw.split("\n")
-        heading = next((i for i, l in enumerate(lines) if re.match(r"^## Open\s*$", l)), None)
-        if heading is None:
-            raise Refused("no ## Open marker")
         insert_at = heading + 2 if heading + 1 < len(lines) and lines[heading + 1] == "" else heading + 1
         lines.insert(insert_at, line)
         _atomic_write(path, "\n".join(lines))
@@ -109,14 +136,16 @@ def close_item(path: Path, item_id: int, record: str) -> None:
     try:
         raw = path.read_text()
         lines = raw.split("\n")
+        _require_balanced_fences(lines)
+        mask = _fenced_mask(lines)
         bullet = re.compile(rf"^- #{item_id} \[")
-        hits = [i for i, l in enumerate(lines) if bullet.match(l)]
+        hits = [i for i, l in enumerate(lines) if not mask[i] and bullet.match(l)]
         if not hits:
             raise Refused(f"no item #{item_id}")
         if len(hits) > 1:
             raise Refused(f"{len(hits)} items #{item_id} - ambiguous")
         i = hits[0]
-        heading = _heading_of(lines, i)
+        heading = _heading_of(lines, i, mask)
         if heading != "Open":
             raise Refused(f"item #{item_id} sits under {heading!r}, not '## Open'")
         # The item block runs to the next column-0 `- ` bullet or `#` heading,
@@ -133,15 +162,17 @@ def close_item(path: Path, item_id: int, record: str) -> None:
             block.pop()
         block.append(f"  -> DONE {date.today():%Y-%m-%d}: {record}")
         del lines[i:j]
-        done_idx = next((k for k, l in enumerate(lines) if re.match(r"^## Done\s*$", l)), None)
+        done_idx = next((k for k, l in enumerate(lines) if not mask[k] and re.match(r"^## Done\s*$", l)), None)
         if done_idx is None:
-            open_idx = next((k for k, l in enumerate(lines) if re.match(r"^## Open\s*$", l)), None)
+            open_idx = next((k for k, l in enumerate(lines) if not mask[k] and re.match(r"^## Open\s*$", l)), None)
             if open_idx is None:
                 raise Refused("no ## Open marker")
-            end = next((k for k in range(open_idx + 1, len(lines)) if re.match(r"^## ", lines[k])), len(lines))
+            end = next((k for k in range(open_idx + 1, len(lines)) if not mask[k] and re.match(r"^## ", lines[k])), len(lines))
             lines[end:end] = ["## Done", ""] + block
         else:
-            end = next((k for k in range(done_idx + 1, len(lines)) if re.match(r"^## ", lines[k])), len(lines))
+            end = next((k for k in range(done_idx + 1, len(lines)) if not mask[k] and re.match(r"^## ", lines[k])), len(lines))
+            if end == len(lines) and lines and lines[-1] == "":
+                end -= 1  # keep the file's trailing newline element last
             lines[end:end] = block
         _atomic_write(path, "\n".join(lines))
     finally:

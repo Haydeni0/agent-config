@@ -50,6 +50,27 @@ def _require_state_line(text: str) -> None:
     raise Refused("decisions.md: no state: line 1 - refusing to file into a malformed package")
 
 
+def _require_balanced_fences(text: str, rel: str) -> None:
+    # An unclosed fence would swallow whatever this tool appends, and the
+    # fence-blind scan would then never see it - refuse before any write.
+    if sum(1 for l in text.splitlines() if l.strip().startswith("```")) % 2 == 1:
+        raise Refused(f"{rel}: unclosed code fence - fix the fence before filing")
+
+
+def _fenced_mask(lines: list[str]) -> list[bool]:
+    # True = inside a fence. Fenced lines are invisible to heading/section
+    # scans, matching check-packages' unfenced discipline.
+    mask = []
+    in_fence = False
+    for l in lines:
+        if l.strip().startswith("```"):
+            mask.append(True)
+            in_fence = not in_fence
+            continue
+        mask.append(in_fence)
+    return mask
+
+
 def insert_section(pkg: Path, name: str) -> None:
     if name not in CANONICAL:
         raise Refused(
@@ -59,24 +80,35 @@ def insert_section(pkg: Path, name: str) -> None:
     path = _require_decisions(pkg)
     text = path.read_text()
     _require_state_line(text)
+    _require_balanced_fences(text, "decisions.md")
     heading = CANONICAL[name]
     base = heading[3:]
-    for l in text.splitlines():
-        if re.match(rf"^## {re.escape(base)}\s*$", l):
+    mask = _fenced_mask(text.splitlines())
+    for l, fenced in zip(text.splitlines(), mask):
+        if not fenced and re.match(rf"^## {re.escape(base)}\s*$", l):
             raise Refused(f"decisions.md: {heading} already exists - never duplicated")
     path.write_text(text.rstrip("\n") + "\n\n" + heading + "\n")
 
 
 def file_disposition(pkg: Path, finding_num: int, record: str) -> None:
     path = _require_decisions(pkg)
-    lines = path.read_text().split("\n")
-    rf = next((i for i, l in enumerate(lines) if re.match(r"^## Review findings\s*$", l)), None)
+    raw = path.read_text()
+    _require_balanced_fences(raw, "decisions.md")
+    lines = raw.split("\n")
+    mask = _fenced_mask(lines)
+    rf = next(
+        (i for i, l in enumerate(lines) if not mask[i] and re.match(r"^## Review findings\s*$", l)),
+        None,
+    )
     if rf is None:
         raise Refused("decisions.md: no ## Review findings section")
-    end = next((i for i in range(rf + 1, len(lines)) if SECTION_RE.match(lines[i])), len(lines))
+    end = next(
+        (i for i in range(rf + 1, len(lines)) if not mask[i] and SECTION_RE.match(lines[i])),
+        len(lines),
+    )
     hits = [
         i for i in range(rf + 1, end)
-        if re.match(rf"^{finding_num}\. ", lines[i])
+        if not mask[i] and re.match(rf"^{finding_num}\. ", lines[i])
     ]
     if not hits:
         raise Refused(f"no finding {finding_num} under ## Review findings")
@@ -86,7 +118,7 @@ def file_disposition(pkg: Path, finding_num: int, record: str) -> None:
     # the finding's block runs to the next numbered finding or the section
     # end; the disposition sits after its last continuation line
     j = i + 1
-    while j < end and not re.match(FINDING_RE_FMT, lines[j]):
+    while j < end and (mask[j] or not re.match(FINDING_RE_FMT, lines[j])):
         j += 1
     while j > i and lines[j - 1].strip() == "":
         j -= 1

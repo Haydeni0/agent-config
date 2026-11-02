@@ -103,6 +103,13 @@ def _footer_rounds(text: str, rel: str, is_plan: bool) -> int:
     return len(rounds)
 
 
+def _require_balanced_fences(text: str, rel: str) -> None:
+    # An unclosed fence would swallow the appended marker - the next run would
+    # re-mint the same round number with no lint the wiser. Refuse first.
+    if sum(1 for l in text.splitlines() if l.strip().startswith("```")) % 2 == 1:
+        raise Refused(f"{rel}: unclosed code fence - fix the fence before advancing")
+
+
 def _review_write(pkg: Path, verdict: str, artifact: str) -> tuple[Path, str, str]:
     """Validate a review-marker append and return (path, rel, marker)."""
     if artifact not in ("spec", "plan"):
@@ -112,7 +119,9 @@ def _review_write(pkg: Path, verdict: str, artifact: str) -> tuple[Path, str, st
     path = pkg / f"{artifact}.md"
     if not path.exists():
         raise Refused(f"{artifact}.md does not exist in {pkg}")
-    k = _footer_rounds(path.read_text(), f"{artifact}.md", is_plan=(artifact == "plan"))
+    raw = path.read_text()
+    _require_balanced_fences(raw, f"{artifact}.md")
+    k = _footer_rounds(raw, f"{artifact}.md", is_plan=(artifact == "plan"))
     return path, f"{artifact}.md", f"Reviewed: {verdict} {k + 1 if k else 1}"
 
 
@@ -156,7 +165,9 @@ def _implemented_write(pkg: Path) -> tuple[Path, str, str]:
     path = pkg / "plan.md"
     if not path.exists():
         raise Refused(f"plan.md does not exist in {pkg}")
-    if any(IMPLEMENTED_RE.match(l) for l in _unfenced_nonempty(path.read_text())):
+    raw = path.read_text()
+    _require_balanced_fences(raw, "plan.md")
+    if any(IMPLEMENTED_RE.match(l) for l in _unfenced_nonempty(raw)):
         raise Refused("plan.md: an Implemented marker already exists - never duplicated")
     return path, "plan.md", "Implemented"
 
