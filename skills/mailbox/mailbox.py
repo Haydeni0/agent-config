@@ -467,7 +467,7 @@ UNRUNG = {
     "agent_not_found": RingOutcome.OFFLINE,
 }
 
-RingFlag = Annotated[bool, typer.Option("--ring/--no-ring", help="Wake the recipient now; --no-ring for non-urgent mail")]
+RingFlag = Annotated[bool, typer.Option("--ring/--no-ring", help="Wake the recipient now; --no-ring is for replies and FYI mail only - requests must ring")]
 
 
 def own_name(root: Path) -> str:
@@ -878,6 +878,10 @@ def deliver(root: Path, sender: str, msg_id: str, kind: Kind, recipients: list[s
 @app.command()
 def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
     """Send a new request (body on stdin) to one or more members."""
+    if not ring_now:
+        fail("--no-ring is not available on send - a request needs its recipient rung "
+             "(a 2026-10 strand sat unread for hours behind --no-ring); "
+             "use --no-ring only on replies and FYI mail")
     root = mailbox_root()
     check_token(slug, "slug")
     check_members(root, to)

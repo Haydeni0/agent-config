@@ -484,7 +484,7 @@ def test_join_clears_its_seat_from_the_member_file_it_rejoined_away_from(mesh: M
 
     assert result.returncode == 0, result.stderr
     assert (mesh.root / "members" / "planner").read_text() == "role=planner\nharness=claude\n"
-    sent = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    sent = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
     assert sent.returncode == 0, sent.stderr
     assert (mesh.inbox("worker") / "lead.001-x.msg").exists()
 
@@ -547,7 +547,7 @@ def test_one_pane_two_meshes_two_names_unchanged_identity(tmp_path: Path, fake_e
     fake_env.set("agents", {"planner": PLANNER_PANE, "pi": WORKER_PANE, "overseer": CRITIC_PANE})
     fake_env.set("agent_sessions", {"pi": "sess-overseer", "overseer": "sess-b"})
 
-    mesh_a.run("send", "x", "overseer", "--no-ring", pane=PLANNER_PANE, stdin="for the overseer\n")
+    mesh_a.run("send", "x", "overseer", pane=PLANNER_PANE, stdin="for the overseer\n")
     taken = mesh_a.run("take", pane=WORKER_PANE)
 
     assert taken.returncode == 0, taken.stderr
@@ -562,7 +562,7 @@ def test_one_pane_two_meshes_two_names_unchanged_identity(tmp_path: Path, fake_e
 
     # and mesh B works too: the same pane holds 'pi' there, reviewer's pane holds a stolen herdr name
     assert mesh_b.run("join", "reviewer", "--role", "reviewer", pane=CRITIC_PANE).returncode == 0
-    mesh_b.run("send", "hi", "reviewer", "--no-ring", pane=WORKER_PANE, stdin="from pi\n")
+    mesh_b.run("send", "hi", "reviewer", pane=WORKER_PANE, stdin="from pi\n")
     got = mesh_b.run("take", pane=CRITIC_PANE)
 
     assert got.returncode == 0, got.stderr
@@ -572,7 +572,7 @@ def test_one_pane_two_meshes_two_names_unchanged_identity(tmp_path: Path, fake_e
 def test_two_member_files_claiming_one_seat_fail_loudly(mesh: Mesh) -> None:
     (mesh.root / "members" / "ghost").write_text(f"role=x\npane={PLANNER_PANE}\nsession={SESSION}\n")
 
-    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode != 0
     assert "ghost" in result.stderr
@@ -581,14 +581,26 @@ def test_two_member_files_claiming_one_seat_fail_loudly(mesh: Mesh) -> None:
 
 
 def test_send_resolves_the_sender_without_calling_herdr(mesh: Mesh) -> None:
-    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
-    assert mesh.herdr.calls() == []
+    # resolution never calls herdr; the only herdr traffic is the ring path
+    # itself (get for the live-claim check, wait, pane read, prompt)
+    ring_subs = {"wait", "prompt", "get"}
+    other = [c for c in mesh.herdr.calls() if c[0] != "pane" and c[1] not in ring_subs]
+    assert other == []
+
+
+def test_send_refuses_no_ring(mesh: Mesh) -> None:
+    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+
+    assert result.returncode != 0
+    assert "--no-ring is not available on send" in result.stderr
+    assert not list(mesh.inbox("worker").glob("*.msg"))
 
 
 def test_commands_without_a_herdr_session_are_refused(mesh: Mesh) -> None:
-    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, session=None, stdin="b")
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, session=None, stdin="b")
 
     assert result.returncode != 0
     assert "HERDR_SESSION" in result.stderr
@@ -606,7 +618,7 @@ def worker_has_a_request_and_a_reply(mesh: Mesh) -> None:
         (("send", "ask", "planner"), WORKER_PANE, "which api?\n"),
         (("reply", "001-ask", "worker"), PLANNER_PANE, "here is the answer\n"),
     ):
-        result = mesh.run(*args, "--no-ring", pane=pane, stdin=body)
+        result = mesh.run(*args, pane=pane, stdin=body)
         assert result.returncode == 0, result.stderr
     mesh.herdr.clear_log()
 
@@ -646,9 +658,9 @@ def test_take_prints_every_unread_message_then_moves_it_to_inflight(mesh: Mesh) 
 
 
 def test_take_reprints_unacked_inflight_from_an_earlier_turn(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="body x\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="body x\n")
     mesh.run("take", pane=WORKER_PANE)  # a crashed turn lands here: printed, never acked
-    mesh.run("send", "y", "worker", "--no-ring", pane=PLANNER_PANE, stdin="body y\n")
+    mesh.run("send", "y", "worker", pane=PLANNER_PANE, stdin="body y\n")
 
     result = mesh.run("take", pane=WORKER_PANE)
 
@@ -671,7 +683,7 @@ def test_take_reprints_unacked_inflight_from_an_earlier_turn(mesh: Mesh) -> None
 
 
 def test_ack_promotes_inflight_mail_to_handled_and_logs_an_acked_event(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
     mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)  # re-join records the session id
     mesh.run("take", pane=WORKER_PANE)
@@ -696,7 +708,7 @@ def test_ack_with_nothing_unacked_says_so_and_exits_zero(mesh: Mesh) -> None:
 
 
 def test_ack_refuses_a_stale_seat_promoting_nothing(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.run("take", pane=WORKER_PANE)
     mesh.herdr.set("agents", {"planner": PLANNER_PANE, "critic": CRITIC_PANE})  # worker's pane runs no agent
 
@@ -709,7 +721,7 @@ def test_ack_refuses_a_stale_seat_promoting_nothing(mesh: Mesh) -> None:
 
 
 def test_take_refuses_a_stale_seat_leaving_inflight_untouched(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.run("take", pane=WORKER_PANE)  # worker's request now sits unacked in inflight
     mesh.herdr.set("agents", {"planner": PLANNER_PANE, "critic": CRITIC_PANE})  # worker's pane runs no agent
 
@@ -721,7 +733,7 @@ def test_take_refuses_a_stale_seat_leaving_inflight_untouched(mesh: Mesh) -> Non
 
 
 def test_reply_resolves_a_request_still_in_inflight(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
     mesh.run("take", pane=WORKER_PANE)  # taken but unacked - the request sits in inflight
 
     result = mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
@@ -731,7 +743,7 @@ def test_reply_resolves_a_request_still_in_inflight(mesh: Mesh) -> None:
 
 
 def test_a_reply_waiting_unacked_in_inflight_blocks_a_duplicate_reply(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
     mesh.run("take", pane=WORKER_PANE)
     mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="first\n")
     mesh.run("take", pane=PLANNER_PANE)  # planner takes the reply but never acks it
@@ -744,10 +756,10 @@ def test_a_reply_waiting_unacked_in_inflight_blocks_a_duplicate_reply(mesh: Mesh
 
 
 def test_next_seq_counts_a_request_in_inflight(mesh: Mesh) -> None:
-    mesh.run("send", "first", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "first", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.run("take", pane=WORKER_PANE)  # planner.001-first.msg sits in worker's inflight, unacked
 
-    result = mesh.run("send", "second", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    result = mesh.run("send", "second", "worker", pane=PLANNER_PANE, stdin="b\n")
 
     assert result.returncode == 0, result.stderr
     assert (mesh.inbox("worker") / "planner.002-second.msg").exists()
@@ -797,7 +809,7 @@ def test_take_skips_a_message_a_concurrent_take_presented_before_it_printed(
     mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     for slug in ("a", "b"):
-        mesh.run("send", slug, "worker", "--no-ring", pane=PLANNER_PANE, stdin=f"body {slug}\n")
+        mesh.run("send", slug, "worker", pane=PLANNER_PANE, stdin=f"body {slug}\n")
     real_messages_in = helper.messages_in
 
     def snapshot_then_concurrent_take(directory: Path) -> list[object]:
@@ -824,7 +836,7 @@ def test_take_acks_only_its_snapshot_and_tolerates_a_concurrent_ack(
     mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     for slug in ("a", "b"):
-        mesh.run("send", slug, "worker", "--no-ring", pane=PLANNER_PANE, stdin=f"body {slug}\n")
+        mesh.run("send", slug, "worker", pane=PLANNER_PANE, stdin=f"body {slug}\n")
     real_read_text = Path.read_text
 
     def read_amid_concurrent_activity(self: Path, encoding: str | None = None, errors: str | None = None) -> str:
@@ -857,7 +869,7 @@ def test_send_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
     mesh.herdr.set("agent_sessions", {"planner": "sess-planner"})
     mesh.run("join", "planner", "--role", "planner", pane=PLANNER_PANE)  # re-join records the session id
 
-    result = mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    result = mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
 
     assert result.returncode == 0, result.stderr
     line = log_lines(mesh)[-1]
@@ -871,7 +883,7 @@ def test_send_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
 
 
 def test_take_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
     mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)
 
@@ -901,7 +913,7 @@ def test_join_appends_a_trace_line_to_the_mesh_log(mesh: Mesh) -> None:
 
 
 def test_take_refuses_a_member_whose_harness_session_changed(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("agent_sessions", {"worker": "sess-old"})
     mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)
     mesh.herdr.set("agent_sessions", {"worker": "sess-new"})  # the pane now runs a different session
@@ -914,7 +926,7 @@ def test_take_refuses_a_member_whose_harness_session_changed(mesh: Mesh) -> None
 
 
 def test_status_of_a_member_skips_stray_files_in_its_inbox(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")
 
     result = mesh.run("status", "worker", pane="w5:p5")
@@ -925,7 +937,7 @@ def test_status_of_a_member_skips_stray_files_in_its_inbox(mesh: Mesh) -> None:
 
 
 def test_poke_rings_real_mail_waiting_behind_a_stray_file(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")
     mesh.herdr.clear_log()
 
@@ -959,7 +971,7 @@ def test_a_malformed_member_file_fails_cleanly_naming_it(mesh: Mesh) -> None:
 
 
 def test_reply_logs_a_trace_line_kind_reply(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
     mesh.run("take", pane=WORKER_PANE)
 
     result = mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
@@ -973,7 +985,7 @@ def test_reply_logs_a_trace_line_kind_reply(mesh: Mesh) -> None:
 
 
 def test_take_refuses_a_sessionless_live_agent_when_the_member_records_one(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("agent_sessions", {"worker": "sess-worker"})
     mesh.run("join", "worker", "--role", "worker", pane=WORKER_PANE)
     mesh.herdr.set("agent_sessions", {})  # the live agent reports no session id
@@ -1021,7 +1033,7 @@ def test_status_shows_every_member_role_and_mail_counts_without_a_join(mesh: Mes
     worker_has_a_request_and_a_reply(mesh)
     (mesh.inbox("worker") / "notes.txt").write_text("not a message\n")  # one member's mess must not hide everyone's counts
     mesh.run("take", pane=PLANNER_PANE)
-    mesh.run("send", "z", "critic", "--no-ring", pane=PLANNER_PANE, stdin="for critic\n")
+    mesh.run("send", "z", "critic", pane=PLANNER_PANE, stdin="for critic\n")
     mesh.run("take", pane=CRITIC_PANE)
     mesh.run("ack", pane=CRITIC_PANE)
 
@@ -1044,7 +1056,7 @@ def test_status_of_a_member_lists_its_unread_ids(mesh: Mesh) -> None:
 
 
 def test_status_roster_counts_pending_requests_per_member(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
 
     result = mesh.run("status", pane="w5:p5")
     assert result.returncode == 0, result.stderr
@@ -1091,7 +1103,7 @@ def test_pending_is_derived_from_disk_state_alone(mesh: Mesh) -> None:
 
 
 def test_a_reply_from_any_recipient_retires_a_multi_recipient_request(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "critic", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", "critic", pane=PLANNER_PANE, stdin="review it\n")
     mesh.run("reply", "1", "planner", "--no-ring", pane=CRITIC_PANE, stdin="from critic\n")
 
     result = mesh.run("status", "planner", pane="w5:p5")
@@ -1103,8 +1115,8 @@ def test_a_reply_from_any_recipient_retires_a_multi_recipient_request(mesh: Mesh
 def test_pending_is_keyed_by_sender_not_id_alone(mesh: Mesh) -> None:
     # planner and critic both draw seq 001 for the same slug; a reply logged to
     # critic must not retire planner's request
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="from planner\n")
-    mesh.run("send", "x", "worker", "--no-ring", pane=CRITIC_PANE, stdin="from critic\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="from planner\n")
+    mesh.run("send", "x", "worker", pane=CRITIC_PANE, stdin="from critic\n")
     mesh.run("reply", "1", "critic", "--no-ring", pane=WORKER_PANE, stdin="answering critic's\n")
 
     result = mesh.run("status", pane="w5:p5")
@@ -1115,7 +1127,7 @@ def test_pending_is_keyed_by_sender_not_id_alone(mesh: Mesh) -> None:
 
 
 def test_a_reply_file_in_inflight_still_retires(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
     mesh.run("take", pane=WORKER_PANE)
     mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
     mesh.run("take", pane=PLANNER_PANE)  # the reply sits unacked in planner's inflight
@@ -1154,8 +1166,9 @@ def test_status_and_poke_refuse_an_unknown_member(mesh: Mesh, verb: str) -> None
 
 
 def test_poke_rings_a_member_about_mail_already_waiting(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
     mesh.herdr.clear_log()
+    mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯")})  # the send's ring typed the line; clear the composer
 
     result = mesh.run("poke", "worker", pane=PLANNER_PANE)
 
@@ -1175,7 +1188,7 @@ def test_poke_with_nothing_waiting_rings_nobody(mesh: Mesh) -> None:
 
 
 def test_poke_from_a_pane_that_has_not_joined_is_refused(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     result = mesh.run("poke", "worker", pane="w5:p5")
 
@@ -1184,24 +1197,24 @@ def test_poke_from_a_pane_that_has_not_joined_is_refused(mesh: Mesh) -> None:
 
 
 def test_send_writes_request_named_by_sender_seq_and_slug(mesh: Mesh) -> None:
-    result = mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    result = mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
 
     assert result.returncode == 0, result.stderr
     assert (mesh.inbox("worker") / "planner.001-review-api.msg").read_text() == "review it\n"
 
 
 def test_send_seq_continues_past_handled_requests(mesh: Mesh) -> None:
-    mesh.run("send", "first", "worker", "--no-ring", pane=PLANNER_PANE, stdin="a")
+    mesh.run("send", "first", "worker", pane=PLANNER_PANE, stdin="a")
     (mesh.inbox("worker") / "planner.001-first.msg").rename(mesh.inbox("worker") / "handled" / "planner.001-first.msg")
 
-    result = mesh.run("send", "second", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    result = mesh.run("send", "second", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
     assert (mesh.inbox("worker") / "planner.002-second.msg").exists()
 
 
 def test_send_broadcast_writes_the_same_id_to_every_recipient(mesh: Mesh) -> None:
-    result = mesh.run("send", "plan-ready", "worker", "critic", "--no-ring", pane=PLANNER_PANE, stdin="look\n")
+    result = mesh.run("send", "plan-ready", "worker", "critic", pane=PLANNER_PANE, stdin="look\n")
 
     assert result.returncode == 0, result.stderr
     assert (mesh.inbox("worker") / "planner.001-plan-ready.msg").read_text() == "look\n"
@@ -1209,7 +1222,7 @@ def test_send_broadcast_writes_the_same_id_to_every_recipient(mesh: Mesh) -> Non
 
 
 def test_send_to_a_non_member_is_refused_before_any_write(mesh: Mesh) -> None:
-    result = mesh.run("send", "x", "worker", "ghost", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    result = mesh.run("send", "x", "worker", "ghost", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode != 0
     assert "ghost" in result.stderr
@@ -1217,21 +1230,21 @@ def test_send_to_a_non_member_is_refused_before_any_write(mesh: Mesh) -> None:
 
 
 def test_send_with_an_empty_body_is_refused(mesh: Mesh) -> None:
-    result = mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="  \n")
+    result = mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="  \n")
 
     assert result.returncode != 0
     assert not list(mesh.inbox("worker").glob("*.msg"))
 
 
 def test_send_from_a_pane_that_has_not_joined_is_refused(mesh: Mesh) -> None:
-    result = mesh.run("send", "x", "worker", "--no-ring", pane="w5:p5", stdin="b")
+    result = mesh.run("send", "x", "worker", pane="w5:p5", stdin="b")
 
     assert result.returncode != 0
     assert "join" in result.stderr
 
 
 def test_reply_reuses_the_request_id_with_the_replier_as_sender(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
 
     result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="looks good\n")
 
@@ -1240,7 +1253,7 @@ def test_reply_reuses_the_request_id_with_the_replier_as_sender(mesh: Mesh) -> N
 
 
 def test_reply_never_overwrites_an_existing_reply(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
     (mesh.inbox("planner") / "handled" / "worker.001-review-api.reply").write_text("first\n")
 
     result = mesh.run("reply", "001-review-api", "planner", "--no-ring", pane=WORKER_PANE, stdin="second\n")
@@ -1256,7 +1269,7 @@ def test_reply_never_overwrites_an_existing_reply(mesh: Mesh) -> None:
 )
 @pytest.mark.parametrize("acked", [False, True], ids=["unread", "handled"])
 def test_reply_resolves_what_agents_type_for_the_request(mesh: Mesh, ref: str, acked: bool) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
     if acked:
         mesh.run("take", pane=WORKER_PANE)
 
@@ -1276,7 +1289,7 @@ def test_reply_resolves_to_the_request_not_a_same_seq_reply(mesh: Mesh) -> None:
 
 
 def test_reply_to_the_wrong_sender_lists_same_seq_requests(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
 
     result = mesh.run("reply", "1", "critic", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
 
@@ -1293,7 +1306,7 @@ def test_reply_to_a_request_not_on_disk_is_refused(mesh: Mesh) -> None:
 
 
 def test_reply_addressed_to_yourself_is_refused(mesh: Mesh) -> None:
-    mesh.run("send", "review-api", "worker", "--no-ring", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
 
     result = mesh.run("reply", "1", "worker", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
 
@@ -1309,7 +1322,7 @@ def test_reply_rejects_an_id_without_a_sequence_number(mesh: Mesh) -> None:
 
 
 def test_writes_leave_no_temporary_files(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
 
     assert [p.name for p in mesh.inbox("worker").iterdir() if p.name.startswith(".")] == []
 
@@ -1512,7 +1525,7 @@ def test_a_non_claude_recipient_skips_the_composer_check(mesh: Mesh) -> None:
 
 
 def test_poke_reports_the_typing_outcome(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b\n")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ mid-draft")})
     mesh.herdr.clear_log()
 
@@ -1934,8 +1947,16 @@ def test_ring_skips_a_member_whose_recorded_session_went_stale(mesh: Mesh) -> No
 
 
 def test_no_ring_skips_herdr_wait_and_prompt(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    # --no-ring lives on replies and FYI mail only; send refuses it, so the
+    # wait/prompt skip is pinned on the reply path
+    mesh.run("send", "review-api", "worker", pane=PLANNER_PANE, stdin="review it\n")
+    mesh.herdr.clear_log()
+    mesh.run("take", pane=WORKER_PANE)
+    mesh.herdr.clear_log()
 
+    result = mesh.run("reply", "1", "planner", "--no-ring", pane=WORKER_PANE, stdin="ok\n")
+
+    assert result.returncode == 0, result.stderr
     assert not any(call[1] in ("wait", "prompt") for call in mesh.herdr.calls())
 
 
@@ -1948,7 +1969,7 @@ def test_no_ring_skips_herdr_wait_and_prompt(mesh: Mesh) -> None:
     ],
 )
 def test_send_strips_only_a_slug_prefix_equal_to_its_own_seq(mesh: Mesh, slug: str, filename: str) -> None:
-    result = mesh.run("send", slug, "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    result = mesh.run("send", slug, "worker", pane=PLANNER_PANE, stdin="b")
 
     assert result.returncode == 0, result.stderr
     assert (mesh.inbox("worker") / filename).exists()
@@ -2013,7 +2034,7 @@ def test_update_on_a_current_mesh_writes_nothing(mesh: Mesh) -> None:
 
 
 def test_update_preserves_mail_inflight_and_handled_files(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="body")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="body")
     (mesh.inbox("worker") / "inflight").mkdir(parents=True, exist_ok=True)
     (mesh.inbox("worker") / "inflight" / "planner.000-unacked.msg").write_text("unacked")
     (mesh.inbox("worker") / "handled").mkdir(parents=True, exist_ok=True)
@@ -2147,7 +2168,7 @@ def test_update_from_a_mesh_copy_fails_cleanly(mesh: Mesh) -> None:
 
 
 def test_a_no_op_update_leaves_an_existing_log_untouched(mesh: Mesh) -> None:
-    mesh.run("send", "x", "worker", "--no-ring", pane=PLANNER_PANE, stdin="b")
+    mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b")
     log = mesh.root / "log.jsonl"
     before = log.read_text()
 

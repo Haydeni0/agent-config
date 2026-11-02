@@ -53,7 +53,7 @@ EOF
 
 - Ring any message that answers a pending request - a correction, a reply
   the requester is waiting on - and anything the recipient must act on now.
-  Add `--no-ring` for broadcasts and FYI mail; the recipient picks it up at
+  Add `--no-ring` for replies and FYI mail only (a request refuses it - a 2026-10 request sat unread for hours behind it); the recipient picks it up at
   its next `take`.
 - A send never waits on the recipient's idle state: the ring checks once
   and falls through at once, so a busy recipient holds your send only for
