@@ -898,48 +898,53 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> tuple[RingOu
     # `herdr agent prompt` types blind, splicing into a draft a human is
     # mid-typing, and Enter submits both (#70). The second return value is the
     # readback evidence, empty for every not-submitted deferral. The readback
-    # itself is claude-only: pane-read semantics of other harnesses are
-    # unprobed, so a non-claude send reports today's bare rung, no claim.
+    # runs for registered harnesses through their chrome predicate; an
+    # unprobed send reports today's bare rung, no claim.
+    harness = recipient_harness(pane)
+    guard = SEAT_GUARDS.get(harness)
     try:
         herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(wait_ms))
     except HerdrError as exc:
         if exc.code == "timeout":
             # a busy recipient may not end its turn for hours (an orchestrator
             # waiting on subagents), and its turn-end inbox check is not
-            # reliable (#37); a claude agent takes a mid-turn prompt fine once
-            # its composer is seen empty - the line queues in its input - and
-            # herdr still refuses to prompt a blocked agent. Other harnesses
-            # are unprobed.
-            if recipient_harness(pane) != "claude":
+            # reliable (#37); a guarded harness takes a mid-turn prompt fine
+            # once its composer is seen empty - the line queues in its input -
+            # and herdr still refuses to prompt a blocked agent; an unprobed
+            # harness is left alone (its fallback, unchanged)
+            if guard is None:
                 return RingOutcome.NOT_IDLE, ""
         elif exc.code in UNRUNG:
             return UNRUNG[exc.code], ""
         else:
             raise
-    if recipient_harness(pane) == "claude":
-        # a draft in a claude pane's composer means a human is mid-typing,
+    if guard is not None:
+        # a draft in a guarded pane's composer means a human is mid-typing,
         # idle or mid-turn alike: prompting splices into the draft and Enter
         # submits both (#70's busy arm - the human types while the agent
         # works). Read the composer through the styled visible view - herdr's
-        # detection view strips the rendering attributes that tell claude's
-        # dim suggestion hints from a human's typed draft (the founding
-        # lost-ring shape) - and defer the ring on anything but a provably
-        # empty box; the mail stays in the inbox and the turn-end guard or a
-        # poke surfaces it.
+        # detection view strips the rendering attributes that tell a
+        # suggestion from a human's typed draft (claude renders its own
+        # empty-composer suggestions dim while a human's typed draft renders
+        # plain - cursor renders the same dim/plain fact - so the dim flag is
+        # what tells a suggestion from typed text, the founding lost-ring
+        # shape) - and defer the ring on anything but a provably empty box;
+        # the mail stays in the inbox and the turn-end guard or a poke
+        # surfaces it.
         try:
             screen = herdr("pane", "read", "--source", "visible", "--format", "ansi", pane)
         except HerdrError:
             return RingOutcome.COMPOSER_UNSEEN, ""
-        state = prompt_box_state(screen, "claude")
+        state = prompt_box_state(screen, harness)
         if state == "typing":
             return RingOutcome.TYPING, ""
         if state is None:
             return RingOutcome.COMPOSER_UNSEEN, ""
-    claude = recipient_harness(pane) == "claude"
+    guarded = guard is not None
     # the pre-send read the readback diffs against, from the visible source in
     # plain text: the readback matches on words, not rendering attributes
     pre_read = ""
-    if claude:
+    if guarded:
         try:
             pre_read = herdr("pane", "read", "--source", "visible", pane)
         except HerdrError:
@@ -952,9 +957,9 @@ def ring_seat(pane: str, line: str, wait_ms: int = RING_WAIT_MS) -> tuple[RingOu
         if exc.code in UNRUNG:
             return UNRUNG[exc.code], ""
         raise
-    if not claude:
+    if not guarded:
         return RingOutcome.RUNG, ""
-    return ring_readback(pane, line, pre_read)
+    return ring_readback(pane, line, pre_read, chrome=guard.pane_chrome)
 
 
 def ring(root: Path, name: str) -> tuple[RingOutcome, str]:

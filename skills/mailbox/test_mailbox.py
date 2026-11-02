@@ -1598,6 +1598,68 @@ def test_a_non_claude_recipient_skips_the_composer_check(mesh: Mesh) -> None:
     assert ["agent", "prompt", WORKER_PANE, wake_line(mesh, "worker")] in mesh.herdr.calls()
 
 
+def test_ring_defers_a_cursor_recipient_who_is_typing(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_DRAFT_IDLE})
+
+    result = mesh.run("ring", WORKER_PANE, "line", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "not rung: unsubmitted typing" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+    # the draft fixture must still be in the pane: nothing was typed into it
+    assert json.loads(mesh.herdr.state_path.read_text())["pane_screens"][WORKER_PANE] == CURSOR_DRAFT_IDLE
+
+
+def test_ring_defers_a_busy_cursor_recipient_who_is_typing(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_BUSY_DRAFT})
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("ring", WORKER_PANE, "line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    # the TYPING wording discriminates the busy draft check from the
+    # NOT_IDLE fallback - their observables are otherwise identical
+    assert "not rung: unsubmitted typing" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_defers_a_cursor_seat_showing_a_dialog(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "cursor"})
+    mesh.herdr.set("pane_screens", {WORKER_PANE: CURSOR_TRUST_DIALOG})
+
+    result = mesh.run("ring", WORKER_PANE, "line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "not rung: the seat's composer could not be seen" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_leaves_a_busy_unprobed_harness_seat_alone(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "codex"})
+    mesh.herdr.set("wait", {"worker": "timeout"})
+
+    result = mesh.run("ring", WORKER_PANE, "line", "--wait-ms", "0", pane=PLANNER_PANE)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "not rung" in result.stdout
+    assert not any(call[1] == "prompt" for call in mesh.herdr.calls())
+
+
+def test_ring_prompts_an_idle_unprobed_harness_seat_without_the_composer_read(mesh: Mesh) -> None:
+    mesh.herdr.set("harness", {"worker": "codex"})
+
+    result = mesh.run("ring", WORKER_PANE, "line", pane=PLANNER_PANE)
+
+    assert result.returncode == 0, result.stderr
+    assert ["agent", "prompt", WORKER_PANE, "line"] in mesh.herdr.calls()
+    assert not any(
+        call[:4] == ["pane", "read", "--source", "visible"] and "ansi" in call
+        for call in mesh.herdr.calls()
+    )
+
+
 def test_poke_reports_the_typing_outcome(mesh: Mesh) -> None:
     mesh.run("send", "x", "worker", pane=PLANNER_PANE, stdin="b\n")
     mesh.herdr.set("pane_screens", {WORKER_PANE: composer_box("❯ mid-draft")})
