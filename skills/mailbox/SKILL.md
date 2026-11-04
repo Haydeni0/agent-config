@@ -66,7 +66,11 @@ pre-`take` behavior or its log lacks fields the current helper writes.
 - Any line submitted to an agent pane goes through the ring guard:
   `<mailbox>/bin/mailbox ring <pane-or-agent> "<line>"` reaches any live
   seat (no join, no mail; it runs from the skill's `mailbox.py` with no mesh
-  at all) and defers while the seat's composer holds a draft. Exit 3 means
+  at all) and defers while the seat's composer holds a draft. A member name
+  herdr does not know resolves through the mesh member record when the verb
+  runs as a mesh's `bin/mailbox` - the record's pane id is rung, the
+  resolution mismatch printed; from the bare skill the refusal names that
+  route. Exit 3 means
   the line was not submitted - nothing waits anywhere, the caller resends.
   A raw `herdr agent prompt` splices into that draft and submits both -
   never use it on an agent pane.
