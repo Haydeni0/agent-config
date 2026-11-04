@@ -46,6 +46,14 @@ ONE_REPLY_PER_REQUEST = (
     "one reply per request id - for a second report, send a new message whose slug references the request id, "
     "with a delta body, not a duplicate"
 )
+# reply answers a request someone sent you; everything else - following up on
+# your own request, answering a reply - is a new send whose slug references
+# the request id. The refusals say it outright, so a compacted session
+# re-learns it from the error instead of trial and error.
+FOLLOW_UP_SEND = (
+    "to follow up on or report against a request of your own - or to answer a reply - "
+    'send a new message whose slug references the request id: bin/mailbox send re-<seq>-<what> <to>'
+)
 # `<from>.<seq>-<slug>.<kind>`; groups mirror NAME_RE
 MESSAGE_RE = re.compile(
     r"^(?P<sender>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<seq>\d+)-(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<kind>msg|reply)$"
@@ -76,7 +84,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-11-04.01"
+MAILBOX_VERSION = "2026-11-04.02"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -422,7 +430,9 @@ def pending_by_member(root: Path) -> dict[str, list[PendingRequest]]:
 
     A request is answered by any reply sharing its id whose `to` names the
     request's sender, keyed (sender, id) so two senders drawing the same seq
-    never retire each other; a reply file in the sender's box (unread,
+    never retire each other; a `closed` event answers it the same way (the
+    recipient's report that no reply is coming - close, or send's auto-close
+    on a `re-<seq>` slug); a reply file in the sender's box (unread,
     inflight or handled) answers it too, covering a crash between a reply
     landing and its log line. Malformed log lines are skipped: status is the
     lenient verb."""
@@ -435,16 +445,22 @@ def pending_by_member(root: Path) -> dict[str, list[PendingRequest]]:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(event, dict) or event.get("event") != "sent":
+            if not isinstance(event, dict):
                 continue
-            sender, msg_id = event.get("sender"), event.get("id")
-            to = event.get("to")
-            if not (isinstance(sender, str) and isinstance(msg_id, str) and isinstance(to, list) and to):
-                continue
-            if event.get("kind") == "msg":
-                requests[(sender, msg_id)] = tuple(str(name) for name in to)
-            elif event.get("kind") == "reply":
-                answered.add((str(to[0]), msg_id))
+            kind = event.get("event")
+            if kind == "sent":
+                sender, msg_id = event.get("sender"), event.get("id")
+                to = event.get("to")
+                if not (isinstance(sender, str) and isinstance(msg_id, str) and isinstance(to, list) and to):
+                    continue
+                if event.get("kind") == "msg":
+                    requests[(sender, msg_id)] = tuple(str(name) for name in to)
+                elif event.get("kind") == "reply":
+                    answered.add((str(to[0]), msg_id))
+            elif kind == "closed":
+                msg_id, to = event.get("id"), event.get("to")
+                if isinstance(msg_id, str) and isinstance(to, list) and to:
+                    answered.add((str(to[0]), msg_id))
     pending: dict[str, list[PendingRequest]] = {}
     for (sender, msg_id), to in requests.items():
         if (sender, msg_id) in answered:
@@ -563,7 +579,10 @@ def write_messages(root: Path, sender: str, msg_id: str, kind: Kind, body: str, 
     taken = [str(p) for p in paths.values()
              if p.exists() or (p.parent / "inflight" / p.name).exists() or (p.parent / "handled" / p.name).exists()]
     if taken:
-        hint = f"; {ONE_REPLY_PER_REQUEST}" if kind is Kind.REPLY else ""
+        hint = ""
+        if kind is Kind.REPLY:
+            hint = (f"; {ONE_REPLY_PER_REQUEST} - {FOLLOW_UP_SEND}, "
+                    "or close the request if no further report is needed: bin/mailbox close <id> <from>")
         fail(f"refusing to overwrite existing message files: {taken}{hint}")
     for path in paths.values():
         write_atomic(path, body)
@@ -1016,6 +1035,40 @@ def deliver(root: Path, sender: str, msg_id: str, kind: Kind, recipients: list[s
         report_unrung(paths)
 
 
+def log_closed(root: Path, closer: str, request_sender: str, msg_id: str) -> None:
+    """Append one `closed` event - the recipient's word that no reply is coming."""
+    member = member_named(root, closer)
+    log_event(root, event="closed", member=closer,
+              session=member.harness_session if member else None,
+              id=msg_id, to=[request_sender])
+
+
+def autoclose_referenced(root: Path, sender: str, slug: str) -> None:
+    """A `re-<seq>-` slug reports against a pending request addressed to the
+    sender; retire that request when the seq names exactly one.
+
+    Integer match on the seq, the same match `reply` performs - never a
+    string prefix on the id, so a zero-padded id never over-matches a longer
+    future seq and an unpadded slug still hits. Ambiguous or no match never
+    fails the send: several print a note (the explicit verb disambiguates),
+    none stay silent - a `re-` slug may reference a reply or an old id."""
+    match = re.fullmatch(r"re-(\d+)(?:-.*)?", slug)
+    if match is None:
+        return
+    seq = int(match.group(1))
+    mine = [(request_sender, request)
+            for request_sender, requests in pending_by_member(root).items()
+            for request in requests
+            if sender in request.to and int(request.msg_id.split("-", 1)[0]) == seq]
+    if len(mine) == 1:
+        request_sender, request = mine[0]
+        log_closed(root, sender, request_sender, request.msg_id)
+        typer.echo(f"closed {request.msg_id} from {request_sender} (referenced by {slug})")
+    elif len(mine) > 1:
+        names = ", ".join(f"{request.msg_id} (from {request_sender})" for request_sender, request in mine)
+        typer.echo(f"note: seq {seq} matches several pending requests: {names} - no auto-close, use close <id> <from>")
+
+
 @app.command()
 def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
     """Send a new request (body on stdin) to one or more members."""
@@ -1031,6 +1084,7 @@ def send(slug: str, to: list[str], ring_now: RingFlag = True) -> None:
     # agents often prefix the slug with the seq they expect; the helper adds it
     msg_id = f"{seq}-{slug.removeprefix(f'{seq}-')}"
     deliver(root, sender, msg_id, Kind.MSG, to, ring_now)
+    autoclose_referenced(root, sender, slug)
 
 
 def resolve_request(root: Path, me: str, ref: str, sender: str) -> Message:
@@ -1051,9 +1105,9 @@ def resolve_request(root: Path, me: str, ref: str, sender: str) -> Message:
         fail(f"id {ref!r} matches several requests from {sender!r}: {[m.path.name for m in found]}")
     if same_seq:
         listing = ", ".join(f"{m.path.name} (from {m.sender})" for m in same_seq)
-        fail(f"no request {ref!r} from {sender!r}; requests with seq {seq}: {listing} - reply to the name before the first '.'")
+        fail(f"no request {ref!r} from {sender!r}; requests with seq {seq}: {listing} - reply to the name before the first '.'\n{FOLLOW_UP_SEND}")
     from_sender = [m.msg_id for m in requests if m.sender == sender]
-    fail(f"no request with seq {seq} in your inbox, inflight/ or handled/; requests from {sender!r}: {from_sender or 'none'}")
+    fail(f"no request with seq {seq} in your inbox, inflight/ or handled/; requests from {sender!r}: {from_sender or 'none'}\n{FOLLOW_UP_SEND}")
 
 
 @app.command()
@@ -1067,9 +1121,29 @@ def reply(
     check_members(root, [to])
     sender = own_name(root)
     if to == sender:
-        fail(f"you are {sender!r}; address the reply to the request's sender - the name before the first '.' in its filename")
+        fail(f"you are {sender!r}; address the reply to the request's sender - the name before the first '.' in its filename\n{FOLLOW_UP_SEND}")
     request = resolve_request(root, sender, ref, to)
     deliver(root, sender, request.msg_id, Kind.REPLY, [to], ring_now)
+
+
+@app.command()
+def close(
+    ref: Annotated[str, typer.Argument(metavar="ID", help="The request's seq (7), id (007-review-api) or filename")],
+    to: str,
+) -> None:
+    """Mark request ID from member TO answered with no reply coming - no mail written, no ring."""
+    root = mailbox_root()
+    check_members(root, [to])
+    sender = own_name(root)
+    if to == sender:
+        fail(f"you are {sender!r}; close marks a request another member sent you - the name before the first '.' in its filename")
+    request = resolve_request(root, sender, ref, to)
+    outstanding = [p for p in pending_by_member(root).get(to, []) if p.msg_id == request.msg_id]
+    if not outstanding:
+        typer.echo(f"{request.msg_id} from {to} is already answered - nothing to close")
+        return
+    log_closed(root, sender, to, request.msg_id)
+    typer.echo(f"closed {request.msg_id} from {to}")
 
 
 @app.command()
@@ -1088,22 +1162,29 @@ def inbox() -> None:
 
 
 @app.command()
-def take() -> None:
-    """Print all unread mail plus unacked re-prints, moving exactly what was printed to inflight/.
+def take(full: Annotated[bool, typer.Option("--full", help="Re-print unacked inflight bodies; the default prints one header line each")] = False) -> None:
+    """Print all unread mail, moving exactly what was printed to inflight/.
 
-    Presentation, not the ack: `ack` confirms, and a turn that dies between
-    take and ack leaves its mail in inflight/ for the next take to replay."""
+    Unacked inflight mail from an earlier turn prints as one header line -
+    its filename, size and the --full pointer, no body - so an outstanding
+    message stays visible without re-ingesting it on every take; --full
+    re-prints those bodies. Presentation, not the ack: `ack` confirms, and a
+    turn that dies between take and ack loses nothing - the mail stays in
+    inflight/, its header names the file, and the next take replays it."""
     root = mailbox_root()
     name = verified_own_name(root)
     box = root / "inboxes" / name
     printed: list[Message] = []
     for message in messages_in(box / "inflight"):
         try:
-            body = message.path.read_text()
+            if full:
+                typer.echo(f"=== {message.path.name} (unacked - printed before)")
+                typer.echo(message.path.read_text().rstrip("\n"))
+            else:
+                size = message.path.stat().st_size
+                typer.echo(f"=== {message.path.name} (unacked - printed before; {size} B; take --full for the body)")
         except FileNotFoundError:
             continue  # a concurrent ack promoted it
-        typer.echo(f"=== {message.path.name} (unacked - printed before)")
-        typer.echo(body.rstrip("\n"))
         printed.append(message)
     for message in messages_in(box):
         try:

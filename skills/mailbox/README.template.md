@@ -15,15 +15,16 @@ trace. Message files carry no metadata; the log is where it lives.
 what you have taken but not yet acked; `handled/` holds what you have acked.
 
 - At the start of every turn, run `{{MAILBOX}}/bin/mailbox take`. It prints
-  every unread message - re-printing anything still waiting unacked from an
-  earlier turn - and moves exactly what it printed to `inflight/`. That is
-  presentation, not the ack: act on everything it printed, or say what you
-  are deferring.
+  every unread message and moves exactly what it printed to `inflight/`.
+  Unacked mail from an earlier turn prints as one header line - filename,
+  size, and the `--full` pointer - not its body again. That is presentation,
+  not the ack: act on everything it printed, or say what you are deferring.
 - Before you end every turn, run `take` again (new mail may have arrived),
   then run `{{MAILBOX}}/bin/mailbox ack` once everything printed is acted on
   or deferred. Ack moves `inflight/` mail to `handled/`, and that move is
   the ack the sender sees. A crash before ack loses nothing: the mail stays
-  in `inflight/` and your next `take` re-prints it.
+  in `inflight/`, your next `take` still lists it, and `take --full`
+  re-prints every unacked body.
 - Mid-turn, when rung, `{{MAILBOX}}/bin/mailbox inbox` lists your unread mail
   without taking it, so you can decide whether to drain now.
 - A turn-end hook may block your turn with unread mail still waiting - a
@@ -31,6 +32,28 @@ what you have taken but not yet acked; `handled/` holds what you have acked.
   take/ack cycle above.
 - `<from>.<id>.msg` - a request from member `<from>`: do the work, then reply.
 - `<from>.<id>.reply` - `<from>`'s answer to your request `<id>`.
+
+## After a compaction or restart
+
+You may have lost the turn that printed your mail. Re-read this file - it
+is the whole contract - and:
+
+- slugs are lowercase letters, digits and single hyphens, no dots (the
+  helper assigns the sequence number itself);
+- `reply` answers requests other members sent you; a request sent to you
+  that needs no reply is closed with `close <id> <from>`, or auto-closed by
+  your `re-<seq>`-prefixed report; to follow up on a request of your own,
+  `send` a `re-<id>` message;
+- a `take` header line means the body was printed in an earlier turn you no
+  longer hold: re-read the named file, or run `take --full` to re-print
+  every unacked body;
+- `{{MAILBOX}}/log.jsonl` line fields: `time`; `event` - one of `join`,
+  `sent`, `taken`, `acked`, `closed`, `update`; `member` (join/taken/acked/
+  closed) or `sender` (sent); `session` - the acting member's harness
+  session id, when its member file records one (carried by join, sent,
+  taken, acked, closed); `pane` (join); `id`/`to` (sent, closed); `kind`
+  (sent); `files` (taken/acked); `from_version`/`to_version`/`changed`
+  (update).
 
 ## Sending
 
@@ -49,6 +72,13 @@ Reply to a request from `<from>` - `<id>` is its seq (`7`), its id
 {{MAILBOX}}/bin/mailbox reply <id> <from> <<'EOF'
 <the result>
 EOF
+```
+
+Mark a request from `<from>` answered with no reply coming - you folded it
+into another report, or it needs nothing - with no mail written, no ring:
+
+```bash
+{{MAILBOX}}/bin/mailbox close <id> <from>
 ```
 
 - Ring any message that answers a pending request - a correction, a reply
@@ -72,14 +102,21 @@ EOF
 - "not rung" still means delivered: the file is in the recipient's inbox.
 - One reply per request id. For a second report on the same request, `send`
   a new message whose slug references the request id (`re-007-review-api`)
-  and whose body is only what changed - never a duplicate of the first.
+  and whose body is only what changed - never a duplicate of the first. A
+  `re-<seq>-` slug auto-closes the one pending request that seq names from
+  its recipient side (a note prints when it does); when several pending
+  requests share the seq it closes none and says so - both members number
+  independently, and each member's requests and replies share one seq space,
+  so quote the full id in the slug when precision matters. A request you
+  will never report on: `close` it, so the sender's `status` stops listing
+  it as pending.
 - After sending a request, carry on or end your turn. Do not poll: the reply
   rings you, and no reply means no correction - a correction always arrives
   as a rung message.
 - Members, roles and unread counts: `{{MAILBOX}}/bin/mailbox status`. Live
   panes: `herdr agent list`. The `pending` count is derived from the mesh log
-  - your sent requests with no reply yet - so you can re-learn what you are
-  waiting on after a compaction or restart by reading `status <you>`.
+  - your sent requests with no reply or close yet - so you can re-learn what
+  you are waiting on after a compaction or restart by reading `status <you>`.
 
 ## Trust
 

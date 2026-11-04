@@ -77,5 +77,10 @@ pre-`take` behavior or its log lacks fields the current helper writes.
 - The contract (`take` and `inbox` checks, sending, trust, quiet peers
   via `status` and `poke`) lives in `<mailbox>/README.md`, not here. Every wake
   line points at it, so a compacted session re-learns it.
+- The take/ack cycle is act-then-ack: `ack` only after everything `take`
+  printed is acted on or deferred, with `take` again before the turn ends.
+  A `take` header line means the body was printed in an earlier turn -
+  re-read the named file, or `take --full`. Never `ack` in the same command
+  that takes: that marks mail handled before you acted on it.
 - Nothing reaps a mesh. The mesh lasts as long as its package; members
   leave by deleting their `members/<name>` file.
