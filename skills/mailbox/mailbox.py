@@ -76,7 +76,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-11-02.01"
+MAILBOX_VERSION = "2026-11-04.01"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -252,20 +252,33 @@ def live_claim(member: Member) -> tuple[bool, str | None]:
         session = (record.get("agent_session") or {}).get("value")
         return session == member.harness_session, session
     # legacy member file (joined before harness sessions were recorded): the
-    # join of its day renamed the pane to the member name, so the name is the
-    # only anchor that can still be checked
-    record = agent_record(member.name)
-    if record.get("pane_id") != member.seat.pane:
+    # recorded pane is the anchor. The join of its day renamed the pane to
+    # the member name, but a later rename or a hand-run pane breaks that
+    # name while the seat lives - the herdr name is a display nicety, never
+    # the liveness check (row G871's founding shape: a live seat read as
+    # offline because the name lookup missed)
+    record = agent_record_for_pane(member.seat.pane)
+    if not record:
         return False, None
     return True, (record.get("agent_session") or {}).get("value")
 
 
-def mailbox_root() -> Path:
+def mesh_root_if_any() -> Path | None:
+    """The mesh root when this script runs as a mesh's bin/mailbox copy; None
+    for the bare skill checkout, which holds no member records to resolve by."""
     root = Path(__file__).resolve().parent.parent
-    if not (root / "README.md").is_file() or not (root / "members").is_dir():
+    if (root / "README.md").is_file() and (root / "members").is_dir():
+        return root
+    return None
+
+
+def mailbox_root() -> Path:
+    root = mesh_root_if_any()
+    if root is None:
         fail(
-            f"{root} is not an initialised mailbox; call this script as <mailbox>/bin/mailbox "
-            "(create a mailbox with `mailbox.py init <dir>` from the mailbox skill)"
+            f"{Path(__file__).resolve().parent.parent} is not an initialised mailbox; call this "
+            "script as <mailbox>/bin/mailbox (create a mailbox with `mailbox.py init <dir>` "
+            "from the mailbox skill)"
         )
     return root
 
@@ -1197,19 +1210,46 @@ SEAT_DEFERRED = {
 
 @app.command("ring")
 def ring_any(
-    target: Annotated[str, typer.Argument(help="Pane id or herdr agent name of any live agent")],
+    target: Annotated[str, typer.Argument(help="Pane id, herdr agent name, or mesh member name of any live seat")],
     line: Annotated[str, typer.Argument(help="The line to submit; deferred while a draft sits in the seat's composer")],
     wait_ms: Annotated[int, typer.Option("--wait-ms", help="Idle wait before the mid-turn fallback; 0 = check and fall through at once")] = RING_WAIT_MS,
 ) -> None:
-    """Submit LINE to any agent seat with the composer guard. Needs no join or mesh; writes no mail. Exit 3 when not submitted."""
+    """Submit LINE to any agent seat with the composer guard. Needs no join; writes no mail. Exit 3 when not submitted."""
     record = agent_record_for_pane(target)
+    resolution = ""
     if not record:
-        fail(f"{target}: no live herdr agent at that seat")
+        # a name herdr does not know can still name a live seat: the mesh
+        # member record resolves it to its recorded pane (row G871's founding
+        # shape - the pane's agent holds another herdr name or none, so the
+        # name lookup misses while the seat lives). The record's pane id is
+        # the anchor; the bare skill checkout holds no records, so a member
+        # name still refuses there, the route named.
+        root = mesh_root_if_any()
+        member = member_named(root, target) if root is not None else None
+        if member is not None and member.seat is not None:
+            record = agent_record_for_pane(member.seat.pane)
+            if record:
+                resolution = (
+                    f"resolution: {target} names no live herdr agent; the member "
+                    f"record's pane {member.seat.pane} is live - ringing it"
+                )
+            else:
+                fail(
+                    f"{target}: no live herdr agent at that seat; the member record names "
+                    f"pane {member.seat.pane}, which holds no live agent"
+                )
+        else:
+            fail(
+                f"{target}: no live herdr agent at that seat; when it names a mesh member, "
+                "run this as that mesh's bin/mailbox or ring the member's pane id"
+            )
     pane = record["pane_id"]
     try:
         outcome, evidence = ring_seat(pane, line, wait_ms)
     except HerdrError as exc:
         fail(f"{target}: ring failed: {exc}")
+    if resolution:
+        typer.echo(resolution)
     if evidence:
         typer.echo(f"readback: {evidence}")
     typer.echo(f"{pane}: {SEAT_DEFERRED.get(outcome, outcome)}")
