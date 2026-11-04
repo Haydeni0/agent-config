@@ -1,10 +1,10 @@
 ---
-name: linear-agent-update
-description: Use when writing or updating any Linear comment or diff comment via the Linear MCP tools (save_comment, save_diff_comment, or editing an existing comment), or when creating or rewriting a Linear issue (save_issue). Use whenever about to post to a Linear issue, project, initiative, document, milestone, or PR review.
+name: linear-writing
+description: Use before ANY Linear issue create/rewrite (save_issue) or comment/diff-comment (save_comment, save_diff_comment). Covers posting, editing, and PR review comments via the Linear MCP tools. Use whenever about to post agent updates to a Linear issue, project, initiative, document, milestone, or PR review.
 deps: [living-doc, claim-verification]
 ---
 
-# linear-agent-update
+# linear-writing
 
 ## Overview
 
@@ -15,10 +15,12 @@ Core principle: **position is two signals at once.** The title (or short-form li
 ## When to use
 
 Use when calling any of:
-- `mcp__linear__save_comment` (new comment on an issue, project, initiative, document, milestone, or status update)
-- `mcp__linear__save_diff_comment` (PR review comment anchored to a code hunk)
+- `save_comment` (new comment on an issue, project, initiative, document, milestone, or status update)
+- `save_diff_comment` (PR review comment anchored to a code hunk)
 - Editing an existing comment (`save_comment` with `id`, or `save_diff_comment` with `commentId`)
-- Creating an issue (`mcp__linear__save_issue`) or rewriting its description - the toggle forms never apply, but see the Issue writing section
+- Creating an issue (`save_issue`) or rewriting its description - the toggle forms never apply, but see the Issue writing section
+
+Tool names here are the Linear MCP server's own names - call them however your harness exposes them.
 
 **Not for** (do not apply this skill to):
 - Status updates (`save_status_update`) - agents should not write these

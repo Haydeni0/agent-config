@@ -204,7 +204,7 @@ flowchart LR
     %% kubectl[kubectl]
     %% lavish[lavish]
     librarian[librarian]
-    linear_agent_update[linear-agent-update]
+    linear_writing[linear-writing]
     living_doc[living-doc]
     m_pair[m-pair]
     mailbox[mailbox]
@@ -273,8 +273,8 @@ flowchart LR
     executing_plans --> tdd
     executing_plans --> verification_before_completion
     executing_plans --> work_package
-    linear_agent_update --> living_doc
-    linear_agent_update --> claim_verification
+    linear_writing --> living_doc
+    linear_writing --> claim_verification
     living_doc --> claim_verification
     m_pair --> marimo_pair
     mailbox --> work_package
