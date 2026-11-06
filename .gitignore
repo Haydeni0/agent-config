@@ -12,7 +12,6 @@ config.local.yaml
 .lavish/
 .claude/
 skills/synced/
-skills/headless-chromium-rootless-libs/
 
 # Builds, dependencies, and scratch work
 .venv/

@@ -206,6 +206,7 @@ flowchart LR
     librarian[librarian]
     linear_writing[linear-writing]
     living_doc[living-doc]
+    %% local_skill[local-skill]
     m_pair[m-pair]
     mailbox[mailbox]
     mailbox_overseer[mailbox-overseer]
