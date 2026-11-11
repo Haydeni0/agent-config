@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, rmSync, statSync, readdirSync, openSync, readSync, closeSync, realpathSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { extname, join, resolve as resolvePath, sep as pathSep } from "node:path";
+import { extname, resolve as resolvePath, sep as pathSep } from "node:path";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts";
@@ -112,6 +112,13 @@ const NON_CODE_SEGMENTS = new Set([
 	"sponsors", "invitations", "notifications", "insights",
 ]);
 
+// owner, repo and ref become clone-path segments that are rm -rf'd, so they
+// must never carry a separator or `..` (a decoded %2F would otherwise escape
+// the clone root). Owner and repo follow GitHub's own naming rules.
+const GITHUB_OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+const GITHUB_REPO = /^[A-Za-z0-9._-]{1,100}$/;
+const UNSAFE_REF = /[\/\\\x00-\x1f]|\.\.|^-/;
+
 export function parseGitHubUrl(url: string): GitHubUrlInfo | null {
 	let parsed: URL;
 	try {
@@ -137,6 +144,7 @@ export function parseGitHubUrl(url: string): GitHubUrlInfo | null {
 
 	const owner = segments[0];
 	const repo = segments[1].replace(/\.git$/, "");
+	if (!GITHUB_OWNER.test(owner) || !GITHUB_REPO.test(repo) || repo === "." || repo === "..") return null;
 
 	if (NON_CODE_SEGMENTS.has(segments[2]?.toLowerCase())) return null;
 
@@ -149,6 +157,7 @@ export function parseGitHubUrl(url: string): GitHubUrlInfo | null {
 	if (segments.length < 4) return null;
 
 	const ref = segments[3];
+	if (UNSAFE_REF.test(ref)) return null;
 	const refIsFullSha = /^[0-9a-f]{40}$/.test(ref);
 	const pathParts = segments.slice(4);
 	const path = pathParts.length > 0 ? pathParts.join("/") : "";
@@ -168,8 +177,12 @@ function cacheKey(owner: string, repo: string, ref?: string): string {
 }
 
 function cloneDir(config: GitHubCloneConfig, owner: string, repo: string, ref?: string): string {
-	const dirName = ref ? `${repo}@${ref}` : repo;
-	return join(config.clonePath, owner, dirName);
+	const root = resolvePath(config.clonePath);
+	const dir = resolvePath(root, owner, ref ? `${repo}@${ref}` : repo);
+	if (!dir.startsWith(root + pathSep)) {
+		throw new Error(`GitHub clone path escapes the clone root: root=${root} owner=${owner} repo=${repo} ref=${ref}`);
+	}
+	return dir;
 }
 
 function execClone(args: string[], localPath: string, timeoutMs: number, signal?: AbortSignal): Promise<string | null> {
@@ -377,8 +390,8 @@ function buildDirListing(rootPath: string, subPath: string): string {
 function readReadme(localPath: string): string | null {
 	const candidates = ["README.md", "readme.md", "README", "README.txt", "README.rst"];
 	for (const name of candidates) {
-		const readmePath = join(localPath, name);
-		if (existsSync(readmePath)) {
+		const readmePath = resolveWithinRepo(localPath, name);
+		if (readmePath && existsSync(readmePath)) {
 			try {
 				const content = readFileSync(readmePath, "utf-8");
 				return content.length > 8192 ? content.slice(0, 8192) + "\n\n[README truncated at 8K chars]" : content;
