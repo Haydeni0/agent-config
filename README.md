@@ -156,7 +156,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 <details>
 <summary><b>Modes and runbooks</b></summary>
 
-- `caveman` / `ponytail` - terse-output and lazy-solution modes; `*-help` cards
+- `ponytail` - lazy-solution mode; `*-help` cards
 - `kubectl` / `herdr` / `lavish` - read-only kubectl, terminal multiplexer, lavish-axi CLI
 
 </details>
@@ -164,7 +164,7 @@ Bootstrap defaults to installed hosts; no-mistakes needs explicit selection beca
 <details>
 <summary><b>Vendored</b></summary>
 
-Symlinks into `vendor/plugins/*` submodules, never edited here: `caveman`, `caveman-commit`, `caveman-compress`, `caveman-help`, `caveman-review`, `jupyter-to-marimo`, `marimo-notebook`, `marimo-pair`, `worktrunk`, `wt-switch-create`.
+Symlinks into `vendor/plugins/*` submodules, never edited here: `jupyter-to-marimo`, `marimo-notebook`, `marimo-pair`, `worktrunk`, `wt-switch-create`.
 
 </details>
 
@@ -181,11 +181,6 @@ flowchart LR
     agent_config[agent-config]
     attack_claims[attack-claims]
     backlog[backlog]
-    %% caveman[caveman]
-    %% caveman_commit[caveman-commit]
-    %% caveman_compress[caveman-compress]
-    %% caveman_help[caveman-help]
-    %% caveman_review[caveman-review]
     claim_verification[claim-verification]
     code_review[code-review]
     codebase_review[codebase-review]

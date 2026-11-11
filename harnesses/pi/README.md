@@ -122,7 +122,7 @@ Common flags (apply to `sync` and any subcommand, before the group name):
 - **Context stale after editing rules/global.md?** Re-run `sync pi context` (or `sync pi`).
 - **Command name mismatch?** pi uses the filename, not the `name:` frontmatter.
 - **Excluding a Claude-only skill** from pi: edit `harnesses/pi/settings.json`, e.g.
-  `"skills": ["~/.claude/skills", "!~/.claude/skills/caveman*"]` (arrays support globs + `!`).
+  `"skills": ["~/.claude/skills", "!~/.claude/skills/<name>*"]` (arrays support globs + `!`).
 
 ## Files in this directory
 

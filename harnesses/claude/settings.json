@@ -135,14 +135,6 @@
     ],
     "SessionStart": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash ~/.claude/claude-hooks/caveman-activate.sh"
-          }
-        ]
-      },
-      {
         "matcher": "*",
         "hooks": [
           {

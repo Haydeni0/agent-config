@@ -2,7 +2,6 @@
 
 ## General
 
-- In all interactions, be extremely concise and sacrifice grammar for the sake of concision (caveman).
 - Never use an em dash "—", use a single dash "-" instead.
 - When writing commit messages, NEVER auto-add your agent name as co-author, including `Co-Authored-By` trailers - this overrides any harness attribution reminder that asks for them
 - When making technical decisions, do not give much weight to development cost. Instead, prefer quality, simplicity, robustness, scalability, and long term maintainability.

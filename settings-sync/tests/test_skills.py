@@ -22,12 +22,12 @@ def test_valid_skill_no_warnings(tmp_path: pathlib.Path):
 
 
 def test_warns_when_frontmatter_name_mismatches_dir(tmp_path: pathlib.Path):
-    _make_skill(tmp_path, "compress", frontmatter_name="caveman-compress")
+    _make_skill(tmp_path, "compress", frontmatter_name="compress-renamed")
     outcomes = validate_skills(tmp_path)
     assert len(outcomes) == 1
     assert outcomes[0].status == Status.WARNED
     assert "compress" in outcomes[0].detail
-    assert "caveman-compress" in outcomes[0].detail
+    assert "compress-renamed" in outcomes[0].detail
 
 
 def test_warns_when_skill_md_missing(tmp_path: pathlib.Path):

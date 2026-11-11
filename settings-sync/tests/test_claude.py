@@ -262,7 +262,6 @@ def test_synced_claude_commands_use_moved_paths(source_home: Path, isolated_home
     _, target = synced_claude_settings(source_home, isolated_home)
     config = json.loads(target.read_text())
     commands = [hook["command"] for groups in config["hooks"].values() for group in groups for hook in group["hooks"]]
-    assert [c for c in commands if "caveman-activate" in c] == [f"bash {target.parent}/claude-hooks/caveman-activate.sh"]
     wt = [c for c in commands if "wt.sh" in c]
     assert len(wt) == 8
     assert all(f"{target.parent}/vendor/plugins/worktrunk/plugins/worktrunk/hooks/wt.sh" in c for c in wt)

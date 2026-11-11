@@ -129,7 +129,6 @@ behavior, not protection. Re-run probes after relevant host upgrades.
 
 ## Remaining lifecycle work
 
-Caveman activation, Worktrunk status and vendor Herdr handlers retain
-their native registrations. Cross-harness lifecycle parity needs a separate
+Worktrunk status and vendor Herdr handlers retain their native registrations. Cross-harness lifecycle parity needs a separate
 choice of session-scoped mode state and multi-session marker ownership; this
 branch consolidates safety policy and deployment first.
