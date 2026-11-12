@@ -44,7 +44,6 @@
 ### Notion
 
 - Before editing any Notion page, fetch it and follow its "Agent rules" callout if present - each page's rules govern how agents may edit it. With no such callout, prefer suggested edits (`notion-create-suggested-edit`) for content changes unless the user asks for direct edits.
-- Search `agent-rules-marker` to find every page that carries an Agent rules callout.
 
 ### Environment
 
