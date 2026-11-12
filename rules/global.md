@@ -43,8 +43,8 @@
 
 ### Notion
 
-- Before editing any Notion page, fetch it first and check for an "Agent rules" callout - if present, those rules govern how you may edit that page (e.g. writes only inside robot-icon callouts, `notion-create-suggested-edit` for everything else). With no such callout, prefer suggested edits for content changes unless the user asks for direct edits.
-- Pages using the agent-rules convention carry the search marker `agent-rules-marker` - search it to find every page that has one. The rules themselves are per-page.
+- Before editing any Notion page, fetch it and follow its "Agent rules" callout if present - each page's rules govern how agents may edit it. With no such callout, prefer suggested edits (`notion-create-suggested-edit`) for content changes unless the user asks for direct edits.
+- Search `agent-rules-marker` to find every page that carries an Agent rules callout.
 
 ### Environment
 
