@@ -1,5 +1,6 @@
 {
   "cleanupPeriodDays": 60,
+  "awaySummaryEnabled": false,
   "permissions": {
     "allow": [
       "Bash(git status*)",
