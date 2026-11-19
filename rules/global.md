@@ -180,14 +180,6 @@ Apply when writing, reviewing or editing code.
 
 - **No lineage or incident history in docstrings or comments.** "Moved from X", "Rehomed from Y", "Previously in Z" describe git history, not behavior. "See incident #123", "we used to do X but crashed so switched to Y", "fixed bug N", past decision rationale (KV-pool math, crash root-causes, perf-incident refs) describe *why a past decision was made* - equally unreadable by a new reader, and they rot fast (the crash is gone, the flag is renamed, the number drifts). Both go in the commit message or PR body, not the code. Same for timestamps: a comment states the constraint ("NFS write rate ~280 MB/s"), never when it was measured or "as of" which version - dates live in the doc recording the measurement. A comment should explain a *current* constraint a reader must respect to work with the code safely, not how the code got here. Exception: a live deprecation notice ("old import still works but is deprecated") is actionable - remove it once the old path is gone.
 
-- **One claim per sentence, carried by the main clause.** No chained subordinate clauses: if a sentence needs a "where", a "which", or a dash-joined second thought, split it. No emphasis theatrics - ALL-CAPS, "therefore", "note that": a point that needs shouting sits in a badly built sentence. Read it aloud: over ~20 words in one sentence, or a word you wouldn't say to a teammate at the whiteboard, rewrite.
-
-- **Concrete numbers or nothing.** "~100x oversized" is either the real numbers ("16 MiB vs 1.5 GiB") or cut. State an invariant as an equation, not prose: `rand_init(seed, offset + tid) == rand_init(seed, tid)` beats any sentence explaining it.
-
-- **Comments state constraints, not sales pitches.** "Every ask stays small at any max_neighbors" - yes. "Small enough to fit fragmented devices, yet large enough that launch counts stay flat" - that defends the design; the defence belongs in the commit or PR body.
-
-- **Point, don't duplicate.** When a constant's comment and a docstring would explain the same thing, one explains and the other says "(see X for why)".
-
 - **Flatten with guard clauses; don't nest the happy path.** Early return/raise on preconditions, then the main logic sits unindented.
 
 - **A boolean/flag parameter means the function does two things - prefer named alternatives.** Two functions, or an enum, over a bare boolean - the call site `render(True)` tells the reader nothing.
@@ -276,6 +268,10 @@ Apply when writing, reviewing or editing code.
 - **For a known upstream/library issue, link the issue - don't re-explain it in full.** The link stays current; a pasted explanation of someone else's bug rots.
 - **Don't state what code does *not* do in docstrings/comments.** "Does not modify input" describes an absent behavior - either assert the real contract ("returns a new array") or say nothing. Lists of negations are LLM slop.
 - **Document general behavior once, at the base - not per subclass/caller.** A concrete preprocessor's docstring shouldn't explain how preprocessors work; that belongs on the base class. Same for functions: don't restate what a called function's docstring already says.
+- **One claim per sentence, carried by the main clause.** No chained subordinate clauses: if a sentence needs a "where", a "which", or a dash-joined second thought, split it. No emphasis theatrics - ALL-CAPS, "therefore", "note that": a point that needs shouting sits in a badly built sentence. Read it aloud: over ~20 words in one sentence, or a word you wouldn't say to a teammate at the whiteboard, rewrite.
+- **Concrete numbers or nothing.** "~100x oversized" is either the real numbers ("16 MiB vs 1.5 GiB") or cut. State an invariant as an equation, not prose: `rand_init(seed, offset + tid) == rand_init(seed, tid)` beats any sentence explaining it.
+- **Comments state constraints, not sales pitches.** "Every ask stays small at any max_neighbors" - yes. "Small enough to fit fragmented devices, yet large enough that launch counts stay flat" - that defends the design; the defence belongs in the commit or PR body.
+- **Point, don't duplicate.** When a constant's comment and a docstring would explain the same thing, one explains and the other says "(see X for why)".
 - **Before closing any task that touched comments, docstrings, or project docs:** re-read the changed files and grep for (a) datestamps, (b) references to names just deleted, (c) line-number citations into files edited in the same change. No tooling - a reviewer-grade grep catches the rot same-session edits cause.
 - **A contract-defining docstring on a public function/module boundary is not slop** - it states what callers may rely on, not how the code works internally. The altitude test targets redundant *internal* comments and docstrings that merely restate the signature, not documentation of a public contract.
 
