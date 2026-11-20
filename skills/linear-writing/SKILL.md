@@ -155,6 +155,7 @@ Rules:
 - **Team template**: check `list_templates` / `get_template` for the target team and follow its sections when one exists (e.g. FLPM minimal: Context / Acceptance criteria / Notes). With no template, Context / Acceptance criteria / Notes is the default shape.
 - **Concision**: context is 2-4 sentences; acceptance criteria are a checklist; notes carry links and triggers, not narration. There is no toggle to hide verbosity, so the trim rules matter more, not less.
 - **Trust**: verified facts stated plainly; anything unconfirmed is tagged `[unverified]` in the body; nothing unverified in the title.
+- **`agent-written` label**: every issue you create carries it, so agent-authored issues are filterable. Labels are team-scoped: check the target team has the label (`list_issue_labels`), create it with `save_issue_label` if missing, then pass it via `addLabels` on `save_issue`. When rewriting an existing issue's description, ensure the label is present the same way.
 
 ## Common mistakes
 
@@ -170,4 +171,5 @@ Rules:
 | Applying the toggle to an issue description or document | Only comments and diff comments - issue descriptions follow the Issue writing section |
 | Issue body with no attribution line | First line must be `*Written by Hayden's agent*` |
 | Issue written against no template shape | Use the team template via `list_templates`, or Context / Acceptance criteria / Notes by default |
+| Issue created without the `agent-written` label | Add it on create via `addLabels`; create the label on the team first if it doesn't exist |
 | Wall-of-text body - the toggle hides verbosity, not a license to write it | Trim: cut dead-end exploration, restated context, reasoning that doesn't help understand or reproduce the conclusion |
