@@ -94,7 +94,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-11-21.02"
+MAILBOX_VERSION = "2026-11-21.03"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -1619,7 +1619,7 @@ def wait_until_agent_ready(
                     f"{what}: herdr detected {detected!r} in pane {pane}, but the launcher"
                     f" declares harness {harness!r} - a harness mismatch; the tab is left open"
                 )
-            if record.get("agent_status") == "idle":
+            if record.get("agent_status") in ("idle", "done"):
                 return record
         if time.monotonic() >= deadline:
             state = (
@@ -1709,7 +1709,7 @@ def interrupt_seat(member: Member, line: str | None, step: str) -> tuple[RingOut
         fail(f"{step}: unsubmitted typing sits in {member.name}'s composer - a human may be mid-draft; retry once it clears")
     herdr("agent", "send-keys", pane, "esc")
     try:
-        herdr("agent", "wait", pane, "--until", "idle", "--timeout", str(ESCAPE_IDLE_WAIT_MS))
+        herdr("agent", "wait", pane, "--until", "idle", "--until", "done", "--timeout", str(ESCAPE_IDLE_WAIT_MS))
     except HerdrError as exc:
         if exc.code == "timeout":
             raise InterruptUnconfirmed(
@@ -2341,6 +2341,14 @@ class Firing:
     evidence: str
 
 
+def watched_status(status: str) -> str:
+    """herdr's status with `done` read as `idle`.
+
+    `done` is an idle agent whose finished turn no client has viewed yet; an unattended
+    pane stays `done` until someone focuses it."""
+    return "idle" if status == "done" else status
+
+
 class Watcher:
     """The pure watcher core: deadlines armed and cancelled by events, firings evaluated
     against the policy, cooldown and episode."""
@@ -2353,6 +2361,7 @@ class Watcher:
     def on_status(self, member: str, status: str, now: float) -> None:
         st = self.states[member]
         st.absent = False
+        status = watched_status(status)
         if status != st.status:
             st.status = status
             st.status_since = now
@@ -2372,8 +2381,9 @@ class Watcher:
         if st.absent:
             st.absent = False
             transitions.append("present")
-        if obs.status != st.status:
-            st.status = obs.status
+        status = watched_status(obs.status)
+        if status != st.status:
+            st.status = status
             st.status_since = now
         st.unread_oldest = obs.unread_oldest
         st.unread_count = obs.unread_count
