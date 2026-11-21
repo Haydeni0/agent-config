@@ -13,10 +13,10 @@ inboxes/<name>/ (unread files), inboxes/<name>/inflight/
 (printed but unacked - a crashed turn's mail waits here for its replay),
 inboxes/<name>/handled/ (acked files), retired/ (retired members' records),
 launchers.toml (the user-written allowlist of commands that may start an
-agent), heartbeat.toml (the opt-in stall-watchdog policy; absent = off),
-heartbeat.lock and heartbeat-state.json (the watchdog's liveness and state),
+agent), watchdog.toml (the opt-in stall-watchdog policy; absent = off),
+watchdog.lock and watchdog-state.json (the watchdog's liveness and state),
 and log.jsonl (the append-only trace of joins, sends, replies, takes, acks,
-control verbs and heartbeat firings). A member's name is mesh-local, not its
+control verbs and watchdog firings). A member's name is mesh-local, not its
 herdr agent name: identity is the recorded seat pane plus the harness
 session, so one pane may hold different names in different meshes. Requests
 are `<from>.<seq>-<slug>.msg`; a reply reuses the request id as
@@ -94,7 +94,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-11-21.03"
+MAILBOX_VERSION = "2026-11-21.04"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -221,8 +221,8 @@ class Member:
     tab: str | None  # the herdr tab id of a spawned member, used by retire
 
 
-# names that can never be members: `heartbeat` is the watchdog's reserved sender
-RESERVED_NAMES = ("heartbeat",)
+# names that can never be members: `watchdog` is reserved for the loop's mail sender
+RESERVED_NAMES = ("watchdog",)
 
 
 def member_file_problem(fields: dict[str, str]) -> str | None:
@@ -1206,7 +1206,7 @@ def inbox() -> None:
             typer.echo(describe(message))
         except FileNotFoundError:
             continue  # a concurrent take already moved it to inflight
-    nag = heartbeat_not_running_line(root)
+    nag = watchdog_not_running_line(root)
     if nag:
         typer.echo(nag)
 
@@ -1246,7 +1246,7 @@ def take(full: Annotated[bool, typer.Option("--full", help="Re-print unacked inf
         printed.append(message)
     if not printed:
         typer.echo(NO_MAIL)
-        nag = heartbeat_not_running_line(root)
+        nag = watchdog_not_running_line(root)
         if nag:
             typer.echo(nag)
         return
@@ -1259,7 +1259,7 @@ def take(full: Annotated[bool, typer.Option("--full", help="Re-print unacked inf
     member = member_named(root, name)
     log_event(root, event="taken", member=name, session=member.harness_session if member else None,
               files=[message.path.name for message in printed])
-    nag = heartbeat_not_running_line(root)
+    nag = watchdog_not_running_line(root)
     if nag:
         typer.echo(nag)
 
@@ -1300,7 +1300,7 @@ def status(member: Annotated[str | None, typer.Argument(help="Show only this mem
             typer.echo(describe(message))
         for request in pending.get(member, []):
             typer.echo(f"pending  {request.msg_id}  to {', '.join(request.to)}")
-        nag = heartbeat_not_running_line(root)
+        nag = watchdog_not_running_line(root)
         if nag:
             typer.echo(nag)
         return
@@ -1313,7 +1313,7 @@ def status(member: Annotated[str | None, typer.Argument(help="Show only this mem
             f"handled {len(messages_in(box / 'handled', strict=False))}  "
             f"pending {len(pending.get(m.name, []))}"
         )
-    nag = heartbeat_not_running_line(root)
+    nag = watchdog_not_running_line(root)
     if nag:
         typer.echo(nag)
 
@@ -1685,7 +1685,7 @@ class InterruptUnconfirmed(Exception):
 
 def interrupt_seat(member: Member, line: str | None, step: str) -> tuple[RingOutcome, str] | None:
     """Stop the member's turn: composer guard, Escape, a bounded idle wait, then submit
-    LINE - the one mechanism behind the interrupt verb and the heartbeat's interrupt
+    LINE - the one mechanism behind the interrupt verb and the watchdog's interrupt
     action. Returns the ring outcome when a line was given, None otherwise."""
     if member.seat is None:
         fail(f"{step}: {member.name} records no seat")
@@ -1762,9 +1762,9 @@ def restart_member(
     ready_timeout_s: float = SPAWN_READY_TIMEOUT_S,
 ) -> None:
     """Relaunch MEMBER's own session in its pane through its recorded launcher, resuming
-    its conversation - the core the restart verb and the heartbeat's restart action share.
+    its conversation - the core the restart verb and the watchdog's restart action share.
 
-    CALLER names the acting identity (`heartbeat` for the loop, which is no member)."""
+    CALLER names the acting identity (`watchdog` for the loop, which is no member)."""
     step = f"restart {member.name}"
     launchers = load_launchers(root, required=True)
     if member.launcher is None:
@@ -1893,7 +1893,7 @@ def inspect(
     member: Annotated[str, typer.Argument(metavar="MEMBER", help="The member to look at")],
     lines: Annotated[int, typer.Option(help="How many trailing pane lines to print")] = 40,
 ) -> None:
-    """Show why MEMBER is not progressing: herdr state, pane tail, transcript age, mail, launcher, heartbeat. Read-only; needs no join."""
+    """Show why MEMBER is not progressing: herdr state, pane tail, transcript age, mail, launcher, watchdog. Read-only; needs no join."""
     root = mailbox_root()
     m = member_or_fail(root, member)
     if m.seat is None:
@@ -1933,11 +1933,11 @@ def inspect(
         conf = launchers.get(m.launcher)
         billed = f"billed={'true' if conf.billed else 'false'}" if conf else "unknown launcher - absent from launchers.toml"
         typer.echo(f"launcher: {m.launcher} ({billed})")
-    state = heartbeat_state_if_any(root)
+    state = watchdog_state_if_any(root)
     if state is not None:
         watched = (state.get("members") or {}).get(m.name)
         if watched:
-            typer.echo(f"heartbeat: {json.dumps(watched.get('last_fire'), sort_keys=True)}")
+            typer.echo(f"watchdog: {json.dumps(watched.get('last_fire'), sort_keys=True)}")
 
 
 @app.command()
@@ -2034,22 +2034,22 @@ def adopt(
     typer.echo(f"adopted {member} onto launcher {launcher}")
 
 
-# --- heartbeat: an opt-in stall watchdog for a mesh ---------------------------------
+# --- watchdog: opt-in stall watching for a mesh ------------------------------------
 #
-# A per-mesh policy file (heartbeat.toml) maps each member to the checks that
+# A per-mesh policy file (watchdog.toml) maps each member to the checks that
 # apply to it and the action each one takes, out of a small fixed vocabulary.
 # The loop calls no model: herdr's event socket feeds a pure watcher core that
 # arms deadlines, and an action runs only when a configured check fires.
 
-HEARTBEAT_INTERVAL_DEFAULT_S = 5 * 60
-HEARTBEAT_INTERVAL_MIN_S = 60
-HEARTBEAT_LOCK_FILE = "heartbeat.lock"
-HEARTBEAT_STATE_FILE = "heartbeat-state.json"
+WATCHDOG_INTERVAL_DEFAULT_S = 5 * 60
+WATCHDOG_INTERVAL_MIN_S = 60
+WATCHDOG_LOCK_FILE = "watchdog.lock"
+WATCHDOG_STATE_FILE = "watchdog-state.json"
 # the loop's wake is capped so a signal (stop, reload) is seen within a second;
 # the deadline computation below narrows it further when a firing is due
-HEARTBEAT_POLL_CAP_S = 1.0
-HEARTBEAT_CONNECT_TIMEOUT_S = 10.0
-HEARTBEAT_CATCHUP_FAILURES_MAX = 3
+WATCHDOG_POLL_CAP_S = 1.0
+WATCHDOG_CONNECT_TIMEOUT_S = 10.0
+WATCHDOG_CATCHUP_FAILURES_MAX = 3
 STOP_RELEASE_WAIT_S = 10.0
 STOP_RELEASE_POLL_S = 0.2
 # herdr socket protocol versions this client speaks; an unknown one refuses to start
@@ -2061,8 +2061,8 @@ DEFAULT_UNLESS = ("Waiting for", "background agent")
 
 DURATION_RE = re.compile(r"^(\d+)([smh])$")
 DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
-HEARTBEAT_CHECKS = ("unread", "idle", "hung", "blocked", "error")
-HEARTBEAT_ACTIONS = ("poke", "ring", "interrupt", "notify", "restart", "log")
+WATCHDOG_CHECKS = ("unread", "idle", "hung", "blocked", "error")
+WATCHDOG_ACTIONS = ("poke", "ring", "interrupt", "notify", "restart", "log")
 RULE_KEYS = ("do", "after", "match", "unless", "text", "to")
 
 
@@ -2072,8 +2072,8 @@ def parse_duration(text: str) -> float | None:
     return int(match.group(1)) * DURATION_UNITS[match.group(2)] if match else None
 
 
-def heartbeat_policy_path(root: Path) -> Path:
-    return root / "heartbeat.toml"
+def watchdog_policy_path(root: Path) -> Path:
+    return root / "watchdog.toml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2090,7 +2090,7 @@ class Rule:
 
 
 @dataclass(frozen=True, slots=True)
-class HeartbeatPolicy:
+class WatchdogPolicy:
     interval: float
     escalate_to: str | None
     rules: dict[str, tuple[Rule, ...]]  # member name -> its rules; a member absent here is never acted on
@@ -2098,7 +2098,7 @@ class HeartbeatPolicy:
 
 def parse_policy(
     text: str, path: Path, member_by_name: dict[str, Member]
-) -> tuple[HeartbeatPolicy | None, list[str]]:
+) -> tuple[WatchdogPolicy | None, list[str]]:
     """(policy, problems); the loaders fail loudly on any problem, naming the offending key."""
     problems: list[str] = []
     try:
@@ -2110,13 +2110,13 @@ def parse_policy(
     unknown_top = sorted(set(doc) - {"interval", "escalate_to", "member"})
     if unknown_top:
         problems.append(f"{path}: unknown top-level keys {unknown_top}; allowed: interval, escalate_to, member")
-    interval = HEARTBEAT_INTERVAL_DEFAULT_S
+    interval = WATCHDOG_INTERVAL_DEFAULT_S
     if "interval" in doc:
         raw = doc["interval"]
         seconds = parse_duration(raw) if isinstance(raw, str) else None
         if seconds is None:
             problems.append(f"{path}: interval {raw!r} must be a duration like 5m")
-        elif seconds < HEARTBEAT_INTERVAL_MIN_S:
+        elif seconds < WATCHDOG_INTERVAL_MIN_S:
             problems.append(f"{path}: interval {raw!r} must be at least 1m")
         else:
             interval = seconds
@@ -2138,12 +2138,12 @@ def parse_policy(
         if not isinstance(table, dict):
             problems.append(f"{where} must be a table of checks")
             continue
-        unknown = sorted(set(table) - set(HEARTBEAT_CHECKS))
+        unknown = sorted(set(table) - set(WATCHDOG_CHECKS))
         if unknown:
-            problems.append(f"{where} has unknown checks {unknown}; allowed: {list(HEARTBEAT_CHECKS)}")
+            problems.append(f"{where} has unknown checks {unknown}; allowed: {list(WATCHDOG_CHECKS)}")
         member_rules = []
         for check, spec in table.items():
-            if check not in HEARTBEAT_CHECKS:
+            if check not in WATCHDOG_CHECKS:
                 continue
             cwhere = f"{where}.{check}"
             if not isinstance(spec, dict):
@@ -2153,8 +2153,8 @@ def parse_policy(
             if unknown_c:
                 problems.append(f"{cwhere} has unknown keys {unknown_c}; allowed: {list(RULE_KEYS)}")
             do = spec.get("do")
-            if do not in HEARTBEAT_ACTIONS:
-                problems.append(f"{cwhere} do {do!r} is not one of {list(HEARTBEAT_ACTIONS)}")
+            if do not in WATCHDOG_ACTIONS:
+                problems.append(f"{cwhere} do {do!r} is not one of {list(WATCHDOG_ACTIONS)}")
                 continue
             bad = False
             after: float | None = None
@@ -2222,17 +2222,17 @@ def parse_policy(
             rules[name] = tuple(member_rules)
     if problems:
         return None, problems
-    return HeartbeatPolicy(interval=interval, escalate_to=escalate_to, rules=rules), []
+    return WatchdogPolicy(interval=interval, escalate_to=escalate_to, rules=rules), []
 
 
-def load_heartbeat_policy(root: Path, *, required: bool) -> HeartbeatPolicy | None:
-    """The mesh's validated heartbeat policy; None when no heartbeat.toml exists."""
-    path = heartbeat_policy_path(root)
+def load_watchdog_policy(root: Path, *, required: bool) -> WatchdogPolicy | None:
+    """The mesh's validated watchdog policy; None when no watchdog.toml exists."""
+    path = watchdog_policy_path(root)
     if not path.is_file():
         if required:
             fail(
-                f"{path} is missing - the heartbeat is off for this mesh; create one with"
-                f" `{root / 'bin' / 'mailbox'} heartbeat init --template <name>`"
+                f"{path} is missing - the watchdog is off for this mesh; create one with"
+                f" `{root / 'bin' / 'mailbox'} watchdog init --template <name>`"
             )
         return None
     policy, problems = parse_policy(path.read_text(), path, {m.name: m for m in members(root)})
@@ -2241,7 +2241,7 @@ def load_heartbeat_policy(root: Path, *, required: bool) -> HeartbeatPolicy | No
     return policy
 
 
-# the shipped templates; heartbeat init writes one, refusing to overwrite
+# the shipped templates; watchdog init writes one, refusing to overwrite
 
 def overseer_worker_template(overseer: str, worker: str) -> str:
     return f'''interval = "5m"
@@ -2249,14 +2249,14 @@ escalate_to = "{overseer}"
 
 [member.{worker}]
 unread  = {{ after = "10m", do = "poke" }}
-idle    = {{ after = "60m", do = "ring", text = "heartbeat: idle 60+ min. Continue unfinished work, set a wake on running jobs, or mail the overseer if blocked. Otherwise end the turn." }}
-hung    = {{ after = "30m", do = "interrupt", text = "heartbeat: your turn hung and was interrupted; resume where you left off." }}
+idle    = {{ after = "60m", do = "ring", text = "watchdog: idle 60+ min. Continue unfinished work, set a wake on running jobs, or mail the overseer if blocked. Otherwise end the turn." }}
+hung    = {{ after = "30m", do = "interrupt", text = "watchdog: your turn hung and was interrupted; resume where you left off." }}
 blocked = {{ after = "30m", do = "notify", to = "{overseer}" }}
 error   = {{ match = ["issue with the selected model", "API Error"], do = "notify", to = "{overseer}" }}
 
 [member.{overseer}]
 unread = {{ after = "15m", do = "poke" }}
-hung   = {{ after = "30m", do = "interrupt", text = "heartbeat: your turn hung and was interrupted; continue." }}
+hung   = {{ after = "30m", do = "interrupt", text = "watchdog: your turn hung and was interrupted; continue." }}
 '''
 
 
@@ -2268,7 +2268,7 @@ def peers_template(roster: list[Member]) -> str:
         if m.harness == "claude":
             lines.append(
                 'hung = { after = "30m", do = "interrupt",'
-                ' text = "heartbeat: your turn hung and was interrupted; resume where you left off." }'
+                ' text = "watchdog: your turn hung and was interrupted; resume where you left off." }'
             )
         lines.append("")
     return "\n".join(lines)
@@ -2353,7 +2353,7 @@ class Watcher:
     """The pure watcher core: deadlines armed and cancelled by events, firings evaluated
     against the policy, cooldown and episode."""
 
-    def __init__(self, policy: HeartbeatPolicy, clock: Callable[[], float]):
+    def __init__(self, policy: WatchdogPolicy, clock: Callable[[], float]):
         self.policy = policy
         self.clock = clock
         self.states: dict[str, WatchState] = {name: WatchState() for name in policy.rules}
@@ -2588,13 +2588,13 @@ def designed_wait(pane: str, pane_text: str, rules: tuple[Rule, ...]) -> bool:
     return any(marker.lower() in lowered for rule in hung_rules for marker in (rule.unless or DEFAULT_UNLESS))
 
 
-def heartbeat_notify(root: Path, to: str, slug: str, body: str) -> None:
-    """Write one message from the reserved sender `heartbeat`, then ring the recipient."""
-    seq = f"{next_seq(root, 'heartbeat'):0{SEQ_WIDTH}d}"
+def watchdog_notify(root: Path, to: str, slug: str, body: str) -> None:
+    """Write one message from the reserved sender `watchdog`, then ring the recipient."""
+    seq = f"{next_seq(root, 'watchdog'):0{SEQ_WIDTH}d}"
     msg_id = f"{seq}-{slug}"
-    write_messages(root, "heartbeat", msg_id, Kind.MSG, body, [to])
+    write_messages(root, "watchdog", msg_id, Kind.MSG, body, [to])
     member = member_named(root, to)
-    log_event(root, event="sent", sender="heartbeat", session=member.harness_session if member else None,
+    log_event(root, event="sent", sender="watchdog", session=member.harness_session if member else None,
               id=msg_id, kind="msg", to=[to])
     ring(root, to)
 
@@ -2608,10 +2608,10 @@ def raise_herdr_notification(title: str, body: str) -> None:
         pass
 
 
-def run_firing(root: Path, firing: Firing, policy: HeartbeatPolicy, *, dry_run: bool) -> tuple[str, bool]:
-    """(outcome line, effective) for one firing. The heartbeat is not a joined member,
+def run_firing(root: Path, firing: Firing, policy: WatchdogPolicy, *, dry_run: bool) -> tuple[str, bool]:
+    """(outcome line, effective) for one firing. The watchdog is not a joined member,
     so it calls the shared internals - the ring, the message writer, the restart core -
-    with the caller identity `heartbeat`, never the member-facing verbs.
+    with the caller identity `watchdog`, never the member-facing verbs.
 
     An action that does not land (a ring that stayed unsubmitted) returns
     effective=False so the loop takes the firing back and retries next pass."""
@@ -2627,13 +2627,13 @@ def run_firing(root: Path, firing: Firing, policy: HeartbeatPolicy, *, dry_run: 
         if firing.escalated:
             if policy.escalate_to:
                 body = (
-                    f"heartbeat needs a human: {firing.member}'s {rule.check} check is still"
+                    f"watchdog needs a human: {firing.member}'s {rule.check} check is still"
                     f" holding after two firings.\ncheck: {rule.check} ({rule.action})\n"
                     f"evidence: {firing.evidence}\npane: {pane}\n"
                 )
-                heartbeat_notify(root, policy.escalate_to, f"escalate-{rule.check}", body)
+                watchdog_notify(root, policy.escalate_to, f"escalate-{rule.check}", body)
             raise_herdr_notification(
-                f"mailbox heartbeat: {firing.member} {rule.check}",
+                f"mailbox watchdog: {firing.member} {rule.check}",
                 f"still holding: {firing.evidence}",
             )
             return "needs-human", True
@@ -2646,17 +2646,17 @@ def run_firing(root: Path, firing: Firing, policy: HeartbeatPolicy, *, dry_run: 
             outcome, evidence = ring_seat(pane, f"{rule.text} - contract: ../../README.md", wait_ms=MAIL_RING_WAIT_MS)
             return f"{outcome}" + (f"; {evidence}" if evidence else ""), outcome in (RingOutcome.RUNG, RingOutcome.QUEUED)
         if rule.action == "interrupt":
-            interrupt_seat(member, f"{rule.text} - contract: ../../README.md", f"heartbeat interrupt {firing.member}")
+            interrupt_seat(member, f"{rule.text} - contract: ../../README.md", f"watchdog interrupt {firing.member}")
             return "interrupted", True
         if rule.action == "notify":
             body = (
-                f"heartbeat: {firing.member} tripped its {rule.check} check.\n"
+                f"watchdog: {firing.member} tripped its {rule.check} check.\n"
                 f"evidence: {firing.evidence}\npane: {pane}\n"
             )
-            heartbeat_notify(root, rule.to, f"{rule.check}-{firing.member}", body)
+            watchdog_notify(root, rule.to, f"{rule.check}-{firing.member}", body)
             return f"notified {rule.to}", True
         if rule.action == "restart":
-            restart_member(root, member, "heartbeat", f"heartbeat: {rule.check} ({firing.evidence})", force=False)
+            restart_member(root, member, "watchdog", f"watchdog: {rule.check} ({firing.evidence})", force=False)
             return "restarted", True
         return "logged", True
     except InterruptUnconfirmed as exc:
@@ -2689,7 +2689,7 @@ class EventsConnection:
     def __init__(self, path: Path, subscriptions: list[dict[str, Any]]):
         self.path = path
         self.subscriptions = subscriptions
-        self.sub_id = "mailbox-heartbeat"
+        self.sub_id = "mailbox-watchdog"
         self.sock: socket.socket | None = None
         self.buffer = b""
 
@@ -2701,7 +2701,7 @@ class EventsConnection:
                    "params": {"subscriptions": self.subscriptions}}
         self.sock.sendall(json.dumps(request).encode() + b"\n")
         # the first response only acknowledges the subscription; events follow
-        response = json.loads(self._read_line(HEARTBEAT_CONNECT_TIMEOUT_S))
+        response = json.loads(self._read_line(WATCHDOG_CONNECT_TIMEOUT_S))
         if "error" in response:
             error = response["error"]
             raise HerdrProtocolError(f"herdr refused the subscription: {error.get('code')}: {error.get('message')}")
@@ -2754,7 +2754,7 @@ def herdr_socket() -> tuple[Path, int]:
     return Path(server["socket"]), int(server.get("protocol") or 0)
 
 
-def heartbeat_subscriptions(policy: HeartbeatPolicy, member_by_name: dict[str, Member]) -> list[dict[str, Any]]:
+def watchdog_subscriptions(policy: WatchdogPolicy, member_by_name: dict[str, Member]) -> list[dict[str, Any]]:
     """One status subscription per watched seat, one output-match subscription per
     configured error pattern."""
     subscriptions: list[dict[str, Any]] = []
@@ -2774,14 +2774,14 @@ def heartbeat_subscriptions(policy: HeartbeatPolicy, member_by_name: dict[str, M
     return subscriptions
 
 
-class HeartbeatLoop:
+class WatchdogLoop:
     """The foreground loop: events and catch-up observations feed the watcher core,
     actions run one at a time, and the lock is held for the loop's whole lifetime."""
 
     def __init__(
         self,
         root: Path,
-        policy: HeartbeatPolicy,
+        policy: WatchdogPolicy,
         *,
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
@@ -2790,7 +2790,7 @@ class HeartbeatLoop:
     ) -> None:
         self.root = root
         self.policy = policy
-        self.policy_text = heartbeat_policy_path(root).read_text() if heartbeat_policy_path(root).is_file() else ""
+        self.policy_text = watchdog_policy_path(root).read_text() if watchdog_policy_path(root).is_file() else ""
         self.clock = clock
         self.sleep = sleep
         self.connect = connect
@@ -2808,11 +2808,11 @@ class HeartbeatLoop:
         self.failures = 0
 
     def note(self, *, log: bool = True, **event: object) -> None:
-        """One line in the heartbeat pane and one heartbeat log event (no log when dry)."""
+        """One line in the watchdog pane and one watchdog log event (no log when dry)."""
         rendered = " ".join(f"{key}={value}" for key, value in event.items() if value is not None)
-        typer.echo(f"heartbeat: {rendered}")
+        typer.echo(f"watchdog: {rendered}")
         if log:
-            log_event(self.root, event="heartbeat", **event)
+            log_event(self.root, event="watchdog", **event)
 
     def refresh_roster(self) -> dict[str, Member]:
         records = {m.name: m for m in members(self.root)}
@@ -2830,10 +2830,10 @@ class HeartbeatLoop:
         if protocol not in SUPPORTED_HERDR_PROTOCOLS:
             fail(
                 f"herdr speaks socket protocol {protocol}; this helper supports only"
-                f" {SUPPORTED_HERDR_PROTOCOLS} - refusing to run the heartbeat against an unknown protocol"
+                f" {SUPPORTED_HERDR_PROTOCOLS} - refusing to run the watchdog against an unknown protocol"
             )
         records = self.refresh_roster()
-        subs = heartbeat_subscriptions(self.policy, records)
+        subs = watchdog_subscriptions(self.policy, records)
         connection = self.connect(path, subs)
         try:
             connection.connect()
@@ -2857,7 +2857,7 @@ class HeartbeatLoop:
         records = self.refresh_roster()
         # the pass re-resolves seats; a member whose pane id changed is re-subscribed,
         # and a voluntary disconnect (a reload) is re-established here too
-        subs = heartbeat_subscriptions(self.policy, records)
+        subs = watchdog_subscriptions(self.policy, records)
         if reconnect and (not self.connected or subs != self.current_subs):
             self.disconnect()
             try:
@@ -2920,8 +2920,8 @@ class HeartbeatLoop:
                 self.run_firing(firing, dry_run)
 
     def reload_policy(self) -> None:
-        """Re-read heartbeat.toml; an invalid edit keeps the last valid policy in force."""
-        path = heartbeat_policy_path(self.root)
+        """Re-read watchdog.toml; an invalid edit keeps the last valid policy in force."""
+        path = watchdog_policy_path(self.root)
         if not path.is_file():
             self.note(action="stop", outcome="policy deleted")
             self.stopping = True
@@ -2972,7 +2972,7 @@ class HeartbeatLoop:
                 for name, st in self.watcher.states.items()
             },
         }
-        write_atomic(self.root / HEARTBEAT_STATE_FILE, json.dumps(state, indent=1) + "\n")
+        write_atomic(self.root / WATCHDOG_STATE_FILE, json.dumps(state, indent=1) + "\n")
 
     def run(self, dry_run: bool = False) -> None:
         def on_term(signum: object, frame: object) -> None:
@@ -2999,7 +2999,7 @@ class HeartbeatLoop:
                     next_pass = self.clock()
                 if now >= next_pass:
                     # the policy file is re-read at every pass; only a change reloads
-                    path = heartbeat_policy_path(self.root)
+                    path = watchdog_policy_path(self.root)
                     if not path.is_file():
                         self.note(action="stop", outcome="policy deleted")
                         self.stopped_note = True
@@ -3011,12 +3011,12 @@ class HeartbeatLoop:
                             break
                         next_pass = self.clock()
                     self.catchup(dry_run)
-                    if self.failures >= HEARTBEAT_CATCHUP_FAILURES_MAX:
+                    if self.failures >= WATCHDOG_CATCHUP_FAILURES_MAX:
                         self.note(action="stop", outcome="catch-up failed for every member three passes running")
                         raise typer.Exit(1)
                     next_pass = self.clock() + self.policy.interval
                     continue
-                wake = min(max(next_pass - now, 0.0), HEARTBEAT_POLL_CAP_S)
+                wake = min(max(next_pass - now, 0.0), WATCHDOG_POLL_CAP_S)
                 deadline = self.watcher.next_deadline()
                 if deadline is not None:
                     wake = min(wake, max(deadline - now, 0.0))
@@ -3044,18 +3044,18 @@ class HeartbeatLoop:
                 self.note(action="stop", outcome="signal" if self.stopping else "loop ended")
 
 
-class HeartbeatLock:
-    """The mesh's exclusive heartbeat lock: an OS file lock held for the loop's lifetime.
+class WatchdogLock:
+    """The mesh's exclusive watchdog lock: an OS file lock held for the loop's lifetime.
 
     The OS releases it when the process dies, so "running" means only "the lock is
     held" - no PID guessing. The file records the holder's pid, pane and start
     time for `stop` and `status`."""
 
     def __init__(self, root: Path):
-        self.path = root / HEARTBEAT_LOCK_FILE
+        self.path = root / WATCHDOG_LOCK_FILE
         self.fd: int | None = None
 
-    def acquire(self) -> "HeartbeatLock | LockInfo":
+    def acquire(self) -> "WatchdogLock | LockInfo":
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -3101,9 +3101,9 @@ def _read_lock_info(path: Path) -> LockInfo:
     )
 
 
-def heartbeat_lock_holder(root: Path) -> LockInfo | None:
-    """The lock's holder while the lock is held, or None when no heartbeat runs."""
-    path = root / HEARTBEAT_LOCK_FILE
+def watchdog_lock_holder(root: Path) -> LockInfo | None:
+    """The lock's holder while the lock is held, or None when no watchdog runs."""
+    path = root / WATCHDOG_LOCK_FILE
     if not path.is_file():
         return None
     fd = os.open(path, os.O_RDONLY)
@@ -3117,43 +3117,43 @@ def heartbeat_lock_holder(root: Path) -> LockInfo | None:
         os.close(fd)
 
 
-def heartbeat_state_if_any(root: Path) -> dict[str, Any] | None:
+def watchdog_state_if_any(root: Path) -> dict[str, Any] | None:
     try:
-        return json.loads((root / HEARTBEAT_STATE_FILE).read_text())
+        return json.loads((root / WATCHDOG_STATE_FILE).read_text())
     except (OSError, json.JSONDecodeError):
         return None
 
 
-def heartbeat_not_running_line(root: Path) -> str | None:
+def watchdog_not_running_line(root: Path) -> str | None:
     """The restart-on-next-mail-check line: with a policy configured and no lock held,
-    every mail check names the command that brings the heartbeat back (REQ-MAILBOX-19)."""
-    if not heartbeat_policy_path(root).is_file():
+    every mail check names the command that brings the watchdog back (REQ-MAILBOX-19)."""
+    if not watchdog_policy_path(root).is_file():
         return None
-    if heartbeat_lock_holder(root) is not None:
+    if watchdog_lock_holder(root) is not None:
         return None
-    return f"heartbeat configured but not running: run {root / 'bin' / 'mailbox'} heartbeat start"
+    return f"watchdog configured but not running: run {root / 'bin' / 'mailbox'} watchdog start"
 
 
-heartbeat_app = typer.Typer(no_args_is_help=True, add_completion=False)
-app.add_typer(heartbeat_app, name="heartbeat")
+watchdog_app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(watchdog_app, name="watchdog")
 
 
-@heartbeat_app.command()
+@watchdog_app.command()
 def run(
     once: Annotated[bool, typer.Option("--once", help="Run one catch-up pass and exit")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Print each firing instead of acting; write no log")] = False,
 ) -> None:
-    """The heartbeat loop: watch the mesh's members and act on stalls per heartbeat.toml."""
+    """The watchdog loop: watch the mesh's members and act on stalls per watchdog.toml."""
     root = mailbox_root()
-    policy = load_heartbeat_policy(root, required=True)
-    lock = HeartbeatLock(root).acquire()
-    if not isinstance(lock, HeartbeatLock):
+    policy = load_watchdog_policy(root, required=True)
+    lock = WatchdogLock(root).acquire()
+    if not isinstance(lock, WatchdogLock):
         fail(
-            f"another heartbeat already holds {root / HEARTBEAT_LOCK_FILE}"
+            f"another watchdog already holds {root / WATCHDOG_LOCK_FILE}"
             f" (pid {lock.pid}, pane {lock.pane}, started {lock.started})"
         )
     try:
-        loop = HeartbeatLoop(root, policy)
+        loop = WatchdogLoop(root, policy)
         if once:
             # one pass fires from directly observed evidence: file ages and
             # transcript age; idle and blocked durations are unknown and cannot fire
@@ -3164,90 +3164,90 @@ def run(
         lock.release()
 
 
-@heartbeat_app.command()
+@watchdog_app.command()
 def start() -> None:
-    """Launch `run` in a new herdr tab labelled <mesh>-heartbeat and wait until it holds the lock."""
+    """Launch `run` in a new herdr tab labelled <mesh>-watchdog and wait until it holds the lock."""
     root = mailbox_root()
-    own_name(root)  # starting the heartbeat is acting in the mesh
-    load_heartbeat_policy(root, required=True)
+    own_name(root)  # starting the watchdog is acting in the mesh
+    load_watchdog_policy(root, required=True)
     helper = root / "bin" / "mailbox"
     created = json.loads(herdr(
         "tab", "create", "--workspace", own_workspace(),
-        "--label", f"{root.name}-heartbeat", "--no-focus",
+        "--label", f"{root.name}-watchdog", "--no-focus",
     ))["result"]
     tab_id = created["tab"]["tab_id"]
     pane = created["root_pane"]["pane_id"]
-    herdr("pane", "run", pane, f"{shlex.quote(str(helper))} heartbeat run")
+    herdr("pane", "run", pane, f"{shlex.quote(str(helper))} watchdog run")
     deadline = time.monotonic() + START_LOCK_WAIT_S
     while time.monotonic() < deadline:
-        holder = heartbeat_lock_holder(root)
+        holder = watchdog_lock_holder(root)
         if holder is not None:
             if holder.pane == pane:
-                typer.echo(f"heartbeat running in pane {pane} (tab {tab_id})")
+                typer.echo(f"watchdog running in pane {pane} (tab {tab_id})")
                 return
             herdr("tab", "close", tab_id)
             fail(
-                f"another heartbeat already holds the lock (pid {holder.pid}, pane {holder.pane});"
+                f"another watchdog already holds the lock (pid {holder.pid}, pane {holder.pane});"
                 " the tab this start opened is closed"
             )
         time.sleep(0.5)
     fail(
-        f"the heartbeat did not take the lock within {START_LOCK_WAIT_S:g}s; its tab {tab_id}"
+        f"the watchdog did not take the lock within {START_LOCK_WAIT_S:g}s; its tab {tab_id}"
         f" (pane {pane}) is left open - read the pane for the failure"
     )
 
 
-@heartbeat_app.command()
+@watchdog_app.command()
 def stop() -> None:
-    """End the running heartbeat loop and close its tab. A holder outside herdr has no tab to close."""
+    """End the running watchdog loop and close its tab. A holder outside herdr has no tab to close."""
     root = mailbox_root()
     own_name(root)
-    holder = heartbeat_lock_holder(root)
+    holder = watchdog_lock_holder(root)
     if holder is None:
-        typer.echo("heartbeat is not running")
+        typer.echo("watchdog is not running")
         return
     if holder.pid is not None:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(holder.pid, signal.SIGTERM)
     deadline = time.monotonic() + STOP_RELEASE_WAIT_S
     while time.monotonic() < deadline:
-        if heartbeat_lock_holder(root) is None:
+        if watchdog_lock_holder(root) is None:
             break
         time.sleep(STOP_RELEASE_POLL_S)
     if holder.tab is not None:
         herdr("tab", "close", holder.tab)
-    typer.echo("heartbeat stopped")
+    typer.echo("watchdog stopped")
 
 
-@heartbeat_app.command()
+@watchdog_app.command()
 def reload() -> None:
-    """Signal the running loop to re-read heartbeat.toml now, instead of at the next pass."""
+    """Signal the running loop to re-read watchdog.toml now, instead of at the next pass."""
     root = mailbox_root()
     own_name(root)
-    holder = heartbeat_lock_holder(root)
+    holder = watchdog_lock_holder(root)
     if holder is None:
-        fail("heartbeat is not running")
+        fail("watchdog is not running")
     if holder.pid is not None:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(holder.pid, signal.SIGHUP)
     typer.echo("reload signalled")
 
 
-@heartbeat_app.command()
+@watchdog_app.command()
 def status() -> None:
-    """Report the heartbeat: running or not, the holding pane, the connection, the last pass, per-member state. Needs no join."""
+    """Report the watchdog: running or not, the holding pane, the connection, the last pass, per-member state. Needs no join."""
     root = mailbox_root()
-    if not heartbeat_policy_path(root).is_file():
-        typer.echo("heartbeat: no heartbeat.toml - off")
+    if not watchdog_policy_path(root).is_file():
+        typer.echo("watchdog: no watchdog.toml - off")
         return
-    holder = heartbeat_lock_holder(root)
+    holder = watchdog_lock_holder(root)
     if holder is None:
-        typer.echo(f"heartbeat: configured but not running - run {root / 'bin' / 'mailbox'} heartbeat start")
+        typer.echo(f"watchdog: configured but not running - run {root / 'bin' / 'mailbox'} watchdog start")
     else:
         typer.echo(
-            f"heartbeat: running (pid {holder.pid}, pane {holder.pane}, started {holder.started})"
+            f"watchdog: running (pid {holder.pid}, pane {holder.pane}, started {holder.started})"
         )
-    state = heartbeat_state_if_any(root)
+    state = watchdog_state_if_any(root)
     if state is None:
         return
     typer.echo(f"connected: {state.get('connected')}  last pass: {state.get('last_pass')}")
@@ -3258,18 +3258,18 @@ def status() -> None:
         )
 
 
-@heartbeat_app.command("init")
-def init_heartbeat(
+@watchdog_app.command("init")
+def init_watchdog(
     template: Annotated[str, typer.Option(help="overseer-worker | peers | log-only")],
     overseer: Annotated[str | None, typer.Option(help="overseer-worker only: the overseer member name")] = None,
     worker: Annotated[str | None, typer.Option(help="overseer-worker only: the worker member name")] = None,
 ) -> None:
-    """Write heartbeat.toml from a shipped template. Refuses to overwrite an existing file."""
+    """Write watchdog.toml from a shipped template. Refuses to overwrite an existing file."""
     root = mailbox_root()
     own_name(root)
-    path = heartbeat_policy_path(root)
+    path = watchdog_policy_path(root)
     if path.is_file():
-        fail(f"{path} already exists; heartbeat init refuses to overwrite it")
+        fail(f"{path} already exists; watchdog init refuses to overwrite it")
     roster = members(root)
     if template == "overseer-worker":
         if not overseer or not worker:
@@ -3291,7 +3291,7 @@ def init_heartbeat(
     if policy is None:
         fail(f"the {template} template failed its own validation: {problems}")
     write_atomic(path, text)
-    typer.echo(f"wrote {path} ({len(policy.rules)} members watched); start it with {root / 'bin' / 'mailbox'} heartbeat start")
+    typer.echo(f"wrote {path} ({len(policy.rules)} members watched); start it with {root / 'bin' / 'mailbox'} watchdog start")
 
 
 def audit_members(root: Path) -> None:

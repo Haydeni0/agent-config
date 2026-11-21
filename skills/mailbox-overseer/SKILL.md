@@ -55,9 +55,9 @@ without any of them touching the expensive context.
    execution."`) once the user has approved a `launchers.toml` entry.
    Ask the user which launcher workers may start through, propose the
    file's content in chat, and write it only after the user approves it.
-3. Offer a heartbeat once, default off. If accepted, init the
+3. Offer a watchdog once, default off. If accepted, init the
    `overseer-worker` template with the worker's name and start it (see
-   the mailbox skill's heartbeat section).
+   the mailbox skill's watchdog section).
 
 ## Authority over your workers
 
@@ -72,7 +72,7 @@ you can only touch your mesh and only through launchers the user approved.
 - send keys or harness commands (e.g. a model switch or a compaction) to a
   member's pane through herdr, under the herdr skill's rules.
 
-**Diagnose before repairing.** On a stall, a heartbeat notification, or a
+**Diagnose before repairing.** On a stall, a watchdog notification, or a
 user report: run `mailbox inspect` first, then take the smallest fix - a
 ring, then an interrupt, then a restart, then a spawned replacement - and
 tell the user in your next report what you saw and what you did.

@@ -1,6 +1,6 @@
 ---
 name: mailbox
-description: Use when the user wants two or more running agent sessions (herdr panes, any harness) to talk to each other - "connect these sessions", "link these agents", "have them talk to each other", "set up a mailbox" - or to give one session control over the others' sessions ("spawn a worker", "restart that pane's agent", "set up a heartbeat", "watch for stalls", "wake it if it stalls"). Creates a file mailbox in the work package and hands the user one connect prompt per session. Not auto-triggered - only when the user asks to link sessions.
+description: Use when the user wants two or more running agent sessions (herdr panes, any harness) to talk to each other - "connect these sessions", "link these agents", "have them talk to each other", "set up a mailbox" - or to give one session control over the others' sessions ("spawn a worker", "restart that pane's agent", "set up a watchdog", "watch for stalls", "wake it if it stalls"). Creates a file mailbox in the work package and hands the user one connect prompt per session. Not auto-triggered - only when the user asks to link sessions.
 deps: [work-package]
 ---
 
@@ -59,29 +59,29 @@ than this skill), then audits members: seat-less or malformed member
 files are listed with a dual re-join-or-delete instruction for the
 user to act on. Run it whenever a mesh shows
 pre-`take` behavior or its log lacks fields the current helper writes.
-`update` writes no `launchers.toml` and no `heartbeat.toml`; those are
+`update` writes no `launchers.toml` and no `watchdog.toml`; those are
 the user's to create.
 
-## Set up a heartbeat
+## Set up a watchdog
 
 Long unattended mesh runs stall in ways no member notices - a dead
 model backend, a frozen turn, a member idle with work outstanding.
-When the user asks to watch for stalls ("set up a heartbeat", "wake it
+When the user asks to watch for stalls ("set up a watchdog", "wake it
 if it stalls"), or accepts the overseer set-up's offer:
 
 1. Write the policy from a shipped template - never hand-edit a guess:
-   `<mailbox>/bin/mailbox heartbeat init --template <name>`.
+   `<mailbox>/bin/mailbox watchdog init --template <name>`.
    Templates: `overseer-worker` (takes `--overseer <member>
    --worker <member>`, the expensive-member defaults), `peers`
    (unread poke + hung interrupt for every member), `log-only`
    (every check as `do = "log"`, for observing a mesh and tuning
-   thresholds before acting). Validation is loud; `heartbeat.toml`
+   thresholds before acting). Validation is loud; `watchdog.toml`
    may be edited freely afterwards.
-2. Start it: `<mailbox>/bin/mailbox heartbeat start` - it runs in its
-   own herdr tab. `<mailbox>/bin/mailbox heartbeat status` reports it,
-   `heartbeat stop` ends it, and deleting `heartbeat.toml` turns it
+2. Start it: `<mailbox>/bin/mailbox watchdog start` - it runs in its
+   own herdr tab. `<mailbox>/bin/mailbox watchdog status` reports it,
+   `watchdog stop` ends it, and deleting `watchdog.toml` turns it
    off at the next pass.
-3. The heartbeat never needs a babysitter: any member's next mail
+3. The watchdog never needs a babysitter: any member's next mail
    check prints the restart line when it is configured but dead, and
    the contract tells that member to run the command it names.
 
@@ -119,7 +119,7 @@ if it stalls"), or accepts the overseer set-up's offer:
   retiring them, which closes their tab and keeps their record under
   `retired/`.
 - The control verbs (`spawn`, `restart`, `inspect`, `interrupt`,
-  `retire`, `adopt`) and the heartbeat live in the mesh's README
+  `retire`, `adopt`) and the watchdog live in the mesh's README
   contract, not here. They run only through launchers the user approved:
   never write `launchers.toml` yourself, and never start an agent by any
   other route than `spawn`.

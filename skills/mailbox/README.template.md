@@ -49,14 +49,14 @@ is the whole contract - and:
   every unacked body;
 - `{{MAILBOX}}/log.jsonl` line fields: `time`; `event` - one of `join`,
   `sent`, `taken`, `acked`, `closed`, `spawn`, `restart`, `interrupt`,
-  `retire`, `adopt`, `update`, `heartbeat`; `member` (join/taken/acked/
+  `retire`, `adopt`, `update`, `watchdog`; `member` (join/taken/acked/
   closed) or `sender` (sent) or `member` plus `by` (the acting member or
-  `heartbeat`) on the control verbs; `session` - the acting member's harness
+  `watchdog`) on the control verbs; `session` - the acting member's harness
   session id, when its member file records one (carried by join, sent,
   taken, acked, closed); `pane` (join, spawn, restart), `tab` and `launcher`
   (spawn, retire), `reason` (restart); `id`/`to` (sent, closed); `kind`
   (sent); `files` (taken/acked); `from_version`/`to_version`/`changed`
-  (update); on `heartbeat` events: `action` - one of `start`, `stop`,
+  (update); on `watchdog` events: `action` - one of `start`, `stop`,
   `firing`, `escalation`, `reload`, `config-error`, `absent`, `present`,
   `disconnected`, `reconnected`, `observe-error` - plus `check`, `do`,
   `outcome`, `evidence` where they apply.
@@ -173,16 +173,16 @@ file. The verbs:
 Diagnose before repairing: `inspect` first, then the smallest fix - a ring,
 then an interrupt, then a restart, then a spawned replacement.
 
-## Heartbeat
+## Watchdog
 
-If `{{MAILBOX}}/heartbeat.toml` exists, a watchdog watches the members its
+If `{{MAILBOX}}/watchdog.toml` exists, a watchdog watches the members its
 policy names and acts on stalls (wake, interrupt, notify, restart) without
-calling any model. `{{MAILBOX}}/bin/mailbox heartbeat status` reports it;
-`heartbeat stop` ends it; deleting `heartbeat.toml` turns it off.
+calling any model. `{{MAILBOX}}/bin/mailbox watchdog status` reports it;
+`watchdog stop` ends it; deleting `watchdog.toml` turns it off.
 
 - If any mail check (`take`, `inbox`, `status`) prints
-  `heartbeat configured but not running`, start it again:
-  run `{{MAILBOX}}/bin/mailbox heartbeat start`.
+  `watchdog configured but not running`, start it again:
+  run `{{MAILBOX}}/bin/mailbox watchdog start`.
 
 ## Ringing a seat outside the mesh
 
@@ -196,7 +196,7 @@ the draft. Use it in place of every raw `herdr agent prompt` to an agent
 pane. Exit 0 names the line's pane state (delivered, `rung`, the readback
 naming the fresh row, or `rung: queued-unverified` with the pane state); exit 3
 means not submitted, the no-trace shape included - nothing waits anywhere,
-the caller resends (a heartbeat's next beat is a natural retry).
+the caller resends (a watchdog's next pass is a natural retry).
 `--wait-ms <ms>` bounds the idle wait before the mid-turn fallback;
 `--wait-ms 0` checks and falls through at once. The composer guard covers
 claude and cursor-agent seats through a per-harness detector registry (adding
