@@ -19,16 +19,21 @@ are `<from>.<seq>-<slug>.msg`; a reply reuses the request id as
 """
 
 import contextlib
+import fcntl
 import json
 import os
 import re
+import select
 import shlex
 import shutil
+import signal
+import socket
 import subprocess
 import sys
 import time
+import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
@@ -84,7 +89,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-11-04.02"
+MAILBOX_VERSION = "2026-11-21.01"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -206,6 +211,13 @@ class Member:
     seat: Seat | None  # None once a later join from the same seat took it over
     harness: str | None  # e.g. `claude` - a session id is untraceable without its harness
     harness_session: str | None  # the agent's own session id, when herdr knows it
+    launcher: str | None  # the launchers.toml id this member was spawned through
+    spawned_by: str | None  # the member that spawned this one, when it was spawned
+    tab: str | None  # the herdr tab id of a spawned member, used by retire
+
+
+# names that can never be members: `heartbeat` is the watchdog's reserved sender
+RESERVED_NAMES = ("heartbeat",)
 
 
 def member_file_problem(fields: dict[str, str]) -> str | None:
@@ -229,6 +241,9 @@ def read_member(path: Path) -> Member:
         seat=seat,
         harness=fields.get("harness"),
         harness_session=fields.get("harness-session"),
+        launcher=fields.get("launcher"),
+        spawned_by=fields.get("spawned-by"),
+        tab=fields.get("tab"),
     )
 
 
@@ -240,6 +255,12 @@ def write_member(root: Path, member: Member) -> None:
         lines.append(f"harness={member.harness}")
     if member.harness_session is not None:
         lines.append(f"harness-session={member.harness_session}")
+    if member.launcher is not None:
+        lines.append(f"launcher={member.launcher}")
+    if member.spawned_by is not None:
+        lines.append(f"spawned-by={member.spawned_by}")
+    if member.tab is not None:
+        lines.append(f"tab={member.tab}")
     write_atomic(root / "members" / member.name, "\n".join(lines) + "\n")
 
 
@@ -324,12 +345,31 @@ def init(directory: Path) -> None:
 
 
 @app.command()
-def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. planner")]) -> None:
+def join(
+    name: str,
+    role: Annotated[str, typer.Option(help="Free text, e.g. planner")],
+    launcher: Annotated[str | None, typer.Option(help="The launchers.toml id this member was spawned through")] = None,
+    spawned_by: Annotated[str | None, typer.Option(help="The member that spawned this one")] = None,
+    tab: Annotated[str | None, typer.Option(help="The herdr tab id of this member's pane")] = None,
+) -> None:
     """Join the mesh as NAME: write the member file, create the inbox, name this pane's herdr agent when it has none."""
     root = mailbox_root()
     check_token(name, "name")
+    if name in RESERVED_NAMES:
+        fail(f"{name!r} is a reserved name - it can never be a member")
     if "\n" in role or "\r" in role:
         fail("role must be a single line - it becomes a line in the member file")
+    if launcher is not None:
+        launchers = load_launchers(root, required=True)
+        if launcher not in launchers:
+            fail(f"launcher {launcher!r} is not in {root / 'launchers.toml'}; known: {sorted(launchers)}")
+    if spawned_by is not None:
+        check_members(root, [spawned_by])
+        if spawned_by == name:
+            fail("spawned-by cannot name the member itself")
+    if tab is not None:
+        if not tab or "\n" in tab or "\r" in tab or any(ch.isspace() for ch in tab):
+            fail(f"tab {tab!r} must be a single herdr tab id with no whitespace")
     seat = own_seat()
     record = agent_record_for_pane(seat.pane)
     for other in members(root):
@@ -357,6 +397,9 @@ def join(name: str, role: Annotated[str, typer.Option(help="Free text, e.g. plan
             seat=seat,
             harness=record.get("agent"),
             harness_session=harness_session,
+            launcher=launcher,
+            spawned_by=spawned_by,
+            tab=tab,
         ),
     )
     log_event(root, event="join", member=name, pane=seat.pane, session=harness_session)
@@ -1153,12 +1196,14 @@ def inbox() -> None:
     unread = messages_in(root / "inboxes" / own_name(root))
     if not unread:
         typer.echo(NO_MAIL)
-        return
     for message in unread:
         try:
             typer.echo(describe(message))
         except FileNotFoundError:
             continue  # a concurrent take already moved it to inflight
+    nag = heartbeat_not_running_line(root)
+    if nag:
+        typer.echo(nag)
 
 
 @app.command()
@@ -1196,6 +1241,9 @@ def take(full: Annotated[bool, typer.Option("--full", help="Re-print unacked inf
         printed.append(message)
     if not printed:
         typer.echo(NO_MAIL)
+        nag = heartbeat_not_running_line(root)
+        if nag:
+            typer.echo(nag)
         return
     (box / "inflight").mkdir(parents=True, exist_ok=True)  # an old-mesh member may lack it
     for message in printed:
@@ -1206,6 +1254,9 @@ def take(full: Annotated[bool, typer.Option("--full", help="Re-print unacked inf
     member = member_named(root, name)
     log_event(root, event="taken", member=name, session=member.harness_session if member else None,
               files=[message.path.name for message in printed])
+    nag = heartbeat_not_running_line(root)
+    if nag:
+        typer.echo(nag)
 
 
 @app.command()
@@ -1244,6 +1295,9 @@ def status(member: Annotated[str | None, typer.Argument(help="Show only this mem
             typer.echo(describe(message))
         for request in pending.get(member, []):
             typer.echo(f"pending  {request.msg_id}  to {', '.join(request.to)}")
+        nag = heartbeat_not_running_line(root)
+        if nag:
+            typer.echo(nag)
         return
     for m in members(root):
         box = root / "inboxes" / m.name
@@ -1254,6 +1308,9 @@ def status(member: Annotated[str | None, typer.Argument(help="Show only this mem
             f"handled {len(messages_in(box / 'handled', strict=False))}  "
             f"pending {len(pending.get(m.name, []))}"
         )
+    nag = heartbeat_not_running_line(root)
+    if nag:
+        typer.echo(nag)
 
 
 @app.command()
@@ -1339,10 +1396,1861 @@ def ring_any(
         raise typer.Exit(3)
 
 
+# --- member control: launchers, spawn, restart, inspect, interrupt, retire, adopt ---
+#
+# A mesh's members are started, repaired and stopped through launchers the user
+# approved in <mesh>/launchers.toml, and every control verb resolves its target
+# through a member record - never a free pane id, so a verb cannot reach a pane
+# outside its mesh.
+
+SPAWN_READY_TIMEOUT_S = 120.0
+SPAWN_POLL_S = 1.0
+SHELL_RETURN_TIMEOUT_S = 30.0
+SHELL_POLL_S = 0.5
+SIGTERM_GRACE_S = 10.0
+FRESH_TRANSCRIPT_S = 10 * 60  # a live turn younger than this is never killed without --force
+ESCAPE_IDLE_WAIT_MS = 30_000
+START_LOCK_WAIT_S = 30.0
+
+# herdr reports an agent's own session id under the harness's projects dir; the
+# member file records no cwd, so the transcript is found by session id alone
+CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+
+
+@dataclass(frozen=True, slots=True)
+class Launcher:
+    """One approved way to start an agent in this mesh: a launchers.toml entry.
+
+    `command` is an argv list, never a shell line, so it renders both into the
+    line `pane run` types and into herdr's per-pane restore argv. `resume` holds
+    the argv suffix that resumes a session, with `{session}` filled from the
+    member record at restore time."""
+
+    command: tuple[str, ...]
+    harness: str  # a herdr agent kind (claude, codex, pi, ...), checked against what herdr detects
+    env: dict[str, str] = field(default_factory=dict)
+    resume: tuple[str, ...] | None = None
+    billed: bool = False
+
+
+# a plain command name (no slash, no shell metacharacter); an absolute path is
+# the one other allowed first element - a shell line is never either
+COMMAND_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+@-]*$")
+LAUNCHER_KEYS = ("command", "env", "harness", "resume", "billed")
+# herdr rejects a restore argv whose elements carry apostrophes or control
+# characters, so a launcher that cannot be registered as-is is refused at parse
+UNREGISTERABLE = re.compile(r"['\x00-\x1f\x7f]")
+
+
+def parse_launchers(text: str, path: Path) -> tuple[dict[str, Launcher], list[str]]:
+    """(launchers by id, problems); the loader fails loudly on any problem."""
+    problems: list[str] = []
+    launchers: dict[str, Launcher] = {}
+    try:
+        doc = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        return {}, [f"{path} is not valid TOML: {exc}"]
+    for key, entry in doc.items():
+        if not NAME_RE.fullmatch(key):
+            problems.append(f"{path}: launcher id {key!r} must be lowercase letters, digits and single hyphens")
+            continue
+        if not isinstance(entry, dict):
+            problems.append(f"{path}: [{key}] must be a table holding command, harness, ...")
+            continue
+        where = f"{path}: [{key}]"
+        unknown = sorted(set(entry) - set(LAUNCHER_KEYS))
+        if unknown:
+            problems.append(f"{where} has unknown keys {unknown}; allowed: {sorted(LAUNCHER_KEYS)}")
+        command = entry.get("command")
+        bad = False
+        if not (isinstance(command, list) and command and all(isinstance(el, str) and el for el in command)):
+            problems.append(f"{where} command must be a non-empty list of strings - an argv list, never a shell line")
+            bad = True
+        else:
+            first = command[0]
+            if not (COMMAND_NAME_RE.fullmatch(first) or (first.startswith("/") and not any(c.isspace() for c in first))):
+                problems.append(f"{where} command's first element {first!r} must be a plain command name or an absolute path")
+                bad = True
+            if any(ch in "".join(command) for ch in ";|&$`\\"):
+                problems.append(f"{where} command carries shell metacharacters - it must be an argv list, never a shell line")
+                bad = True
+            if UNREGISTERABLE.search("".join(command)):
+                problems.append(f"{where} command carries an apostrophe or control character - herdr refuses it as a restore argv")
+                bad = True
+        harness = entry.get("harness")
+        if not (isinstance(harness, str) and harness):
+            problems.append(f"{where} harness must be a herdr agent kind (e.g. claude), a non-empty string")
+            bad = True
+        resume = entry.get("resume")
+        if resume is not None:
+            if not (isinstance(resume, list) and resume and all(isinstance(el, str) and el for el in resume)):
+                problems.append(f"{where} resume must be a non-empty list of strings, e.g. [\"--resume\", \"{{session}}\"]")
+                bad = True
+            elif not any("{session}" in el for el in resume):
+                problems.append(f"{where} resume must contain the {{session}} placeholder")
+                bad = True
+            elif UNREGISTERABLE.search("".join(resume)):
+                problems.append(f"{where} resume carries an apostrophe or control character - herdr refuses it as a restore argv")
+                bad = True
+        env = entry.get("env")
+        if env is None:
+            env = {}
+        elif not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            problems.append(f"{where} env must be a table of string to string")
+            bad = True
+        elif UNREGISTERABLE.search("".join(env.values())):
+            problems.append(f"{where} env values carry an apostrophe or control character - herdr refuses them as a restore argv")
+            bad = True
+        billed = entry.get("billed", False)
+        if not isinstance(billed, bool):
+            problems.append(f"{where} billed must be true or false")
+            bad = True
+        if bad:
+            continue
+        launchers[key] = Launcher(
+            command=tuple(command),
+            harness=harness,
+            env=dict(env),
+            resume=tuple(resume) if resume is not None else None,
+            billed=billed,
+        )
+    return launchers, problems
+
+
+def load_launchers(root: Path, *, required: bool) -> dict[str, Launcher]:
+    """The mesh's launcher allowlist; empty when absent and not required, never a guess."""
+    path = root / "launchers.toml"
+    if not path.is_file():
+        if required:
+            fail(
+                f"{path} is missing - it is the allowlist of commands that may start an agent in"
+                " this mesh; the user writes it (an agent may only propose content for the user"
+                " to approve in chat), then spawn and restart work"
+            )
+        return {}
+    launchers, problems = parse_launchers(path.read_text(), path)
+    if problems:
+        fail("; ".join(problems))
+    return launchers
+
+
+def resume_argv_for(launcher: Launcher, session: str) -> tuple[str, ...]:
+    """The launcher as herdr's per-pane restore argv: `env K=V ... <command...> <resume...>`.
+
+    herdr's restore re-runs this after a server restart, so the member comes back
+    through its launcher with its environment instead of the bare harness - the
+    observed container-restart failure. `env` is the plain first command because
+    herdr requires one."""
+    env_args = [f"{key}={value}" for key, value in launcher.env.items()]
+    resume_args = [el.replace("{session}", session) for el in (launcher.resume or ())]
+    return ("env", *env_args, *launcher.command, *resume_args)
+
+
+def launch_shell_line(launcher: Launcher, extra: tuple[str, ...] = ()) -> str:
+    """The launcher as one shell line for `herdr pane run` - the same argv the restore
+    registration records, so a restart relaunches exactly what a restore would."""
+    env_args = [f"{key}={value}" for key, value in launcher.env.items()]
+    return shlex.join(["env", *env_args, *launcher.command, *extra])
+
+
+# the source id herdr sees for the mailbox's own agent-state reports; `herdr:` is
+# reserved for herdr's own integrations and must never be used
+MAILBOX_SOURCE = "mailbox"
+
+
+def register_restore(pane: str, launcher: Launcher, session: str) -> None:
+    """Register the launcher as the pane's herdr resume command, so herdr's own session
+    restore relaunches the member through it (with its environment) after a restart."""
+    herdr(
+        "pane", "report-agent-session", pane,
+        "--source", MAILBOX_SOURCE, "--agent", launcher.harness,
+        "--agent-session-id", session,
+        "--", *resume_argv_for(launcher, session),
+    )
+
+
+def transcript_last_write(session: str) -> float | None:
+    """The newest modification time across the session's transcript and its subagents'
+    transcripts, or None when no transcript is on disk."""
+    if not session:
+        return None
+    times = [
+        path.stat().st_mtime
+        for pattern in (f"*/{session}.jsonl", f"*/{session}/subagents/*.jsonl")
+        for path in CLAUDE_PROJECTS.glob(pattern)
+        if path.is_file()
+    ]
+    return max(times, default=None)
+
+
+def member_or_fail(root: Path, name: str) -> Member:
+    member = member_named(root, name)
+    if member is None:
+        fail(f"not a mesh member: {name}; members are {sorted(m.name for m in members(root))}")
+    return member
+
+
+def own_workspace() -> str:
+    workspace = os.environ.get("HERDR_WORKSPACE_ID")
+    if not workspace:
+        fail("HERDR_WORKSPACE_ID is unset; run this from an agent session inside a herdr pane")
+    return workspace
+
+
+def wait_until_agent_ready(
+    pane: str, harness: str, timeout_s: float, poll_s: float, what: str
+) -> dict[str, Any]:
+    """Poll `herdr agent get` until the pane's agent is detected as HARNESS and idle.
+
+    `herdr agent start` is never used - it runs the harness's canonical executable
+    instead of the launcher, so the launcher (and the spend it pins) is bypassed."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        record = agent_record_for_pane(pane)
+        if record:
+            detected = record.get("agent")
+            if detected != harness:
+                fail(
+                    f"{what}: herdr detected {detected!r} in pane {pane}, but the launcher"
+                    f" declares harness {harness!r} - a harness mismatch; the tab is left open"
+                )
+            if record.get("agent_status") == "idle":
+                return record
+        if time.monotonic() >= deadline:
+            state = (
+                f"agent {record.get('agent')!r}, status {record.get('agent_status')!r}"
+                if record else "no agent detected"
+            )
+            fail(f"{what}: pane {pane} not ready within {timeout_s:g}s ({state}); the tab is left open for inspection")
+        time.sleep(poll_s)
+
+
+def wait_for_member_record(root: Path, name: str, pane: str, timeout_s: float, poll_s: float, what: str) -> Member:
+    """The member record once NAME claims PANE live - the join the spawned member runs."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        member = member_named(root, name)
+        if member is not None and member.seat is not None and member.seat.pane == pane and live_claim(member)[0]:
+            return member
+        if time.monotonic() >= deadline:
+            fail(f"{what}: no live member record for {name} at pane {pane} within {timeout_s:g}s - the join never landed; the tab is left open for inspection")
+        time.sleep(poll_s)
+
+
+def join_line_for(
+    root: Path, name: str, role: str, launcher: str, spawned_by: str, tab: str, intro: str | None
+) -> str:
+    line = (
+        f"{root / 'bin' / 'mailbox'} join {name} --role {shlex.quote(role)} "
+        f"--launcher {launcher} --spawned-by {spawned_by} --tab {tab}"
+    )
+    # the intro carries what the connect prompt used to - e.g. "Load the orchestrator skill"
+    return f"{line}\n{intro}" if intro else line
+
+
+def wait_for_shell(pane: str, timeout_s: float, poll_s: float = SHELL_POLL_S) -> bool:
+    """True once the pane holds no herdr agent - its process ended and the shell is back."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        if not agent_record_for_pane(pane):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_s)
+
+
+def foreground_pid(pane: str) -> int:
+    info = json.loads(herdr("pane", "process-info", "--pane", pane))["result"]["process_info"]
+    processes = info.get("foreground_processes") or []
+    pid = processes[0]["pid"] if processes else info.get("foreground_process_group_id")
+    if not isinstance(pid, int):
+        fail(f"pane {pane} reports no foreground pid to signal")
+    return pid
+
+
+# the harnesses with an exit recipe; restart and retire refuse a harness without one
+EXIT_RECIPES = ("claude",)
+# Escape safely interrupts a turn only on these harnesses
+INTERRUPT_HARNESSES = ("claude",)
+
+
+class InterruptUnconfirmed(Exception):
+    """Escape was sent but the seat did not go idle within the bound."""
+
+
+def interrupt_seat(member: Member, line: str | None, step: str) -> tuple[RingOutcome, str] | None:
+    """Stop the member's turn: composer guard, Escape, a bounded idle wait, then submit
+    LINE - the one mechanism behind the interrupt verb and the heartbeat's interrupt
+    action. Returns the ring outcome when a line was given, None otherwise."""
+    if member.seat is None:
+        fail(f"{step}: {member.name} records no seat")
+    pane = member.seat.pane
+    record = agent_record_for_pane(pane)
+    if not record:
+        fail(f"{step}: no live agent at {member.name}'s seat (pane {pane})")
+    harness = record.get("agent") or member.harness
+    if harness not in INTERRUPT_HARNESSES:
+        fail(
+            f"{step}: Escape does not safely interrupt a {harness!r} turn - interrupt is"
+            f" valid for {INTERRUPT_HARNESSES} members only"
+        )
+    guard = SEAT_GUARDS[harness]
+    # the composer check runs before Escape so a human's draft is never cleared
+    try:
+        screen = herdr("pane", "read", "--source", "visible", "--format", "ansi", pane)
+    except HerdrError:
+        screen = ""
+    if guard.box_state(screen) == "typing":
+        fail(f"{step}: unsubmitted typing sits in {member.name}'s composer - a human may be mid-draft; retry once it clears")
+    herdr("agent", "send-keys", pane, "esc")
+    try:
+        herdr("agent", "wait", pane, "--until", "idle", "--timeout", str(ESCAPE_IDLE_WAIT_MS))
+    except HerdrError as exc:
+        if exc.code == "timeout":
+            raise InterruptUnconfirmed(
+                f"{step}: {member.name}'s seat did not go idle within {ESCAPE_IDLE_WAIT_MS // 1000}s of Escape"
+            ) from exc
+        raise
+    if line is None:
+        return None
+    return ring_seat(pane, line, wait_ms=MAIL_RING_WAIT_MS)
+
+
+def exit_agent_in_place(member: Member, step: str) -> None:
+    """Stop the member's live agent in its pane with the harness's exit recipe, leaving
+    the pane at its shell. A pane that already sits at its shell is left alone."""
+    if member.seat is None:
+        fail(f"{step}: {member.name} records no seat")
+    pane = member.seat.pane
+    record = agent_record_for_pane(pane)
+    if not record:
+        return
+    harness = record.get("agent") or member.harness
+    if harness not in EXIT_RECIPES:
+        fail(f"{step}: no exit recipe for harness {harness!r} - one is added when that harness is")
+    guard = SEAT_GUARDS[harness]
+    try:
+        screen = herdr("pane", "read", "--source", "visible", "--format", "ansi", pane)
+    except HerdrError:
+        screen = ""
+    if guard.box_state(screen) == "typing":
+        fail(f"{step}: unsubmitted typing sits in {member.name}'s composer - a human may be mid-draft; retry once it clears")
+    # claude's recipe: Escape (out of any running turn, composer guarded), then /exit
+    # through the guarded ring
+    herdr("agent", "send-keys", pane, "esc")
+    outcome, _ = ring_seat(pane, "/exit", wait_ms=MAIL_RING_WAIT_MS)
+    if outcome not in (RingOutcome.RUNG, RingOutcome.QUEUED):
+        fail(f"{step}: /exit could not be submitted to {member.name}'s pane ({SEAT_DEFERRED.get(outcome, outcome)})")
+    if wait_for_shell(pane, SHELL_RETURN_TIMEOUT_S):
+        return
+    # the pid-scoped signal fallback: only the pane's own foreground process
+    pid = foreground_pid(pane)
+    os.kill(pid, signal.SIGTERM)
+    if not wait_for_shell(pane, SIGTERM_GRACE_S):
+        fail(f"{step}: pane {pane} still holds a foreground process after SIGTERM to pid {pid}")
+
+
+def restart_member(
+    root: Path, member: Member, caller: str, reason: str, *, force: bool,
+    ready_timeout_s: float = SPAWN_READY_TIMEOUT_S,
+) -> None:
+    """Relaunch MEMBER's own session in its pane through its recorded launcher, resuming
+    its conversation - the core the restart verb and the heartbeat's restart action share.
+
+    CALLER names the acting identity (`heartbeat` for the loop, which is no member)."""
+    step = f"restart {member.name}"
+    launchers = load_launchers(root, required=True)
+    if member.launcher is None:
+        fail(f"{member.name} records no launcher; record one first: bin/mailbox adopt {member.name} --launcher <id>")
+    launcher = launchers.get(member.launcher)
+    if launcher is None:
+        fail(f"launcher {member.launcher!r} is not in {root / 'launchers.toml'}; known: {sorted(launchers)}")
+    if launcher.resume is None:
+        fail(f"launcher {member.launcher!r} declares no resume arguments - {member.name}'s session cannot be resumed through it")
+    if member.seat is None:
+        fail(f"{step}: {member.name} records no seat")
+    pane = member.seat.pane
+    record = agent_record_for_pane(pane)
+    if record and not force and record.get("agent_status") == "working" and member.harness == "claude" and member.harness_session:
+        last_write = transcript_last_write(member.harness_session)
+        if last_write is not None and time.time() - last_write < FRESH_TRANSCRIPT_S:
+            age = time.time() - last_write
+            fail(
+                f"{member.name} is working and its transcript was written {age:.0f}s ago - a live"
+                " turn; pass --force to restart it anyway"
+            )
+    if record:
+        exit_agent_in_place(member, step)
+    session = member.harness_session
+    if not session:
+        fail(f"{step}: {member.name} records no harness session to resume")
+    herdr("pane", "run", pane, launch_shell_line(launcher, tuple(el.replace("{session}", session) for el in launcher.resume)))
+    ready = wait_until_agent_ready(pane, launcher.harness, ready_timeout_s, SPAWN_POLL_S, step)
+    live_session = (ready.get("agent_session") or {}).get("value")
+    # the record is refreshed only from what herdr reports in the member's own seat -
+    # another pane is never adopted
+    if live_session and live_session != member.harness_session:
+        write_member(root, replace(member, harness_session=live_session))
+        typer.echo(f"harness session refreshed: {member.harness_session} -> {live_session}")
+    session = live_session or member.harness_session
+    register_restore(pane, launcher, session)
+    typer.echo(f"restore registered: {' '.join(resume_argv_for(launcher, session))}")
+    wake = (
+        f"you were restarted by {caller}"
+        + (f" ({reason})" if reason else "")
+        + "; run take and continue your work - contract: ../../README.md"
+    )
+    outcome, evidence = ring_seat(pane, wake, wait_ms=MAIL_RING_WAIT_MS)
+    if evidence:
+        typer.echo(f"readback: {evidence}")
+    typer.echo(f"{member.name}: {outcome}")
+    log_event(root, event="restart", member=member.name, by=caller, reason=reason or None,
+              pane=pane, launcher=member.launcher, session=session)
+
+
+@app.command()
+def spawn(
+    name: Annotated[str, typer.Argument(help="The new member's name")],
+    role: Annotated[str, typer.Option(help="The new member's role, free text")],
+    launcher: Annotated[str, typer.Option(help="The launchers.toml id to start the member through")],
+    cwd: Annotated[Path | None, typer.Option(help="Working directory for the new member's pane; default: the caller's")] = None,
+    intro: Annotated[str | None, typer.Option(help="Line(s) submitted after the join command, e.g. 'Load the orchestrator skill'")] = None,
+    ready_timeout_s: Annotated[float, typer.Option(help="Bound, in seconds, for herdr to detect the new agent ready")] = SPAWN_READY_TIMEOUT_S,
+) -> None:
+    """Start a new member in a new labelled herdr tab, through an approved launcher, joined to the mesh."""
+    root = mailbox_root()
+    caller = own_name(root)
+    check_token(name, "name")
+    if name in RESERVED_NAMES:
+        fail(f"{name!r} is a reserved name - it can never be a member")
+    existing = member_named(root, name)
+    if existing is not None and existing.seat is not None and live_claim(existing)[0]:
+        fail(f"name {name!r} is held by the live member in pane {existing.seat.pane}; pick another name")
+    launchers = load_launchers(root, required=True)
+    if launcher not in launchers:
+        fail(f"launcher {launcher!r} is not in {root / 'launchers.toml'}; known: {sorted(launchers)}")
+    conf = launchers[launcher]
+    args = ["tab", "create", "--workspace", own_workspace(), "--label", name, "--no-focus"]
+    if cwd is not None:
+        args += ["--cwd", str(cwd)]
+    created = json.loads(herdr(*args))["result"]
+    tab_id = created["tab"]["tab_id"]
+    pane = created["root_pane"]["pane_id"]
+    try:
+        herdr("pane", "rename", pane, name)
+        herdr("pane", "run", pane, launch_shell_line(conf))
+        record = wait_until_agent_ready(pane, conf.harness, ready_timeout_s, SPAWN_POLL_S, f"spawn {name}")
+        session = (record.get("agent_session") or {}).get("value")
+        outcome, evidence = ring_seat(
+            pane, join_line_for(root, name, role, launcher, caller, tab_id, intro), wait_ms=MAIL_RING_WAIT_MS
+        )
+        if evidence:
+            typer.echo(f"readback: {evidence}")
+        if outcome not in (RingOutcome.RUNG, RingOutcome.QUEUED):
+            fail(f"spawn {name}: the join line was not submitted ({SEAT_DEFERRED.get(outcome, outcome)})")
+        joined = wait_for_member_record(root, name, pane, ready_timeout_s, SPAWN_POLL_S, f"spawn {name}")
+        session = joined.harness_session or session
+        if not session:
+            fail(
+                f"spawn {name}: herdr reports no harness session for the new member, so the"
+                " launcher's resume arguments cannot be registered"
+            )
+        register_restore(pane, conf, session)
+    except HerdrError as exc:
+        typer.echo(f"mailbox: herdr failed during spawn: {exc}", err=True)
+        typer.echo(f"mailbox: tab {tab_id} (pane {pane}) is left open for inspection - inspect it, then retire --force it or close it", err=True)
+        raise typer.Exit(1)
+    except typer.Exit:
+        typer.echo(f"mailbox: tab {tab_id} (pane {pane}) is left open for inspection - inspect it, then retire --force it or close it", err=True)
+        raise
+    typer.echo(f"restore registered: {' '.join(resume_argv_for(conf, session))}")
+    log_event(root, event="spawn", member=name, by=caller, pane=pane, tab=tab_id,
+              launcher=launcher, session=session)
+    typer.echo(f"spawned {name} in tab {tab_id} (pane {pane}) through launcher {launcher}")
+
+
+@app.command()
+def restart(
+    member: Annotated[str, typer.Argument(metavar="MEMBER", help="The member to relaunch")],
+    reason: Annotated[str | None, typer.Option(help="Why - lands in the member's wake line and the log")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Restart even a live turn whose transcript moved within the last 10 minutes")] = False,
+) -> None:
+    """Relaunch MEMBER's own session in its pane through its recorded launcher, resuming its conversation."""
+    root = mailbox_root()
+    caller = own_name(root)
+    restart_member(root, member_or_fail(root, member), caller, reason or "", force=force)
+
+
+@app.command()
+def inspect(
+    member: Annotated[str, typer.Argument(metavar="MEMBER", help="The member to look at")],
+    lines: Annotated[int, typer.Option(help="How many trailing pane lines to print")] = 40,
+) -> None:
+    """Show why MEMBER is not progressing: herdr state, pane tail, transcript age, mail, launcher, heartbeat. Read-only; needs no join."""
+    root = mailbox_root()
+    m = member_or_fail(root, member)
+    if m.seat is None:
+        typer.echo("seat: none recorded - the member is not running from any pane this mesh knows")
+    else:
+        pane = m.seat.pane
+        record = agent_record_for_pane(pane)
+        if record:
+            typer.echo(f"herdr: {record.get('agent_status')} ({record.get('agent')}) in pane {pane}")
+            try:
+                explained = json.loads(herdr("agent", "explain", pane, "--json"))
+                rule = (explained.get("matched_rule") or {}).get("id")
+                if rule:
+                    typer.echo(f"detection rule: {rule}")
+            except (HerdrError, json.JSONDecodeError):
+                pass
+        else:
+            typer.echo(f"herdr: no live agent at the member's seat (pane {pane})")
+        try:
+            typer.echo("--- pane tail ---")
+            typer.echo(herdr("pane", "read", "--source", "recent-unwrapped", "--lines", str(lines), pane))
+        except HerdrError as exc:
+            typer.echo(f"pane read failed: {exc}")
+    unread = len(messages_in(root / "inboxes" / m.name, strict=False))
+    inflight = len(messages_in(root / "inboxes" / m.name / "inflight", strict=False))
+    typer.echo(f"mail: unread {unread}  inflight {inflight}")
+    if m.harness == "claude" and m.harness_session:
+        last_write = transcript_last_write(m.harness_session)
+        if last_write is None:
+            typer.echo("transcript: none found on disk")
+        else:
+            typer.echo(f"transcript: last write {time.time() - last_write:.0f}s ago")
+    launchers = load_launchers(root, required=False)
+    if m.launcher is None:
+        typer.echo("launcher: none recorded")
+    else:
+        conf = launchers.get(m.launcher)
+        billed = f"billed={conf.billed}" if conf else "unknown launcher - absent from launchers.toml"
+        typer.echo(f"launcher: {m.launcher} ({billed})")
+    state = heartbeat_state_if_any(root)
+    if state is not None:
+        watched = (state.get("members") or {}).get(m.name)
+        if watched:
+            typer.echo(f"heartbeat: {json.dumps(watched.get('last_fire'), sort_keys=True)}")
+
+
+@app.command()
+def interrupt(
+    member: Annotated[str, typer.Argument(metavar="MEMBER", help="The member whose turn is stopped")],
+    line: Annotated[str | None, typer.Argument(help="A line to submit once the turn is stopped")] = None,
+) -> None:
+    """Stop MEMBER's turn safely (composer guard, then Escape) and hand it LINE."""
+    root = mailbox_root()
+    caller = own_name(root)
+    m = member_or_fail(root, member)
+    outcome: tuple[RingOutcome, str] | None
+    try:
+        outcome = interrupt_seat(m, line, f"interrupt {member}")
+    except InterruptUnconfirmed as exc:
+        fail(str(exc))
+    fired = "interrupted"
+    if outcome is not None:
+        ring_outcome, evidence = outcome
+        if evidence:
+            typer.echo(f"readback: {evidence}")
+        fired = str(ring_outcome)
+        typer.echo(f"{member}: {SEAT_DEFERRED.get(ring_outcome, ring_outcome)}")
+        if ring_outcome in SEAT_DEFERRED:
+            raise typer.Exit(3)
+    else:
+        typer.echo(f"{member}: interrupted")
+    log_event(root, event="interrupt", member=member, by=caller, outcome=fired)
+
+
+@app.command()
+def retire(
+    member: Annotated[str, typer.Argument(metavar="MEMBER", help="The member to end - one you spawned")],
+    force: Annotated[bool, typer.Option("--force", help="Retire despite unread or inflight mail")] = False,
+) -> None:
+    """End MEMBER - one you spawned - and remove it from the mesh, keeping its record under retired/."""
+    root = mailbox_root()
+    caller = own_name(root)
+    m = member_or_fail(root, member)
+    if m.spawned_by != caller:
+        spawner = m.spawned_by or "nobody (it joined itself)"
+        fail(f"{member} was spawned by {spawner}, not by you ({caller}); retire only members you spawned")
+    unread = messages_in(root / "inboxes" / m.name, strict=False)
+    inflight = messages_in(root / "inboxes" / m.name / "inflight", strict=False)
+    if (unread or inflight) and not force:
+        fail(f"{member} holds {len(unread)} unread and {len(inflight)} inflight messages; pass --force to retire it anyway")
+    if m.seat is not None:
+        exit_agent_in_place(m, f"retire {member}")
+    if m.tab is not None:
+        herdr("tab", "close", m.tab)
+    retired = root / "retired"
+    retired.mkdir(parents=True, exist_ok=True)
+    target = retired / m.name
+    if target.exists():
+        fail(f"a retired record already exists at {target}; delete it first if the name is being reused")
+    (root / "members" / m.name).rename(target)
+    log_event(root, event="retire", member=member, by=caller, tab=m.tab)
+    typer.echo(f"retired {member}; its record is {target}")
+
+
+@app.command()
+def adopt(
+    member: Annotated[str, typer.Argument(metavar="MEMBER", help="The member to record a launcher for")],
+    launcher: Annotated[str, typer.Option(help="The launchers.toml id to record")],
+) -> None:
+    """Record LAUNCHER on MEMBER after checking herdr's detected harness matches it."""
+    root = mailbox_root()
+    caller = own_name(root)
+    m = member_or_fail(root, member)
+    launchers = load_launchers(root, required=True)
+    if launcher not in launchers:
+        fail(f"launcher {launcher!r} is not in {root / 'launchers.toml'}; known: {sorted(launchers)}")
+    conf = launchers[launcher]
+    if m.seat is None:
+        fail(f"{member} records no seat - adopt needs a live agent to check the harness against")
+    record = agent_record_for_pane(m.seat.pane)
+    if not record:
+        fail(f"{member}'s pane holds no live agent to check the harness against")
+    detected = record.get("agent")
+    if detected != conf.harness:
+        fail(f"herdr detects {detected!r} at {member}'s seat, but launcher {launcher!r} declares {conf.harness!r}")
+    write_member(root, replace(m, launcher=launcher))
+    log_event(root, event="adopt", member=member, by=caller, launcher=launcher)
+    typer.echo(f"adopted {member} onto launcher {launcher}")
+
+
+# --- heartbeat: an opt-in stall watchdog for a mesh ---------------------------------
+#
+# A per-mesh policy file (heartbeat.toml) maps each member to the checks that
+# apply to it and the action each one takes, out of a small fixed vocabulary.
+# The loop calls no model: herdr's event socket feeds a pure watcher core that
+# arms deadlines, and an action runs only when a configured check fires.
+
+HEARTBEAT_INTERVAL_DEFAULT_S = 5 * 60
+HEARTBEAT_INTERVAL_MIN_S = 60
+HEARTBEAT_LOCK_FILE = "heartbeat.lock"
+HEARTBEAT_STATE_FILE = "heartbeat-state.json"
+# the loop's wake is capped so a signal (stop, reload) is seen within a second;
+# the deadline computation below narrows it further when a firing is due
+HEARTBEAT_POLL_CAP_S = 1.0
+HEARTBEAT_CONNECT_TIMEOUT_S = 10.0
+HEARTBEAT_CATCHUP_FAILURES_MAX = 3
+# herdr socket protocol versions this client speaks; an unknown one refuses to start
+SUPPORTED_HERDR_PROTOCOLS = (22,)
+# herdr detection rules whose "working" is a designed wait, never a hang
+DESIGNED_WAIT_RULES = ("background_agents_working", "background_mcp_task_working")
+# the default `unless` list: pane text that marks a designed wait
+DEFAULT_UNLESS = ("Waiting for", "background agent")
+
+DURATION_RE = re.compile(r"^(\d+)([smh])$")
+DURATION_UNITS = {"s": 1, "m": 60, "h": 3600}
+HEARTBEAT_CHECKS = ("unread", "idle", "hung", "blocked", "error")
+HEARTBEAT_ACTIONS = ("poke", "ring", "interrupt", "notify", "restart", "log")
+RULE_KEYS = ("do", "after", "match", "unless", "text", "to")
+
+
+def parse_duration(text: str) -> float | None:
+    """Seconds for `<integer><s|m|h>`, or None when the text is not a duration."""
+    match = DURATION_RE.fullmatch(str(text))
+    return int(match.group(1)) * DURATION_UNITS[match.group(2)] if match else None
+
+
+def heartbeat_policy_path(root: Path) -> Path:
+    return root / "heartbeat.toml"
+
+
+@dataclass(frozen=True, slots=True)
+class Rule:
+    """One configured check->action pair for one member."""
+
+    check: str
+    action: str
+    after: float | None = None  # seconds; None for the event-driven error check
+    match: tuple[str, ...] = ()
+    unless: tuple[str, ...] = ()
+    text: str | None = None
+    to: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HeartbeatPolicy:
+    interval: float
+    escalate_to: str | None
+    rules: dict[str, tuple[Rule, ...]]  # member name -> its rules; a member absent here is never acted on
+
+
+def parse_policy(
+    text: str, path: Path, member_by_name: dict[str, Member]
+) -> tuple[HeartbeatPolicy | None, list[str]]:
+    """(policy, problems); the loaders fail loudly on any problem, naming the offending key."""
+    problems: list[str] = []
+    try:
+        doc = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        return None, [f"{path} is not valid TOML: {exc}"]
+    if not isinstance(doc, dict):
+        return None, [f"{path} must be a table"]
+    unknown_top = sorted(set(doc) - {"interval", "escalate_to", "member"})
+    if unknown_top:
+        problems.append(f"{path}: unknown top-level keys {unknown_top}; allowed: interval, escalate_to, member")
+    interval = HEARTBEAT_INTERVAL_DEFAULT_S
+    if "interval" in doc:
+        raw = doc["interval"]
+        seconds = parse_duration(raw) if isinstance(raw, str) else None
+        if seconds is None:
+            problems.append(f"{path}: interval {raw!r} must be a duration like 5m")
+        elif seconds < HEARTBEAT_INTERVAL_MIN_S:
+            problems.append(f"{path}: interval {raw!r} must be at least 1m")
+        else:
+            interval = seconds
+    escalate_to = doc.get("escalate_to")
+    if escalate_to is not None and escalate_to not in member_by_name:
+        problems.append(f"{path}: escalate_to {escalate_to!r} is not a mesh member; members are {sorted(member_by_name)}")
+        escalate_to = None
+    rules: dict[str, tuple[Rule, ...]] = {}
+    tables = doc.get("member", {})
+    if not isinstance(tables, dict):
+        problems.append(f"{path}: member must be a table of [member.<name>] tables")
+        tables = {}
+    for name, table in tables.items():
+        m = member_by_name.get(name)
+        if m is None:
+            problems.append(f"{path}: [member.{name}] is not a mesh member; members are {sorted(member_by_name)}")
+            continue
+        where = f"{path}: [member.{name}]"
+        if not isinstance(table, dict):
+            problems.append(f"{where} must be a table of checks")
+            continue
+        unknown = sorted(set(table) - set(HEARTBEAT_CHECKS))
+        if unknown:
+            problems.append(f"{where} has unknown checks {unknown}; allowed: {list(HEARTBEAT_CHECKS)}")
+        member_rules = []
+        for check, spec in table.items():
+            if check not in HEARTBEAT_CHECKS:
+                continue
+            cwhere = f"{where}.{check}"
+            if not isinstance(spec, dict):
+                problems.append(f'{cwhere} must be a table like {{after = "10m", do = "poke"}}')
+                continue
+            unknown_c = sorted(set(spec) - set(RULE_KEYS))
+            if unknown_c:
+                problems.append(f"{cwhere} has unknown keys {unknown_c}; allowed: {list(RULE_KEYS)}")
+            do = spec.get("do")
+            if do not in HEARTBEAT_ACTIONS:
+                problems.append(f"{cwhere} do {do!r} is not one of {list(HEARTBEAT_ACTIONS)}")
+                continue
+            bad = False
+            after: float | None = None
+            match: tuple[str, ...] = ()
+            unless: tuple[str, ...] = ()
+            text: str | None = None
+            to: str | None = None
+            if check == "error":
+                raw_match = spec.get("match")
+                if isinstance(raw_match, str):
+                    raw_match = [raw_match]
+                if not (isinstance(raw_match, list) and raw_match and all(isinstance(x, str) and x for x in raw_match)):
+                    problems.append(f"{cwhere} requires match - a string or list of strings")
+                    bad = True
+                else:
+                    match = tuple(raw_match)
+            else:
+                seconds = parse_duration(spec.get("after")) if isinstance(spec.get("after"), str) else None
+                if seconds is None:
+                    problems.append(f"{cwhere} requires after - a duration like 30m")
+                    bad = True
+                else:
+                    after = seconds
+            if check == "hung":
+                raw_unless = spec.get("unless", DEFAULT_UNLESS)
+                if isinstance(raw_unless, str):
+                    raw_unless = [raw_unless]
+                if isinstance(raw_unless, list) and all(isinstance(x, str) for x in raw_unless):
+                    unless = tuple(raw_unless)
+                if m.harness != "claude":
+                    problems.append(
+                        f"{cwhere} hung is defined only for claude members; {name} records harness {m.harness!r}"
+                    )
+                    bad = True
+            if do in ("ring", "interrupt"):
+                if not isinstance(spec.get("text"), str) or not spec["text"]:
+                    problems.append(f"{cwhere} do {do!r} requires text")
+                    bad = True
+                else:
+                    text = spec["text"]
+            if do == "interrupt" and m.harness != "claude":
+                problems.append(
+                    f"{cwhere} interrupt is valid only where Escape interrupts a turn (claude members);"
+                    f" {name} records harness {m.harness!r}"
+                )
+                bad = True
+            if do == "notify":
+                if spec.get("to") not in member_by_name or spec.get("to") in RESERVED_NAMES:
+                    problems.append(f"{cwhere} notify requires to - an existing mesh member")
+                    bad = True
+                else:
+                    to = spec["to"]
+            if do == "restart" and m.launcher is None:
+                problems.append(
+                    f"{cwhere} restart requires a member with a recorded launcher; {name} records none"
+                    " (see `mailbox adopt`)"
+                )
+                bad = True
+            if bad:
+                continue
+            member_rules.append(Rule(check=check, action=do, after=after, match=match, unless=unless, text=text, to=to))
+        if member_rules:
+            rules[name] = tuple(member_rules)
+    if problems:
+        return None, problems
+    return HeartbeatPolicy(interval=interval, escalate_to=escalate_to, rules=rules), []
+
+
+def load_heartbeat_policy(root: Path, *, required: bool) -> HeartbeatPolicy | None:
+    """The mesh's validated heartbeat policy; None when no heartbeat.toml exists."""
+    path = heartbeat_policy_path(root)
+    if not path.is_file():
+        if required:
+            fail(
+                f"{path} is missing - the heartbeat is off for this mesh; create one with"
+                f" `{root / 'bin' / 'mailbox'} heartbeat init --template <name>`"
+            )
+        return None
+    policy, problems = parse_policy(path.read_text(), path, {m.name: m for m in members(root)})
+    if problems:
+        fail("; ".join(problems))
+    return policy
+
+
+# the shipped templates; heartbeat init writes one, refusing to overwrite
+
+def overseer_worker_template(overseer: str, worker: str) -> str:
+    return f'''interval = "5m"
+escalate_to = "{overseer}"
+
+[member.{worker}]
+unread  = {{ after = "10m", do = "poke" }}
+idle    = {{ after = "60m", do = "ring", text = "heartbeat: idle 60+ min. Continue unfinished work, set a wake on running jobs, or mail the overseer if blocked. Otherwise end the turn." }}
+hung    = {{ after = "30m", do = "interrupt", text = "heartbeat: your turn hung and was interrupted; resume where you left off." }}
+blocked = {{ after = "30m", do = "notify", to = "{overseer}" }}
+error   = {{ match = ["issue with the selected model", "API Error"], do = "notify", to = "{overseer}" }}
+
+[member.{overseer}]
+unread = {{ after = "15m", do = "poke" }}
+hung   = {{ after = "30m", do = "interrupt", text = "heartbeat: your turn hung and was interrupted; continue." }}
+'''
+
+
+def peers_template(roster: list[Member]) -> str:
+    lines = ['interval = "5m"', ""]
+    for m in roster:
+        lines.append(f"[member.{m.name}]")
+        lines.append('unread = { after = "10m", do = "poke" }')
+        if m.harness == "claude":
+            lines.append(
+                'hung = { after = "30m", do = "interrupt",'
+                ' text = "heartbeat: your turn hung and was interrupted; resume where you left off." }'
+            )
+        lines.append("")
+    return "\n".join(lines)
+
+
+def log_only_template(roster: list[Member]) -> str:
+    lines = ['interval = "5m"', ""]
+    for m in roster:
+        lines.append(f"[member.{m.name}]")
+        lines.append('unread  = { after = "10m", do = "log" }')
+        lines.append('idle    = { after = "60m", do = "log" }')
+        lines.append('blocked = { after = "30m", do = "log" }')
+        lines.append('error   = { match = ["issue with the selected model", "API Error"], do = "log" }')
+        if m.harness == "claude":
+            lines.append('hung    = { after = "30m", do = "log" }')
+        lines.append("")
+    return "\n".join(lines)
+
+
+# the pure watcher core: (policy, state, input, now) -> firings. Owns no I/O,
+# takes an injected clock, and is tested directly with event sequences.
+
+@dataclass(slots=True)
+class Episode:
+    """One check's firing history inside a continuous stretch of the condition holding.
+
+    Fires twice, escalates once on the third due firing, then stays silent until
+    the condition ends - so an episode fires at most three times."""
+
+    fires: int = 0
+    escalated: bool = False
+    silent: bool = False
+    last_fire: float | None = None
+
+
+@dataclass(slots=True)
+class WatchState:
+    """One watched member's observed state."""
+
+    status: str | None = None
+    status_since: float | None = None  # when the current status was entered under observation
+    absent: bool = False
+    unread_oldest: float | None = None  # mtime of the oldest unread file, when unread was observed
+    unread_count: int = 0
+    pane_text: str = ""
+    transcript_write: float | None = None
+    designed_wait: bool = False
+    designed_wait_left_at: float | None = None  # hung time starts over from here after a designed wait
+    episodes: dict[str, Episode] = field(default_factory=dict)
+    last_fire: dict[str, dict[str, str]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class Observation:
+    """One member's directly observed state, from herdr, the inbox and the transcript."""
+
+    status: str | None  # None: no live agent at the seat (absent)
+    unread_oldest: float | None
+    unread_count: int
+    transcript_write: float | None
+    pane_text: str = ""
+    designed_wait: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Firing:
+    member: str
+    rule: Rule
+    escalated: bool
+    evidence: str
+
+
+class Watcher:
+    """The pure watcher core: deadlines armed and cancelled by events, firings evaluated
+    against the policy, cooldown and episode."""
+
+    def __init__(self, policy: HeartbeatPolicy, clock: Callable[[], float]):
+        self.policy = policy
+        self.clock = clock
+        self.states: dict[str, WatchState] = {name: WatchState() for name in policy.rules}
+
+    def on_status(self, member: str, status: str, now: float) -> None:
+        st = self.states[member]
+        st.absent = False
+        if status != st.status:
+            st.status = status
+            st.status_since = now
+
+    def on_absent(self, member: str, now: float) -> None:
+        self.states[member].absent = True
+
+    def observe(self, member: str, obs: Observation, now: float) -> list[str]:
+        """Reconcile one catch-up observation; returns this member's absent/present transitions."""
+        st = self.states[member]
+        transitions: list[str] = []
+        if obs.status is None:
+            if not st.absent:
+                st.absent = True
+                transitions.append("absent")
+            return transitions
+        if st.absent:
+            st.absent = False
+            transitions.append("present")
+        if obs.status != st.status:
+            st.status = obs.status
+            st.status_since = now
+        st.unread_oldest = obs.unread_oldest
+        st.unread_count = obs.unread_count
+        st.pane_text = obs.pane_text
+        st.transcript_write = obs.transcript_write
+        if obs.designed_wait and not st.designed_wait:
+            st.designed_wait = True
+        elif not obs.designed_wait and st.designed_wait:
+            st.designed_wait = False
+            # leaving a designed wait re-arms the hung clock from this moment
+            st.designed_wait_left_at = now
+        return transitions
+
+    def on_match(self, member: str, line: str, now: float) -> list[Firing]:
+        """An output-match event: each matching error rule evaluates its full holding
+        condition. A match printed while working is left for the catch-up pass."""
+        st = self.states[member]
+        if st.absent or st.status != "idle":
+            return []
+        firings = []
+        for rule in self.policy.rules[member]:
+            if rule.check != "error":
+                continue
+            if not any(pattern.lower() in line.lower() for pattern in rule.match):
+                continue
+            firing = self._consider(member, rule, now, evidence=f"pane printed {line[:120]!r}")
+            if firing is not None:
+                firings.append(firing)
+        return firings
+
+    def holds(self, member: str, rule: Rule, now: float) -> str | None:
+        """Evidence when the rule's condition holds at NOW, else None."""
+        st = self.states[member]
+        if st.absent or st.status is None:
+            return None
+        if rule.check == "unread":
+            if st.status != "idle" or st.unread_oldest is None or rule.after is None:
+                return None
+            age = now - st.unread_oldest
+            return f"oldest unread {age:.0f}s old (after {rule.after:.0f}s)" if age >= rule.after else None
+        if rule.check == "idle":
+            if st.status != "idle" or st.unread_count or st.status_since is None or rule.after is None:
+                return None
+            age = now - st.status_since
+            return f"idle {age:.0f}s (after {rule.after:.0f}s)" if age >= rule.after else None
+        if rule.check == "hung":
+            if st.status != "working" or st.designed_wait or st.transcript_write is None or rule.after is None:
+                return None
+            age = now - max(st.transcript_write, st.designed_wait_left_at or st.transcript_write)
+            return f"working, transcript quiet {age:.0f}s (after {rule.after:.0f}s)" if age >= rule.after else None
+        if rule.check == "blocked":
+            if st.status != "blocked" or st.status_since is None or rule.after is None:
+                return None
+            age = now - st.status_since
+            return f"blocked {age:.0f}s (after {rule.after:.0f}s)" if age >= rule.after else None
+        if rule.check == "error":
+            if st.status != "idle" or not rule.match:
+                return None
+            hit = next((pattern for pattern in rule.match if pattern.lower() in st.pane_text.lower()), None)
+            return f"pane shows {hit!r}" if hit else None
+        return None
+
+    def cooldown(self, rule: Rule) -> float:
+        # a duration check re-arms for another `after`; error re-arms after the
+        # catch-up interval, so one stuck error screen does not fire on every repaint
+        return self.policy.interval if rule.check == "error" else (rule.after or 0.0)
+
+    def _consider(self, member: str, rule: Rule, now: float, evidence: str | None = None) -> Firing | None:
+        st = self.states[member]
+        holds = self.holds(member, rule, now) if evidence is None else evidence
+        episode = st.episodes.setdefault(rule.check, Episode())
+        if holds is None:
+            # the condition ended: the episode is over and the next stretch starts fresh
+            if episode.fires or episode.silent:
+                st.episodes[rule.check] = Episode()
+            return None
+        if episode.silent:
+            return None
+        if episode.last_fire is not None and now < episode.last_fire + self.cooldown(rule):
+            return None
+        if episode.fires >= 2:
+            episode.escalated = True
+            episode.silent = True
+            episode.last_fire = now
+            return Firing(member=member, rule=rule, escalated=True, evidence=holds)
+        episode.fires += 1
+        episode.last_fire = now
+        return Firing(member=member, rule=rule, escalated=False, evidence=holds)
+
+    def due(self, now: float) -> list[Firing]:
+        return [
+            firing
+            for member in self.policy.rules
+            for firing in (self._consider(member, rule, now) for rule in self.policy.rules[member])
+            if firing is not None
+        ]
+
+    def undo_fire(self, member: str, check: str, now: float) -> None:
+        """Take back a firing whose action did not land, so it retries at the next pass."""
+        episode = self.states[member].episodes.get(check)
+        if episode is None:
+            return
+        if episode.escalated:
+            episode.escalated = False
+            episode.silent = False
+        elif episode.fires:
+            episode.fires -= 1
+        if episode.last_fire is not None:
+            # retry at the next catch-up pass, the cooldown still running
+            rule = next(r for r in self.policy.rules[member] if r.check == check)
+            episode.last_fire = now - self.cooldown(rule) + self.policy.interval
+
+    def rearm_hung(self, member: str, transcript_write: float | None) -> bool:
+        """A due hung firing whose transcript moved is rearmed, not fired."""
+        st = self.states[member]
+        if transcript_write is not None and (st.transcript_write is None or transcript_write > st.transcript_write):
+            st.transcript_write = transcript_write
+            return True
+        return False
+
+    def next_deadline(self) -> float | None:
+        """The earliest time anything can next fire, or None - the loop's wake computation."""
+        now = self.clock()
+        best: float | None = None
+        for member, rules in self.policy.rules.items():
+            st = self.states[member]
+            for rule in rules:
+                episode = st.episodes.get(rule.check)
+                candidate = None
+                if episode is not None and episode.last_fire is not None:
+                    candidate = episode.last_fire + self.cooldown(rule)
+                elif rule.after is not None:
+                    if rule.check == "unread" and st.unread_oldest is not None:
+                        candidate = st.unread_oldest + rule.after
+                    elif rule.check == "idle" and st.status == "idle" and st.status_since is not None:
+                        candidate = st.status_since + rule.after
+                    elif rule.check == "blocked" and st.status == "blocked" and st.status_since is not None:
+                        candidate = st.status_since + rule.after
+                    elif rule.check == "hung" and st.status == "working" and st.transcript_write is not None:
+                        candidate = max(st.transcript_write, st.designed_wait_left_at or st.transcript_write) + rule.after
+                if candidate is not None and (best is None or candidate < best):
+                    best = candidate
+        return best
+
+    def record_fire(self, member: str, rule: Rule, outcome: str, now: float) -> None:
+        self.states[member].last_fire[rule.check] = {
+            "time": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds"),
+            "action": rule.action,
+            "outcome": outcome,
+        }
+
+
+# the I/O half: observations, actions, the socket client, the loop, the lock
+
+def observe_member(root: Path, member: Member | None, rules: tuple[Rule, ...]) -> Observation:
+    """One member's observed state: herdr status, inbox ages, transcript age, pane text."""
+    if member is None or member.seat is None:
+        return Observation(status=None, unread_oldest=None, unread_count=0, transcript_write=None)
+    record = agent_record_for_pane(member.seat.pane)
+    if not record:
+        return Observation(status=None, unread_oldest=None, unread_count=0, transcript_write=None)
+    unread = messages_in(root / "inboxes" / member.name, strict=False)
+    oldest = min((path.stat().st_mtime for path in unread), default=None)
+    transcript = (
+        transcript_last_write(member.harness_session)
+        if member.harness == "claude" and member.harness_session else None
+    )
+    pane_text = ""
+    designed = False
+    # the pane is read only when a rule needs its text: error matches and hung's
+    # designed-wait markers
+    if any(rule.check in ("error", "hung") for rule in rules):
+        try:
+            pane_text = herdr("pane", "read", "--source", "visible", member.seat.pane)
+        except HerdrError:
+            pane_text = ""
+        designed = designed_wait(member.seat.pane, pane_text, rules)
+    return Observation(
+        status=record.get("agent_status"),
+        unread_oldest=oldest,
+        unread_count=len(unread),
+        transcript_write=transcript,
+        pane_text=pane_text,
+        designed_wait=designed,
+    )
+
+
+def designed_wait(pane: str, pane_text: str, rules: tuple[Rule, ...]) -> bool:
+    """True when the member's "working" is a wait by design: herdr's matched detection
+    rule is a background-wait rule, or the pane text carries an `unless` marker."""
+    hung_rules = [rule for rule in rules if rule.check == "hung"]
+    if not hung_rules:
+        return False
+    try:
+        explained = json.loads(herdr("agent", "explain", pane, "--json"))
+        rule_id = (explained.get("matched_rule") or {}).get("id")
+        if rule_id in DESIGNED_WAIT_RULES:
+            return True
+    except (HerdrError, json.JSONDecodeError):
+        pass
+    lowered = pane_text.lower()
+    return any(marker.lower() in lowered for rule in hung_rules for marker in (rule.unless or DEFAULT_UNLESS))
+
+
+def heartbeat_notify(root: Path, to: str, slug: str, body: str) -> None:
+    """Write one message from the reserved sender `heartbeat`, then ring the recipient."""
+    seq = f"{next_seq(root, 'heartbeat'):0{SEQ_WIDTH}d}"
+    msg_id = f"{seq}-{slug}"
+    write_messages(root, "heartbeat", msg_id, Kind.MSG, body, [to])
+    member = member_named(root, to)
+    log_event(root, event="sent", sender="heartbeat", session=member.harness_session if member else None,
+              id=msg_id, kind="msg", to=[to])
+    ring(root, to)
+
+
+def raise_herdr_notification(title: str, body: str) -> None:
+    """A best-effort human channel: the worst case it covers - nobody reading the log -
+    is exactly when the loop must still reach a person."""
+    try:
+        herdr("notification", "show", title, "--body", body[:240])
+    except (HerdrError, OSError):
+        pass
+
+
+def run_firing(root: Path, firing: Firing, policy: HeartbeatPolicy, *, dry_run: bool) -> tuple[str, bool]:
+    """(outcome line, effective) for one firing. The heartbeat is not a joined member,
+    so it calls the shared internals - the ring, the message writer, the restart core -
+    with the caller identity `heartbeat`, never the member-facing verbs.
+
+    An action that does not land (a ring that stayed unsubmitted) returns
+    effective=False so the loop takes the firing back and retries next pass."""
+    rule = firing.rule
+    if dry_run:
+        action = "escalate" if firing.escalated else rule.action
+        return f"would {action}: {firing.evidence}", True
+    member = member_named(root, firing.member)
+    if member is None or member.seat is None:
+        return "member has no live record", False
+    pane = member.seat.pane
+    try:
+        if firing.escalated:
+            if policy.escalate_to:
+                body = (
+                    f"heartbeat needs a human: {firing.member}'s {rule.check} check is still"
+                    f" holding after two firings.\ncheck: {rule.check} ({rule.action})\n"
+                    f"evidence: {firing.evidence}\npane: {pane}\n"
+                )
+                heartbeat_notify(root, policy.escalate_to, f"escalate-{rule.check}", body)
+            raise_herdr_notification(
+                f"mailbox heartbeat: {firing.member} {rule.check}",
+                f"still holding: {firing.evidence}",
+            )
+            return "needs-human", True
+        if rule.action == "poke":
+            if not messages_in(root / "inboxes" / firing.member, strict=False):
+                return "nothing to poke", True
+            outcome, _ = ring(root, firing.member)
+            return str(outcome), outcome is RingOutcome.RUNG
+        if rule.action == "ring":
+            outcome, evidence = ring_seat(pane, f"{rule.text} - contract: ../../README.md", wait_ms=MAIL_RING_WAIT_MS)
+            return f"{outcome}" + (f"; {evidence}" if evidence else ""), outcome in (RingOutcome.RUNG, RingOutcome.QUEUED)
+        if rule.action == "interrupt":
+            interrupt_seat(member, f"{rule.text} - contract: ../../README.md", f"heartbeat interrupt {firing.member}")
+            return "interrupted", True
+        if rule.action == "notify":
+            body = (
+                f"heartbeat: {firing.member} tripped its {rule.check} check.\n"
+                f"evidence: {firing.evidence}\npane: {pane}\n"
+            )
+            heartbeat_notify(root, rule.to, f"{rule.check}-{firing.member}", body)
+            return f"notified {rule.to}", True
+        if rule.action == "restart":
+            restart_member(root, member, "heartbeat", f"heartbeat: {rule.check} ({firing.evidence})", force=False)
+            return "restarted", True
+        return "logged", True
+    except InterruptUnconfirmed as exc:
+        # the ring is not sent; the firing still counts, so the episode continues toward escalation
+        return f"interrupt-unconfirmed ({exc})", True
+    except typer.Exit:
+        return "action failed - see the pane output", False
+    except HerdrError as exc:
+        return f"herdr error: {exc.code}", False
+
+
+# herdr exposes events.subscribe only on its socket, never as a CLI verb; the
+# helper speaks the newline-delimited JSON protocol directly
+
+class EventsLost(Exception):
+    """herdr dropped retained history for this subscriber; reconnect and catch up."""
+
+
+class ConnectionDropped(Exception):
+    """herdr closed the subscription connection."""
+
+
+class HerdrProtocolError(Exception):
+    """herdr refused the subscription or spoke an unknown protocol."""
+
+
+class EventsConnection:
+    """One events.subscribe request on herdr's socket, then the pushed envelopes."""
+
+    def __init__(self, path: Path, subscriptions: list[dict[str, Any]]):
+        self.path = path
+        self.subscriptions = subscriptions
+        self.sub_id = "mailbox-heartbeat"
+        self.sock: socket.socket | None = None
+        self.buffer = b""
+
+    def connect(self) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(str(self.path))
+        self.buffer = b""
+        request = {"id": self.sub_id, "method": "events.subscribe",
+                   "params": {"subscriptions": self.subscriptions}}
+        self.sock.sendall(json.dumps(request).encode() + b"\n")
+        # the first response only acknowledges the subscription; events follow
+        response = json.loads(self._read_line(HEARTBEAT_CONNECT_TIMEOUT_S))
+        if "error" in response:
+            error = response["error"]
+            raise HerdrProtocolError(f"herdr refused the subscription: {error.get('code')}: {error.get('message')}")
+
+    def _read_line(self, timeout_s: float) -> bytes:
+        assert self.sock is not None
+        while b"\n" not in self.buffer:
+            readable, _, _ = select.select([self.sock], [], [], timeout_s)
+            if not readable:
+                raise HerdrProtocolError(f"no subscription acknowledgement from herdr within {timeout_s:g}s")
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionDropped(f"herdr closed {self.path}")
+            self.buffer += chunk
+        line, self.buffer = self.buffer.split(b"\n", 1)
+        return line
+
+    def next_event(self, timeout_s: float) -> dict[str, Any] | None:
+        """The next pushed subscription envelope, or None within TIMEOUT_S."""
+        assert self.sock is not None
+        while b"\n" not in self.buffer:
+            readable, _, _ = select.select([self.sock], [], [], timeout_s)
+            if not readable:
+                return None
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise ConnectionDropped(f"herdr closed {self.path}")
+            self.buffer += chunk
+            timeout_s = 0.0  # buffered bytes must not wait again
+        line, self.buffer = self.buffer.split(b"\n", 1)
+        envelope = json.loads(line)
+        if "error" in envelope:
+            error = envelope["error"]
+            if error.get("code") == "events_lost":
+                raise EventsLost(error.get("message", "events_lost"))
+            raise HerdrProtocolError(f"subscription error {error.get('code')}: {error.get('message')}")
+        return envelope
+
+    def close(self) -> None:
+        if self.sock is not None:
+            with contextlib.suppress(OSError):
+                self.sock.close()
+            self.sock = None
+
+
+def herdr_socket() -> tuple[Path, int]:
+    """(socket path, protocol version) of this session's herdr server, from `herdr status`."""
+    status = json.loads(herdr("status", "--json"))
+    server = status.get("server") or {}
+    return Path(server["socket"]), int(server.get("protocol") or 0)
+
+
+def heartbeat_subscriptions(policy: HeartbeatPolicy, member_by_name: dict[str, Member]) -> list[dict[str, Any]]:
+    """One status subscription per watched seat, one output-match subscription per
+    configured error pattern."""
+    subscriptions: list[dict[str, Any]] = []
+    for name in policy.rules:
+        member = member_by_name.get(name)
+        if member is None or member.seat is None:
+            continue
+        subscriptions.append({"type": "pane.agent_status_changed", "pane_id": member.seat.pane})
+        for rule in policy.rules[name]:
+            if rule.check != "error":
+                continue
+            for pattern in rule.match:
+                subscriptions.append({
+                    "type": "pane.output_matched", "pane_id": member.seat.pane,
+                    "source": "visible", "match": {"type": "substring", "value": pattern},
+                })
+    return subscriptions
+
+
+class HeartbeatLoop:
+    """The foreground loop: events and catch-up observations feed the watcher core,
+    actions run one at a time, and the lock is held for the loop's whole lifetime."""
+
+    def __init__(
+        self,
+        root: Path,
+        policy: HeartbeatPolicy,
+        *,
+        clock: Callable[[], float] = time.time,
+        sleep: Callable[[float], None] = time.sleep,
+        connect: Callable[[Path, list[dict[str, Any]]], EventsConnection] = EventsConnection,
+        socket_info: Callable[[], tuple[Path, int]] = herdr_socket,
+    ) -> None:
+        self.root = root
+        self.policy = policy
+        self.policy_text = heartbeat_policy_path(root).read_text() if heartbeat_policy_path(root).is_file() else ""
+        self.clock = clock
+        self.sleep = sleep
+        self.connect = connect
+        self.socket_info = socket_info
+        self.watcher = Watcher(policy, clock)
+        self.connection: EventsConnection | None = None
+        self.current_subs: list[dict[str, Any]] = []
+        self.pane_to_member: dict[str, str] = {}
+        self.connected = False
+        self.reload_flag = False
+        self.stopping = False
+        self.stopped_note = False
+        self.started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.last_pass: float | None = None
+        self.failures = 0
+
+    def note(self, *, log: bool = True, **event: object) -> None:
+        """One line in the heartbeat pane and one heartbeat log event (no log when dry)."""
+        rendered = " ".join(f"{key}={value}" for key, value in event.items() if value is not None)
+        typer.echo(f"heartbeat: {rendered}")
+        if log:
+            log_event(self.root, event="heartbeat", **event)
+
+    def refresh_roster(self) -> dict[str, Member]:
+        records = {m.name: m for m in members(self.root)}
+        self.pane_to_member = {
+            m.seat.pane: name
+            for name, m in records.items()
+            if name in self.policy.rules and m.seat is not None
+        }
+        return records
+
+    def ensure_connected(self) -> None:
+        if self.connected:
+            return
+        path, protocol = self.socket_info()
+        if protocol not in SUPPORTED_HERDR_PROTOCOLS:
+            fail(
+                f"herdr speaks socket protocol {protocol}; this helper supports only"
+                f" {SUPPORTED_HERDR_PROTOCOLS} - refusing to run the heartbeat against an unknown protocol"
+            )
+        records = self.refresh_roster()
+        subs = heartbeat_subscriptions(self.policy, records)
+        connection = self.connect(path, subs)
+        try:
+            connection.connect()
+        except (HerdrProtocolError, EventsLost, ConnectionDropped):
+            connection.close()
+            raise
+        self.connection = connection
+        self.current_subs = subs
+        self.connected = True
+
+    def disconnect(self) -> None:
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
+        self.connected = False
+
+    def catchup(self, dry_run: bool = False) -> bool:
+        """One reconciliation pass over every watched member; False when any observation failed."""
+        records = self.refresh_roster()
+        # the pass re-resolves seats; a member whose pane id changed is re-subscribed
+        subs = heartbeat_subscriptions(self.policy, records)
+        if self.connected and subs != self.current_subs:
+            self.disconnect()
+            self.ensure_connected()
+        now = self.clock()
+        ok = True
+        for name in self.policy.rules:
+            try:
+                obs = observe_member(self.root, records.get(name), self.policy.rules[name])
+            except HerdrError as exc:
+                self.note(member=name, action="observe-error", outcome=exc.code)
+                ok = False
+                continue
+            for transition in self.watcher.observe(name, obs, now):
+                self.note(member=name, action=transition)
+        self.fire_due(dry_run)
+        self.last_pass = now
+        self.failures = 0 if ok else self.failures + 1
+        self.write_state()
+        return ok
+
+    def fire_due(self, dry_run: bool) -> None:
+        for firing in self.watcher.due(self.clock()):
+            self.run_firing(firing, dry_run)
+
+    def run_firing(self, firing: Firing, dry_run: bool) -> None:
+        # a due hung firing whose transcript moved is rearmed, not fired
+        if firing.rule.check == "hung" and not dry_run:
+            member = member_named(self.root, firing.member)
+            if member is not None and member.harness == "claude" and member.harness_session:
+                if self.watcher.rearm_hung(firing.member, transcript_last_write(member.harness_session)):
+                    return
+        outcome, effective = run_firing(self.root, firing, self.policy, dry_run=dry_run)
+        if not effective:
+            self.watcher.undo_fire(firing.member, firing.rule.check, self.clock())
+        self.watcher.record_fire(firing.member, firing.rule, outcome, self.clock())
+        action = "escalation" if firing.escalated else "firing"
+        self.note(log=not dry_run, member=firing.member, action=action,
+                  check=firing.rule.check, do=firing.rule.action, outcome=outcome,
+                  evidence=firing.evidence)
+
+    def handle_event(self, envelope: dict[str, Any], dry_run: bool) -> None:
+        kind = envelope.get("event")
+        data = envelope.get("data") or {}
+        member = self.pane_to_member.get(data.get("pane_id"))
+        if member is None:
+            return
+        now = self.clock()
+        if kind == "pane.agent_status_changed":
+            status = data.get("agent_status")
+            if status is None:
+                self.watcher.on_absent(member, now)
+            else:
+                self.watcher.on_status(member, status, now)
+        elif kind == "pane.output_matched":
+            for firing in self.watcher.on_match(member, data.get("matched_line") or "", now):
+                self.run_firing(firing, dry_run)
+
+    def reload_policy(self) -> None:
+        """Re-read heartbeat.toml; an invalid edit keeps the last valid policy in force."""
+        path = heartbeat_policy_path(self.root)
+        if not path.is_file():
+            self.note(action="stop", outcome="policy deleted")
+            self.stopping = True
+            self.stopped_note = True
+            return
+        text = path.read_text()
+        self.policy_text = text
+        policy, problems = parse_policy(text, path, {m.name: m for m in members(self.root)})
+        if policy is None:
+            self.note(action="config-error", outcome="; ".join(problems)[:500])
+            return
+        self.policy = policy
+        # subscriptions and deadlines are rebuilt to match the new policy
+        self.watcher = Watcher(policy, self.clock)
+        self.disconnect()
+        self.note(action="reload", outcome=f"{len(policy.rules)} members watched")
+
+    def backoff_reconnect(self) -> None:
+        delay = 0.5
+        while not self.stopping:
+            self.sleep(delay)
+            delay = min(delay * 2, 30.0)
+            try:
+                self.ensure_connected()
+                self.note(action="reconnected")
+                # while disconnected the catch-up pass alone drove the checks;
+                # a pass on reconnect repairs what a missed event left wrong
+                self.catchup()
+                return
+            except (HerdrProtocolError, HerdrError, OSError, EventsLost) as exc:
+                self.note(action="reconnect-failed", outcome=str(exc)[:300])
+
+    def write_state(self) -> None:
+        state = {
+            "started": self.started,
+            "last_pass": (
+                datetime.fromtimestamp(self.last_pass, tz=timezone.utc).isoformat(timespec="seconds")
+                if self.last_pass is not None else None
+            ),
+            "connected": self.connected,
+            "members": {
+                name: {
+                    "status": st.status,
+                    "absent": st.absent,
+                    "unread": st.unread_count,
+                    "last_fire": st.last_fire,
+                }
+                for name, st in self.watcher.states.items()
+            },
+        }
+        write_atomic(self.root / HEARTBEAT_STATE_FILE, json.dumps(state, indent=1) + "\n")
+
+    def run(self, dry_run: bool = False) -> None:
+        def on_term(signum: object, frame: object) -> None:
+            self.stopping = True
+
+        def on_hup(signum: object, frame: object) -> None:
+            self.reload_flag = True
+
+        signal.signal(signal.SIGTERM, on_term)
+        signal.signal(signal.SIGHUP, on_hup)
+        self.ensure_connected()
+        self.note(action="start", outcome=f"interval {self.policy.interval:.0f}s")
+        next_pass = self.clock()
+        try:
+            while not self.stopping:
+                now = self.clock()
+                if self.reload_flag:
+                    self.reload_flag = False
+                    self.reload_policy()
+                    if self.stopping:
+                        break
+                if now >= next_pass:
+                    # the policy file is re-read at every pass; only a change reloads
+                    path = heartbeat_policy_path(self.root)
+                    if not path.is_file():
+                        self.note(action="stop", outcome="policy deleted")
+                        self.stopped_note = True
+                        break
+                    text = path.read_text()
+                    if text != self.policy_text:
+                        self.reload_policy()
+                        if self.stopping:
+                            break
+                    self.catchup(dry_run)
+                    if self.failures >= HEARTBEAT_CATCHUP_FAILURES_MAX:
+                        self.note(action="stop", outcome="catch-up failed for every member three passes running")
+                        raise typer.Exit(1)
+                    next_pass = self.clock() + self.policy.interval
+                    continue
+                wake = min(max(next_pass - now, 0.0), HEARTBEAT_POLL_CAP_S)
+                deadline = self.watcher.next_deadline()
+                if deadline is not None:
+                    wake = min(wake, max(deadline - now, 0.0))
+                try:
+                    if self.connected:
+                        event = self.connection.next_event(wake)  # type: ignore[union-attr]
+                    else:
+                        self.sleep(wake)
+                        event = None
+                except (ConnectionDropped, EventsLost) as exc:
+                    self.connected = False
+                    self.note(action="disconnected", outcome=str(exc)[:300])
+                    self.backoff_reconnect()
+                    continue
+                if event is not None:
+                    self.handle_event(event, dry_run)
+                else:
+                    self.fire_due(dry_run)
+        finally:
+            self.write_state()
+            self.disconnect()
+            if not self.stopped_note:
+                self.note(action="stop", outcome="signal" if self.stopping else "loop ended")
+
+
+class HeartbeatLock:
+    """The mesh's exclusive heartbeat lock: an OS file lock held for the loop's lifetime.
+
+    The OS releases it when the process dies, so "running" means only "the lock is
+    held" - no PID guessing. The file records the holder's pid, pane and start
+    time for `stop` and `status`."""
+
+    def __init__(self, root: Path):
+        self.path = root / HEARTBEAT_LOCK_FILE
+        self.fd: int | None = None
+
+    def acquire(self) -> "HeartbeatLock | LockInfo":
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            info = _read_lock_info(self.path)
+            os.close(fd)
+            return info
+        info = {
+            "pid": os.getpid(),
+            "pane": os.environ.get("HERDR_PANE_ID"),
+            "tab": os.environ.get("HERDR_TAB_ID"),
+            "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.write(fd, (json.dumps(info) + "\n").encode())
+        self.fd = fd
+        return self
+
+    def release(self) -> None:
+        if self.fd is not None:
+            with contextlib.suppress(OSError):
+                fcntl.flock(self.fd, fcntl.LOCK_UN)
+            os.close(self.fd)
+            self.fd = None
+
+
+@dataclass(frozen=True, slots=True)
+class LockInfo:
+    pid: int | None
+    pane: str | None
+    tab: str | None
+    started: str | None
+
+
+def _read_lock_info(path: Path) -> LockInfo:
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+    return LockInfo(
+        pid=raw.get("pid"), pane=raw.get("pane"), tab=raw.get("tab"), started=raw.get("started")
+    )
+
+
+def heartbeat_lock_holder(root: Path) -> LockInfo | None:
+    """The lock's holder while the lock is held, or None when no heartbeat runs."""
+    path = root / HEARTBEAT_LOCK_FILE
+    if not path.is_file():
+        return None
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return None
+    except OSError:
+        return _read_lock_info(path)
+    finally:
+        os.close(fd)
+
+
+def heartbeat_state_if_any(root: Path) -> dict[str, Any] | None:
+    try:
+        return json.loads((root / HEARTBEAT_STATE_FILE).read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def heartbeat_not_running_line(root: Path) -> str | None:
+    """The restart-on-next-mail-check line: with a policy configured and no lock held,
+    every mail check names the command that brings the heartbeat back (REQ-MAILBOX-19)."""
+    if not heartbeat_policy_path(root).is_file():
+        return None
+    if heartbeat_lock_holder(root) is not None:
+        return None
+    return f"heartbeat configured but not running: run {root / 'bin' / 'mailbox'} heartbeat start"
+
+
+heartbeat_app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(heartbeat_app, name="heartbeat")
+
+
+@heartbeat_app.command()
+def run(
+    once: Annotated[bool, typer.Option("--once", help="Run one catch-up pass and exit")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print each firing instead of acting; write no log")] = False,
+) -> None:
+    """The heartbeat loop: watch the mesh's members and act on stalls per heartbeat.toml."""
+    root = mailbox_root()
+    policy = load_heartbeat_policy(root, required=True)
+    lock = HeartbeatLock(root).acquire()
+    if not isinstance(lock, HeartbeatLock):
+        fail(
+            f"another heartbeat already holds {root / HEARTBEAT_LOCK_FILE}"
+            f" (pid {lock.pid}, pane {lock.pane}, started {lock.started})"
+        )
+    try:
+        loop = HeartbeatLoop(root, policy)
+        if once:
+            # one pass fires from directly observed evidence: file ages and
+            # transcript age; idle and blocked durations are unknown and cannot fire
+            loop.catchup(dry_run)
+        else:
+            loop.run(dry_run)
+    finally:
+        lock.release()
+
+
+@heartbeat_app.command()
+def start() -> None:
+    """Launch `run` in a new herdr tab labelled <mesh>-heartbeat and wait until it holds the lock."""
+    root = mailbox_root()
+    own_name(root)  # starting the heartbeat is acting in the mesh
+    load_heartbeat_policy(root, required=True)
+    helper = root / "bin" / "mailbox"
+    created = json.loads(herdr(
+        "tab", "create", "--workspace", own_workspace(),
+        "--label", f"{root.name}-heartbeat", "--no-focus",
+    ))["result"]
+    tab_id = created["tab"]["tab"]["tab_id"]
+    pane = created["root_pane"]["pane_id"]
+    herdr("pane", "run", pane, f"{shlex.quote(str(helper))} heartbeat run")
+    deadline = time.monotonic() + START_LOCK_WAIT_S
+    while time.monotonic() < deadline:
+        holder = heartbeat_lock_holder(root)
+        if holder is not None:
+            if holder.pane == pane:
+                typer.echo(f"heartbeat running in pane {pane} (tab {tab_id})")
+                return
+            herdr("tab", "close", tab_id)
+            fail(
+                f"another heartbeat already holds the lock (pid {holder.pid}, pane {holder.pane});"
+                " the tab this start opened is closed"
+            )
+        time.sleep(0.5)
+    fail(
+        f"the heartbeat did not take the lock within {START_LOCK_WAIT_S:g}s; its tab {tab_id}"
+        f" (pane {pane}) is left open - read the pane for the failure"
+    )
+
+
+@heartbeat_app.command()
+def stop() -> None:
+    """End the running heartbeat loop and close its tab. A holder outside herdr has no tab to close."""
+    root = mailbox_root()
+    own_name(root)
+    holder = heartbeat_lock_holder(root)
+    if holder is None:
+        typer.echo("heartbeat is not running")
+        return
+    if holder.pid is not None:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(holder.pid, signal.SIGTERM)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if heartbeat_lock_holder(root) is None:
+            break
+        time.sleep(0.2)
+    if holder.tab is not None:
+        herdr("tab", "close", holder.tab)
+    typer.echo("heartbeat stopped")
+
+
+@heartbeat_app.command()
+def reload() -> None:
+    """Signal the running loop to re-read heartbeat.toml now, instead of at the next pass."""
+    root = mailbox_root()
+    own_name(root)
+    holder = heartbeat_lock_holder(root)
+    if holder is None:
+        fail("heartbeat is not running")
+    if holder.pid is not None:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(holder.pid, signal.SIGHUP)
+    typer.echo("reload signalled")
+
+
+@heartbeat_app.command()
+def status() -> None:
+    """Report the heartbeat: running or not, the holding pane, the connection, the last pass, per-member state. Needs no join."""
+    root = mailbox_root()
+    if not heartbeat_policy_path(root).is_file():
+        typer.echo("heartbeat: no heartbeat.toml - off")
+        return
+    holder = heartbeat_lock_holder(root)
+    if holder is None:
+        typer.echo(f"heartbeat: configured but not running - run {root / 'bin' / 'mailbox'} heartbeat start")
+    else:
+        typer.echo(
+            f"heartbeat: running (pid {holder.pid}, pane {holder.pane}, started {holder.started})"
+        )
+    state = heartbeat_state_if_any(root)
+    if state is None:
+        return
+    typer.echo(f"connected: {state.get('connected')}  last pass: {state.get('last_pass')}")
+    for name, watched in sorted((state.get("members") or {}).items()):
+        typer.echo(
+            f"{name}: status {watched.get('status')}  unread {watched.get('unread')}"
+            f"  last fire {json.dumps(watched.get('last_fire'), sort_keys=True)}"
+        )
+
+
+@heartbeat_app.command("init")
+def init_heartbeat(
+    template: Annotated[str, typer.Option(help="overseer-worker | peers | log-only")],
+    overseer: Annotated[str | None, typer.Option(help="overseer-worker only: the overseer member name")] = None,
+    worker: Annotated[str | None, typer.Option(help="overseer-worker only: the worker member name")] = None,
+) -> None:
+    """Write heartbeat.toml from a shipped template. Refuses to overwrite an existing file."""
+    root = mailbox_root()
+    own_name(root)
+    path = heartbeat_policy_path(root)
+    if path.is_file():
+        fail(f"{path} already exists; heartbeat init refuses to overwrite it")
+    roster = members(root)
+    if template == "overseer-worker":
+        if not overseer or not worker:
+            fail("the overseer-worker template takes --overseer <member> and --worker <member>")
+        check_members(root, [overseer, worker])
+        text = overseer_worker_template(overseer, worker)
+    elif template == "peers":
+        if not roster:
+            fail("the mesh has no members to watch")
+        text = peers_template(roster)
+    elif template == "log-only":
+        if not roster:
+            fail("the mesh has no members to watch")
+        text = log_only_template(roster)
+    else:
+        fail(f"unknown template {template!r}; shipped templates: overseer-worker, peers, log-only")
+    # a template is shipped only in a shape its own validation accepts
+    policy, problems = parse_policy(text, path, {m.name: m for m in roster})
+    if policy is None:
+        fail(f"the {template} template failed its own validation: {problems}")
+    write_atomic(path, text)
+    typer.echo(f"wrote {path} ({len(policy.rules)} members watched); start it with {root / 'bin' / 'mailbox'} heartbeat start")
+
+
 def audit_members(root: Path) -> None:
-    # lenient by design: this is the recovery path for exactly the member files
-    # the loud roster verbs refuse (every verb routes through read_member)
-    flagged = False
     for path in sorted((root / "members").iterdir()):
         fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
         problem = member_file_problem(fields)
