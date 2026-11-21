@@ -1462,7 +1462,7 @@ def parse_launchers(text: str, path: Path) -> tuple[dict[str, Launcher], list[st
         if unknown:
             problems.append(f"{where} has unknown keys {unknown}; allowed: {sorted(LAUNCHER_KEYS)}")
         command = entry.get("command")
-        bad = False
+        bad = bool(unknown)
         if not (isinstance(command, list) and command and all(isinstance(el, str) and el for el in command)):
             problems.append(f"{where} command must be a non-empty list of strings - an argv list, never a shell line")
             bad = True
@@ -1924,7 +1924,7 @@ def inspect(
         typer.echo("launcher: none recorded")
     else:
         conf = launchers.get(m.launcher)
-        billed = f"billed={conf.billed}" if conf else "unknown launcher - absent from launchers.toml"
+        billed = f"billed={'true' if conf.billed else 'false'}" if conf else "unknown launcher - absent from launchers.toml"
         typer.echo(f"launcher: {m.launcher} ({billed})")
     state = heartbeat_state_if_any(root)
     if state is not None:
@@ -1954,11 +1954,11 @@ def interrupt(
             typer.echo(f"readback: {evidence}")
         fired = str(ring_outcome)
         typer.echo(f"{member}: {SEAT_DEFERRED.get(ring_outcome, ring_outcome)}")
-        if ring_outcome in SEAT_DEFERRED:
-            raise typer.Exit(3)
     else:
         typer.echo(f"{member}: interrupted")
     log_event(root, event="interrupt", member=member, by=caller, outcome=fired)
+    if outcome is not None and outcome[0] in SEAT_DEFERRED:
+        raise typer.Exit(3)
 
 
 @app.command()
@@ -2033,6 +2033,8 @@ HEARTBEAT_STATE_FILE = "heartbeat-state.json"
 HEARTBEAT_POLL_CAP_S = 1.0
 HEARTBEAT_CONNECT_TIMEOUT_S = 10.0
 HEARTBEAT_CATCHUP_FAILURES_MAX = 3
+STOP_RELEASE_WAIT_S = 10.0
+STOP_RELEASE_POLL_S = 0.2
 # herdr socket protocol versions this client speaks; an unknown one refuses to start
 SUPPORTED_HERDR_PROTOCOLS = (22,)
 # herdr detection rules whose "working" is a designed wait, never a hang
@@ -2160,8 +2162,10 @@ def parse_policy(
                 else:
                     after = seconds
             if check == "hung":
-                raw_unless = spec.get("unless", DEFAULT_UNLESS)
-                if isinstance(raw_unless, str):
+                raw_unless = spec.get("unless")
+                if raw_unless is None:
+                    raw_unless = list(DEFAULT_UNLESS)
+                elif isinstance(raw_unless, str):
                     raw_unless = [raw_unless]
                 if isinstance(raw_unless, list) and all(isinstance(x, str) for x in raw_unless):
                     unless = tuple(raw_unless)
@@ -2515,7 +2519,7 @@ def observe_member(root: Path, member: Member | None, rules: tuple[Rule, ...]) -
     if not record:
         return Observation(status=None, unread_oldest=None, unread_count=0, transcript_write=None)
     unread = messages_in(root / "inboxes" / member.name, strict=False)
-    oldest = min((path.stat().st_mtime for path in unread), default=None)
+    oldest = min((message.path.stat().st_mtime for message in unread), default=None)
     transcript = (
         transcript_last_write(member.harness_session)
         if member.harness == "claude" and member.harness_session else None
@@ -2913,7 +2917,7 @@ class HeartbeatLoop:
                 # a pass on reconnect repairs what a missed event left wrong
                 self.catchup()
                 return
-            except (HerdrProtocolError, HerdrError, OSError, EventsLost) as exc:
+            except (HerdrProtocolError, HerdrError, OSError, EventsLost, ConnectionDropped) as exc:
                 self.note(action="reconnect-failed", outcome=str(exc)[:300])
 
     def write_state(self) -> None:
@@ -2943,8 +2947,8 @@ class HeartbeatLoop:
         def on_hup(signum: object, frame: object) -> None:
             self.reload_flag = True
 
-        signal.signal(signal.SIGTERM, on_term)
-        signal.signal(signal.SIGHUP, on_hup)
+        previous_term = signal.signal(signal.SIGTERM, on_term)
+        previous_hup = signal.signal(signal.SIGHUP, on_hup)
         self.ensure_connected()
         self.note(action="start", outcome=f"interval {self.policy.interval:.0f}s")
         next_pass = self.clock()
@@ -2996,6 +3000,8 @@ class HeartbeatLoop:
         finally:
             self.write_state()
             self.disconnect()
+            signal.signal(signal.SIGTERM, previous_term)
+            signal.signal(signal.SIGHUP, previous_hup)
             if not self.stopped_note:
                 self.note(action="stop", outcome="signal" if self.stopping else "loop ended")
 
@@ -3131,7 +3137,7 @@ def start() -> None:
         "tab", "create", "--workspace", own_workspace(),
         "--label", f"{root.name}-heartbeat", "--no-focus",
     ))["result"]
-    tab_id = created["tab"]["tab"]["tab_id"]
+    tab_id = created["tab"]["tab_id"]
     pane = created["root_pane"]["pane_id"]
     herdr("pane", "run", pane, f"{shlex.quote(str(helper))} heartbeat run")
     deadline = time.monotonic() + START_LOCK_WAIT_S
@@ -3165,11 +3171,11 @@ def stop() -> None:
     if holder.pid is not None:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(holder.pid, signal.SIGTERM)
-    deadline = time.monotonic() + 10.0
+    deadline = time.monotonic() + STOP_RELEASE_WAIT_S
     while time.monotonic() < deadline:
         if heartbeat_lock_holder(root) is None:
             break
-        time.sleep(0.2)
+        time.sleep(STOP_RELEASE_POLL_S)
     if holder.tab is not None:
         herdr("tab", "close", holder.tab)
     typer.echo("heartbeat stopped")
@@ -3251,6 +3257,9 @@ def init_heartbeat(
 
 
 def audit_members(root: Path) -> None:
+    # lenient by design: this is the recovery path for exactly the member files
+    # the loud roster verbs refuse (every verb routes through read_member)
+    flagged = False
     for path in sorted((root / "members").iterdir()):
         fields = {key: value for key, _, value in (line.partition("=") for line in path.read_text().splitlines())}
         problem = member_file_problem(fields)
