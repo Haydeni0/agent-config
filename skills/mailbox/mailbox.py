@@ -2830,15 +2830,21 @@ class HeartbeatLoop:
             self.connection = None
         self.connected = False
 
-    def catchup(self, dry_run: bool = False) -> bool:
-        """One reconciliation pass over every watched member; False when any observation failed."""
+    def catchup(self, dry_run: bool = False, *, reconnect: bool = True) -> bool:
+        """One reconciliation pass over every watched member; False when any observation failed.
+
+        RECONNECT=False is the `--once` shape: one pass, no subscriptions."""
         records = self.refresh_roster()
         # the pass re-resolves seats; a member whose pane id changed is re-subscribed,
         # and a voluntary disconnect (a reload) is re-established here too
         subs = heartbeat_subscriptions(self.policy, records)
-        if not self.connected or subs != self.current_subs:
+        if reconnect and (not self.connected or subs != self.current_subs):
             self.disconnect()
-            self.ensure_connected()
+            try:
+                self.ensure_connected()
+            except (HerdrProtocolError, ConnectionDropped, EventsLost, OSError) as exc:
+                # while disconnected the catch-up pass alone drives the checks
+                self.note(action="reconnect-failed", outcome=str(exc)[:300])
         now = self.clock()
         ok = True
         for name in self.policy.rules:
@@ -3131,7 +3137,7 @@ def run(
         if once:
             # one pass fires from directly observed evidence: file ages and
             # transcript age; idle and blocked durations are unknown and cannot fire
-            loop.catchup(dry_run)
+            loop.catchup(dry_run, reconnect=False)
         else:
             loop.run(dry_run)
     finally:
