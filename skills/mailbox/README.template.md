@@ -167,7 +167,8 @@ file. The verbs:
 - `{{MAILBOX}}/bin/mailbox retire <member> [--force]` - end a member you
   spawned; its record moves to `{{MAILBOX}}/retired/`, its tab closes.
 - `{{MAILBOX}}/bin/mailbox adopt <member> --launcher <id>` - record a
-  launcher on a member that joined by hand, so restart works for it.
+  launcher on a member that joined by hand, so restart works for it and
+  herdr's own restore relaunches it through that launcher.
 
 Diagnose before repairing: `inspect` first, then the smallest fix - a ring,
 then an interrupt, then a restart, then a spawned replacement.

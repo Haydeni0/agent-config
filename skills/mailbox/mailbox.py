@@ -94,7 +94,7 @@ TEMPLATE = Path(__file__).resolve().parent / "README.template.md"
 # (date, revision) tuples, never strings. Bump the revision in the same commit
 # as any behavior change - a forgotten bump makes `update` report a changed
 # helper as current (the accepted residual, D8).
-MAILBOX_VERSION = "2026-11-21.01"
+MAILBOX_VERSION = "2026-11-21.02"
 VERSION_RE = re.compile(r"^(?P<date>\d{4}-\d{2}-\d{2})\.(?P<rev>\d{2})$")
 Version = tuple[str, int]
 
@@ -2019,8 +2019,18 @@ def adopt(
     detected = record.get("agent")
     if detected != conf.harness:
         fail(f"herdr detects {detected!r} at {member}'s seat, but launcher {launcher!r} declares {conf.harness!r}")
+    session = (record.get("agent_session") or {}).get("value") or m.harness_session
+    if conf.resume is not None:
+        if not session:
+            fail(
+                f"herdr reports no harness session at {member}'s seat, so the launcher's resume"
+                " arguments cannot be registered"
+            )
+        register_restore(m.seat.pane, conf, session)
     write_member(root, replace(m, launcher=launcher))
-    log_event(root, event="adopt", member=member, by=caller, launcher=launcher)
+    log_event(root, event="adopt", member=member, by=caller, launcher=launcher, session=session)
+    if conf.resume is not None:
+        typer.echo(f"restore registered: {' '.join(resume_argv_for(conf, session))}")
     typer.echo(f"adopted {member} onto launcher {launcher}")
 
 
