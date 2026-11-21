@@ -1744,8 +1744,10 @@ def exit_agent_in_place(member: Member, step: str) -> None:
     # through the guarded ring
     herdr("agent", "send-keys", pane, "esc")
     outcome, _ = ring_seat(pane, "/exit", wait_ms=MAIL_RING_WAIT_MS)
-    if outcome not in (RingOutcome.RUNG, RingOutcome.QUEUED):
+    if outcome in (RingOutcome.TYPING, RingOutcome.COMPOSER_UNSEEN, RingOutcome.BLOCKED, RingOutcome.NOT_IDLE):
         fail(f"{step}: /exit could not be submitted to {member.name}'s pane ({SEAT_DEFERRED.get(outcome, outcome)})")
+    # RUNG, QUEUED or ABSENT: an exiting agent scrolls its own echo away, so the
+    # pane's return to its shell is the real confirmation the line landed
     if wait_for_shell(pane, SHELL_RETURN_TIMEOUT_S):
         return
     # the pid-scoped signal fallback: only the pane's own foreground process
