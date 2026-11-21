@@ -1,7 +1,7 @@
 ---
 name: mailbox-overseer
 description: Use when the user wants this session to be the overseer - the planning and reasoning agent that talks to the user while a worker agent in another herdr pane, itself an orchestrator running subagents, does all the execution - "you plan and think, the worker executes", "be the brain, delegate everything to the worker agent", "let the planner delegate to the worker pane", "oversee this project through the worker". Not for single-session subagent orchestration and not for a mesh of equal peers.
-deps: [mailbox, orchestrator]
+deps: [mailbox, orchestrator, herdr]
 ---
 
 # mailbox-overseer
@@ -49,7 +49,49 @@ without any of them touching the expensive context.
    receives briefs from the overseer, executes them by spawning and
    coordinating subagents, reports results back`, plus one extra line -
    `Load the `orchestrator` skill: you own all execution.` The user
-   pastes it; that is the trust grant.
+   pastes it; that is the trust grant - OR spawn the worker yourself
+   (`<mailbox>/bin/mailbox spawn worker-orchestrator --role "<role>"
+   --launcher <id> --intro "Load the orchestrator skill: you own all
+   execution."`) once the user has approved a `launchers.toml` entry.
+   Ask the user which launcher workers may start through, propose the
+   file's content in chat, and write it only after the user approves it.
+3. Offer a heartbeat once, default off. If accepted, init the
+   `overseer-worker` template with the worker's name and start it (see
+   the mailbox skill's heartbeat section).
+
+## Authority over your workers
+
+You hold control over the sessions of your own mesh's members, bounded so
+you can only touch your mesh and only through launchers the user approved.
+
+**You may:**
+
+- spawn workers through approved launchers (`mailbox spawn`);
+- inspect, interrupt and restart any member of your own mesh;
+- retire the members you spawned;
+- send keys or harness commands (e.g. a model switch or a compaction) to a
+  member's pane through herdr, under the herdr skill's rules.
+
+**Diagnose before repairing.** On a stall, a heartbeat notification, or a
+user report: run `mailbox inspect` first, then take the smallest fix - a
+ring, then an interrupt, then a restart, then a spawned replacement - and
+tell the user in your next report what you saw and what you did.
+
+**You must not:**
+
+- touch panes outside this mesh's member records;
+- write `launchers.toml` (propose content in chat; the user writes or
+  approves it);
+- start an agent by any route other than `mailbox spawn`;
+- retire a member holding unread or inflight mail without saying why;
+- restart a worker mid-task without first trying an interrupt, unless the
+  worker is unreachable.
+
+Spawning a worker session is a buildable delegation decision, not
+execution: the "never execute project work" rule is unchanged. The "never
+spawn subagents" rule is about in-session subagents, whose output returns
+through your context - a worker session started with `mailbox spawn`
+reports only through mail, so that rule does not cover it.
 
 ## Working loop
 

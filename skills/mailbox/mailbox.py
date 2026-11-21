@@ -8,10 +8,15 @@
 Layout under the mailbox root: README.md (the contract), bin/mailbox (this
 script, copied by `init`), members/<name> (`role=`, plus the seat the member
 joined from - `pane=`, `session=`, `harness=`, `harness-session=` - as herdr
-reports them), inboxes/<name>/ (unread files), inboxes/<name>/inflight/
+reports them, and for spawned members `launcher=`, `spawned-by=`, `tab=`),
+inboxes/<name>/ (unread files), inboxes/<name>/inflight/
 (printed but unacked - a crashed turn's mail waits here for its replay),
-inboxes/<name>/handled/ (acked files) and log.jsonl (the append-only trace of
-joins, sends, replies, takes and acks). A member's name is mesh-local, not its
+inboxes/<name>/handled/ (acked files), retired/ (retired members' records),
+launchers.toml (the user-written allowlist of commands that may start an
+agent), heartbeat.toml (the opt-in stall-watchdog policy; absent = off),
+heartbeat.lock and heartbeat-state.json (the watchdog's liveness and state),
+and log.jsonl (the append-only trace of joins, sends, replies, takes, acks,
+control verbs and heartbeat firings). A member's name is mesh-local, not its
 herdr agent name: identity is the recorded seat pane plus the harness
 session, so one pane may hold different names in different meshes. Requests
 are `<from>.<seq>-<slug>.msg`; a reply reuses the request id as

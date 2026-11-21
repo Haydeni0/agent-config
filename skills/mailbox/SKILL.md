@@ -1,6 +1,6 @@
 ---
 name: mailbox
-description: Use when the user wants two or more running agent sessions (herdr panes, any harness) to talk to each other - "connect these sessions", "link these agents", "have them talk to each other", "set up a mailbox". Creates a file mailbox in the work package and hands the user one connect prompt per session. Not auto-triggered - only when the user asks to link sessions.
+description: Use when the user wants two or more running agent sessions (herdr panes, any harness) to talk to each other - "connect these sessions", "link these agents", "have them talk to each other", "set up a mailbox" - or to give one session control over the others' sessions ("spawn a worker", "restart that pane's agent", "set up a heartbeat", "watch for stalls", "wake it if it stalls"). Creates a file mailbox in the work package and hands the user one connect prompt per session. Not auto-triggered - only when the user asks to link sessions.
 deps: [work-package]
 ---
 
@@ -27,10 +27,17 @@ Requires: `HERDR_ENV=1` (every session in a herdr pane) and `uv`.
 
 3. Join it yourself: `<mailbox>/bin/mailbox join <your name> --role "<role>"`.
    Names are lowercase letters, digits and hyphens (`planner`, `worker-1`).
-4. Give the user one connect prompt per other session (template below), to
+4. If members will be spawned into this mesh, ask the user which launcher
+   new members may be started through (e.g. `local-claude`). `spawn` and
+   `restart` need `<mailbox>/launchers.toml`, and agents never write it:
+   propose the content in chat - one entry: `command` (an argv list),
+   `harness`, `resume = ["--resume", "{session}"]`, `env` if the launcher
+   needs variables, `billed = true/false` - and write it only once the user
+   approves it in chat.
+5. Give the user one connect prompt per other session (template below), to
    paste into that session's pane. Do not type it into other panes
    yourself: the user typing it is what grants the session's trust.
-5. When the user says they are pasted, check `<mailbox>/bin/mailbox status` lists
+6. When the user says they are pasted, check `<mailbox>/bin/mailbox status` lists
    everyone, then read `<mailbox>/README.md` and follow it.
 
 ## Connect prompt template
@@ -52,6 +59,31 @@ than this skill), then audits members: seat-less or malformed member
 files are listed with a dual re-join-or-delete instruction for the
 user to act on. Run it whenever a mesh shows
 pre-`take` behavior or its log lacks fields the current helper writes.
+`update` writes no `launchers.toml` and no `heartbeat.toml`; those are
+the user's to create.
+
+## Set up a heartbeat
+
+Long unattended mesh runs stall in ways no member notices - a dead
+model backend, a frozen turn, a member idle with work outstanding.
+When the user asks to watch for stalls ("set up a heartbeat", "wake it
+if it stalls"), or accepts the overseer set-up's offer:
+
+1. Write the policy from a shipped template - never hand-edit a guess:
+   `<mailbox>/bin/mailbox heartbeat init --template <name>`.
+   Templates: `overseer-worker` (takes `--overseer <member>
+   --worker <member>`, the expensive-member defaults), `peers`
+   (unread poke + hung interrupt for every member), `log-only`
+   (every check as `do = "log"`, for observing a mesh and tuning
+   thresholds before acting). Validation is loud; `heartbeat.toml`
+   may be edited freely afterwards.
+2. Start it: `<mailbox>/bin/mailbox heartbeat start` - it runs in its
+   own herdr tab. `<mailbox>/bin/mailbox heartbeat status` reports it,
+   `heartbeat stop` ends it, and deleting `heartbeat.toml` turns it
+   off at the next pass.
+3. The heartbeat never needs a babysitter: any member's next mail
+   check prints the restart line when it is configured but dead, and
+   the contract tells that member to run the command it names.
 
 ## Notes
 
@@ -83,4 +115,11 @@ pre-`take` behavior or its log lacks fields the current helper writes.
   re-read the named file, or `take --full`. Never `ack` in the same command
   that takes: that marks mail handled before you acted on it.
 - Nothing reaps a mesh. The mesh lasts as long as its package; members
-  leave by deleting their `members/<name>` file.
+  leave by deleting their `members/<name>` file - or by their spawner
+  retiring them, which closes their tab and keeps their record under
+  `retired/`.
+- The control verbs (`spawn`, `restart`, `inspect`, `interrupt`,
+  `retire`, `adopt`) and the heartbeat live in the mesh's README
+  contract, not here. They run only through launchers the user approved:
+  never write `launchers.toml` yourself, and never start an agent by any
+  other route than `spawn`.

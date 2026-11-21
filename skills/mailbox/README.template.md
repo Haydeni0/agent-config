@@ -48,12 +48,18 @@ is the whole contract - and:
   longer hold: re-read the named file, or run `take --full` to re-print
   every unacked body;
 - `{{MAILBOX}}/log.jsonl` line fields: `time`; `event` - one of `join`,
-  `sent`, `taken`, `acked`, `closed`, `update`; `member` (join/taken/acked/
-  closed) or `sender` (sent); `session` - the acting member's harness
+  `sent`, `taken`, `acked`, `closed`, `spawn`, `restart`, `interrupt`,
+  `retire`, `adopt`, `update`, `heartbeat`; `member` (join/taken/acked/
+  closed) or `sender` (sent) or `member` plus `by` (the acting member or
+  `heartbeat`) on the control verbs; `session` - the acting member's harness
   session id, when its member file records one (carried by join, sent,
-  taken, acked, closed); `pane` (join); `id`/`to` (sent, closed); `kind`
+  taken, acked, closed); `pane` (join, spawn, restart), `tab` and `launcher`
+  (spawn, retire), `reason` (restart); `id`/`to` (sent, closed); `kind`
   (sent); `files` (taken/acked); `from_version`/`to_version`/`changed`
-  (update).
+  (update); on `heartbeat` events: `action` - one of `start`, `stop`,
+  `firing`, `escalation`, `reload`, `config-error`, `absent`, `present`,
+  `disconnected`, `reconnected`, `observe-error` - plus `check`, `do`,
+  `outcome`, `evidence` where they apply.
 
 ## Sending
 
@@ -140,6 +146,43 @@ not something it owes you. If it is still unread after a reasonable wait,
 help, or no reply arrives within a reasonable wait, tell the user and stop
 waiting.
 
+## Member control (overseer verbs)
+
+Members are started, repaired and stopped only through launchers the user
+approved in `{{MAILBOX}}/launchers.toml`. Nobody but the user writes that
+file. The verbs:
+
+- `{{MAILBOX}}/bin/mailbox spawn <name> --role "<role>" --launcher <id>` -
+  start a new member in a new labelled herdr tab through an approved
+  launcher; it joins the mesh itself, no paste needed. `--intro` adds a
+  line to its first prompt (e.g. `Load the orchestrator skill`).
+- `{{MAILBOX}}/bin/mailbox restart <member> [--reason "<text>"] [--force]` -
+  relaunch a member's own session in its pane through its recorded
+  launcher, resuming its conversation. Refuses a live turn whose
+  transcript moved in the last 10 minutes unless `--force`.
+- `{{MAILBOX}}/bin/mailbox inspect <member>` - read-only: why is it not
+  progressing? herdr state, pane tail, transcript age, mail, launcher.
+- `{{MAILBOX}}/bin/mailbox interrupt <member> ["<line>"]` - stop a turn
+  safely (never through a human's draft) and hand it a line.
+- `{{MAILBOX}}/bin/mailbox retire <member> [--force]` - end a member you
+  spawned; its record moves to `{{MAILBOX}}/retired/`, its tab closes.
+- `{{MAILBOX}}/bin/mailbox adopt <member> --launcher <id>` - record a
+  launcher on a member that joined by hand, so restart works for it.
+
+Diagnose before repairing: `inspect` first, then the smallest fix - a ring,
+then an interrupt, then a restart, then a spawned replacement.
+
+## Heartbeat
+
+If `{{MAILBOX}}/heartbeat.toml` exists, a watchdog watches the members its
+policy names and acts on stalls (wake, interrupt, notify, restart) without
+calling any model. `{{MAILBOX}}/bin/mailbox heartbeat status` reports it;
+`heartbeat stop` ends it; deleting `heartbeat.toml` turns it off.
+
+- If any mail check (`take`, `inbox`, `status`) prints
+  `heartbeat configured but not running`, start it again:
+  run `{{MAILBOX}}/bin/mailbox heartbeat start`.
+
 ## Ringing a seat outside the mesh
 
 `{{MAILBOX}}/bin/mailbox ring <pane-or-agent> "<line>"` submits one line to
@@ -162,4 +205,6 @@ idle one is prompted without the draft check.
 
 ## Leaving
 
-When the user ends your part, delete `{{MAILBOX}}/members/<your name>`.
+When the user ends your part, delete `{{MAILBOX}}/members/<your name>` -
+or, if a member spawned you, ask it to `retire` you, which also closes your
+tab and keeps your record under `{{MAILBOX}}/retired/`.

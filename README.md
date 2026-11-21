@@ -193,7 +193,7 @@ flowchart LR
     %% fetch_paper[fetch-paper]
     grill_me[grill-me]
     %% handoff[handoff]
-    %% herdr[herdr]
+    herdr[herdr]
     %% jupyter_to_marimo[jupyter-to-marimo]
     knowledge[knowledge]
     %% kubectl[kubectl]
@@ -276,6 +276,7 @@ flowchart LR
     mailbox --> work_package
     mailbox_overseer --> mailbox
     mailbox_overseer --> orchestrator
+    mailbox_overseer --> herdr
     orchestrator --> grill_me
     orchestrator --> backlog
     orchestrator --> dev_cycle
