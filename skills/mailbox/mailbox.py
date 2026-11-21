@@ -2833,9 +2833,10 @@ class HeartbeatLoop:
     def catchup(self, dry_run: bool = False) -> bool:
         """One reconciliation pass over every watched member; False when any observation failed."""
         records = self.refresh_roster()
-        # the pass re-resolves seats; a member whose pane id changed is re-subscribed
+        # the pass re-resolves seats; a member whose pane id changed is re-subscribed,
+        # and a voluntary disconnect (a reload) is re-established here too
         subs = heartbeat_subscriptions(self.policy, records)
-        if self.connected and subs != self.current_subs:
+        if not self.connected or subs != self.current_subs:
             self.disconnect()
             self.ensure_connected()
         now = self.clock()
@@ -2967,6 +2968,9 @@ class HeartbeatLoop:
                     self.reload_policy()
                     if self.stopping:
                         break
+                    # a pass runs at once under the new policy: edits take effect
+                    # without waiting out the old interval
+                    next_pass = self.clock()
                 if now >= next_pass:
                     # the policy file is re-read at every pass; only a change reloads
                     path = heartbeat_policy_path(self.root)
@@ -2979,6 +2983,7 @@ class HeartbeatLoop:
                         self.reload_policy()
                         if self.stopping:
                             break
+                        next_pass = self.clock()
                     self.catchup(dry_run)
                     if self.failures >= HEARTBEAT_CATCHUP_FAILURES_MAX:
                         self.note(action="stop", outcome="catch-up failed for every member three passes running")

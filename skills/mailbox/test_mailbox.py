@@ -252,6 +252,12 @@ if verb == "prompt":
             # the exit recipe worked: the agent is gone and the pane is at its shell
             state.get("pane_agents", {}).pop(pane, None)
             state["agents"] = {n: p for n, p in agents.items() if p != pane}
+            if state.get("exit_silent", {}).get(target):
+                # the live shape: an exiting agent scrolls its own echo away, so the
+                # readback reads absent while the exit still landed
+                save()
+                print("{}")
+                sys.exit(0)
         if (m := re.match(r"^(\S+/bin/mailbox) join (\S+) --role (.*) --launcher (\S+) --spawned-by (\S+) --tab (\S+)$", line)):
             # the spawned member ran its join line: the member record appears with
             # the join's flags, the seat herdr reports and the staged session
@@ -3114,6 +3120,22 @@ def test_restart_relaunches_the_recorded_session_and_refreshes_the_record(
     assert event["member"] == "worker" and event["by"] == "planner" and event["session"] == "sess-new"
 
 
+def test_restart_confirms_the_exit_by_the_panes_shell_return(
+    mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    joined_worker_with_launcher(mesh)
+    stage_worker_agent(mesh)
+    # the live-found shape: /exit lands but its echo never survives the pane read
+    mesh.herdr.set("exit_silent", {WORKER_PANE: True})
+    mesh.herdr.set("launches", {WORKER_PANE: {"session": "sess-old"}})
+    monkeypatch.setenv("HERDR_PANE_ID", PLANNER_PANE)
+
+    result = CliRunner().invoke(helper.app, ["restart", "worker"])
+
+    assert result.exit_code == 0, result.output
+    assert ["pane", "run", WORKER_PANE, "env local-claude --resume sess-old"] in mesh.herdr.calls()
+
+
 def test_restart_refuses_a_live_turn_younger_than_ten_minutes(
     mesh: Mesh, helper: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -3943,6 +3965,28 @@ unread = { after = "1m", do = "poke" }
     loop.reload_policy()
 
     assert loop.stopping is True
+
+
+def test_a_reload_reconnects_and_runs_a_pass_at_once(mesh: Mesh) -> None:
+    helper = load_helper(HELPER)
+    write_heartbeat(mesh, '''interval = "5m"
+
+[member.worker]
+unread = { after = "10m", do = "log" }
+''')
+    policy = helper.load_heartbeat_policy(mesh.root, required=True)
+    loop = helper.HeartbeatLoop(
+        mesh.root, policy, clock=lambda: 0.0, sleep=lambda s: None,
+        connect=lambda path, subs: FakeEventsConnection([]), socket_info=lambda: (Path("x"), 22),
+    )
+    loop.ensure_connected()
+    assert loop.connected is True
+
+    # a reload drops the subscription on purpose; the next pass must bring it back
+    loop.reload_policy()
+    assert loop.connected is False
+    loop.catchup()
+    assert loop.connected is True
 
 
 def test_transcript_last_write_takes_the_newest_write(
