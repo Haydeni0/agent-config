@@ -1805,7 +1805,7 @@ def restart_member(
     wake = (
         f"you were restarted by {caller}"
         + (f" ({reason})" if reason else "")
-        + "; run take and continue your work - contract: ../../README.md"
+        + "; run take and continue your work"
     )
     outcome, evidence = ring_seat(pane, wake, wait_ms=MAIL_RING_WAIT_MS)
     if evidence:
@@ -2643,10 +2643,10 @@ def run_firing(root: Path, firing: Firing, policy: WatchdogPolicy, *, dry_run: b
             outcome, _ = ring(root, firing.member)
             return str(outcome), outcome is RingOutcome.RUNG
         if rule.action == "ring":
-            outcome, evidence = ring_seat(pane, f"{rule.text} - contract: ../../README.md", wait_ms=MAIL_RING_WAIT_MS)
+            outcome, evidence = ring_seat(pane, rule.text, wait_ms=MAIL_RING_WAIT_MS)
             return f"{outcome}" + (f"; {evidence}" if evidence else ""), outcome in (RingOutcome.RUNG, RingOutcome.QUEUED)
         if rule.action == "interrupt":
-            interrupt_seat(member, f"{rule.text} - contract: ../../README.md", f"watchdog interrupt {firing.member}")
+            interrupt_seat(member, rule.text, f"watchdog interrupt {firing.member}")
             return "interrupted", True
         if rule.action == "notify":
             body = (
