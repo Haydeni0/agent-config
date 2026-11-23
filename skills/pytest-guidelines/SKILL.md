@@ -14,7 +14,7 @@ Keeper tests document **public behavior** only. During TDD, temporary tests live
 
 | Do | Don't |
 |---|---|
-| `uv run pytest` | bare `pytest`, `python -m pytest`, `.venv/bin/pytest` |
+| `uv run pytest`; in a git worktree, the repo venv's `pytest` or `uv run --no-sync pytest` (worktree-venv skill) | bare `pytest`, `python -m pytest`, plain `uv run pytest` inside a worktree |
 | `mocker.patch(...)` (`pytest-mock`) | `unittest.mock` |
 | Patch where the name is **used**, not where it's defined | patch at definition site |
 | Test public inputs/outputs and side effects | test `_private` methods in keeper tests |
@@ -26,7 +26,7 @@ Discovery: files `test_*.py`, functions `test_*()`, classes `Test*`. Shared fixt
 
 ## Running
 
-**REQUIRED:** See `uv` skill. Always `uv run pytest [args...]`.
+See the `uv` skill: `uv run pytest [args...]`. In a worktree, use the worktree-venv skill's no-sync form.
 
 ## Mocking
 
@@ -53,23 +53,6 @@ If refactoring internals forces keeper test changes, the test was too coupled - 
 - Neutral data names, not usage names: `array1`, `array2` not `volume.pressure`, `volume.velocity` when the code under test takes arbitrary arrays - usage names imply a domain contract the test doesn't exercise.
 - Concrete inputs, literal expected outputs. `assert calc(100) == 108.875`, not `assert calc(x) == x * 1.08875` - a recomputed expectation re-implements the logic and fails with it.
 - Don't restate in test comments what the tested object's public docstring already says, and don't narrate implementation details - the reader has the code.
-
-### Rationalizations
-
-| Excuse | Reality |
-|---|---|
-| "The bug is in the private helper" | Exercise it through the public API that calls it |
-| "Easier to unit-test in isolation" | Use `tests/tdd_scaffolding/` during TDD, then delete |
-| "I'll mock with unittest.mock quickly" | Use `mocker`; install `pytest-mock` if missing |
-| "This helper is stable enough to test directly" | Stability doesn't make it public API |
-| "Scaffolding is useful documentation - keep it" | Convert edge cases to keeper tests; delete `tdd_scaffolding/` |
-
-### Red Flags - STOP
-
-- Keeper test imports or calls `_something`
-- `from unittest.mock import patch` or `import unittest.mock`
-- Granular TDD test left in `tests/` after implementation complete
-- Bare `pytest` in commands
 
 ## Typing
 

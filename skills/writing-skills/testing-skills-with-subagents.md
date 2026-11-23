@@ -139,8 +139,6 @@ Forces explicit choice.
 
 **Best tests combine 3+ pressures.**
 
-**Why this works:** See persuasion-principles.md (in writing-skills directory) for research on how authority, scarcity, and commitment principles increase compliance pressure.
-
 ### Key Elements of Good Scenarios
 
 1. **Concrete options** - Force A/B/C choice, not open-ended
@@ -253,7 +251,6 @@ it crystal clear that Option A was the only acceptable answer?
 1. **"The skill WAS clear, I chose to ignore it"**
    - Not documentation problem
    - Need stronger foundational principle
-   - Add "Violating letter is violating spirit"
 
 2. **"The skill should have said X"**
    - Documentation problem

@@ -13,7 +13,7 @@ Run a queue of independent units over an unattended stretch. A unit is a self-co
 
 The main session is the only interface to the user. Subagents report to it and never produce user-facing output. Escalation reaches the user only for outcomes and decisions a human must make; progress, retries, and internal mechanics are batched into the next natural report.
 
-Earned by repetition: this pattern ran a multi-unit queue end to end with units shipped, merged, and recovered mid-flight. For a single unit or one-off work, skip this skill and run the unit's executor directly.
+For a single unit or one-off work, skip this skill and run the unit's executor directly.
 
 Baseline assumptions: the harness supports subagent dispatch and isolated workspaces (git worktrees for anything touching a repo), and the user's skill set - grill-me, dev-cycle, backlog - is installed and syncs across the user's harnesses; where one is genuinely absent, run the shape its step describes inline. Other harness-specific mechanisms (resuming a named subagent, background completion notifications) are conditional - use the mechanism where present, use the stated fallback where absent.
 
@@ -98,7 +98,7 @@ A unit is defined by three things, settled at intake and written into its brief:
 - **Transport**: how the result is delivered and verified - what "done and landed" means for this kind.
 - **Done-condition**: the verifiable check the orchestrator runs itself.
 
-Two kinds are defined concretely; both are validated in practice:
+Two kinds are defined concretely:
 
 - **Build** (default, repo work). Executor: the dev-cycle skill. The subagent materialises the brief's standing answers (and test scenarios, where the brief carries them) and `## Outcome`, written from the brief's user intent, into the unit's package `decisions.md` in the workspace's `.agents/work/`, per the work-package layout; treats the orchestrator's dispatch as the launch gate's go, and enters the autonomous stages: test-plan where the brief lacks test scenarios, then spec, plan, implement, code-review, and verify-fix, with fresh subagents for its review rounds. Documentation obligations the repo attaches to completion (scenario docs, registers) belong in the brief's done-condition, not to the executor. Transport: git - worktree + branch `hayden/<unit>`, draft PR, gated merge. Done-condition: the repo's gate command green, executed by the orchestrator.
 - **Investigate**. Executor: the research-spike skill - question, evidence, findings report. Transport: the spike package's `context.md` is the deliverable (Q entries ride along in the package `decisions.md`); delivery is the orchestrator reading it, stowing a copy beside the charter - the whole package directory when the spike ends at open Q entries (the `state: grill` package is the decision half of the deliverable; cleanup must not strand or lose it), else `context.md` alone - and recording that durable path verbatim in the ledger. Done-condition: the report exists and the orchestrator has read it. No code changes. A report is evidence, never authorisation - it does not silently become a build. If a build follows, it is a new unit with its own brief; scratch exploration stays behind.
@@ -226,29 +226,6 @@ Folded from the ledger, so it survives any number of compactions. It stands alon
 - A one-line resume pointer naming the charter and ledger
 
 Proposed lessons (repeated failures, brief defects, patterns worth a rule) are listed as proposals for the user to accept into CLAUDE.md, AGENTS.md, or this skill - the orchestrator never edits standing rules itself.
-
-## Rationalisation table
-
-| Excuse | Reality |
-|--------|---------|
-| "I'll just review this diff inline to be thorough" | Inline review burned ~100k tokens of orchestrator context on one unit. Delegate; read findings |
-| "The subagent reported tests pass" | A claim. The orchestrator runs the done-condition itself |
-| "Unit looks done, mark it delivered" | Unknown is never promoted. Verify landed and green first-hand |
-| "Merge command exited 0" | Confirm the landing after. Exit codes lie |
-| "Dirty worktree blocks cleanup, force it" | Refusal is a finding. Discard needs the user's word, recorded first |
-| "Small fix, faster to do it myself" | Unit work goes to the unit's subagent; only mechanical review-fix findings land inline, in a labelled commit |
-| "One approval covers the rest of the queue" | Grants are concrete and scoped to one unit and moment |
-| "Re-dispatch the failed unit with a tweaked approach" | Silent fallback is forbidden. Failed = failed, with evidence, in the report |
-| "Helpfully sweep those stray worktrees" | Reconcile recorded units only. Empty queues invent no work |
-| "The ledger says it shipped" | Recorded metadata is a pointer, never authority. Live-read it |
-
-## Provenance
-
-Validated in practice: workspace-per-unit, front-loaded briefs, one subagent per unit, delegated review, orchestrator-run verification, merge-tree conflict prediction, git-gated delivery, parallel waves, recovery from workspace state, mission decisions file, final report shape.
-
-Grafted from research (prune freely if a graft misfires): harness-agnostic conditional clauses, hard-rules opening with anti-carry clauses, append-only ledger, base-state discipline, investigate unit shape, verify-then-merge, waived-check naming, fail-closed teardown, recovery ladder order, positive-evidence supervision, unknown-never-promoted, escalation batching, end-of-turn checklist, stow ritual, report-from-records, brief-defect steering rule, proposed-lessons governance.
-
-Every rule here traces to a real failure or a documented one; when updating this file, preserve the safety boundaries and prefer rewriting over appending.
 
 ## Existing project documents
 

@@ -69,10 +69,10 @@ Codex sync recursively merges the template's declared keys into `~/.codex/config
 - Harness-specific rules go in `harnesses/<tool>/rules.md` (e.g. `harnesses/opencode/rules.md`).
 - Submodules (`vendor/plugins/`) are symlinked into `skills/`. Run `git submodule update --init --recursive` after clone/pull.
 - Hooks (`hooks/`) carry shared policy cores with thin per-harness adapters.
-  Only Claude Code registers them today: opencode plugins expose only
-  `tool.execute.before` and codex only `PreToolUse`, so no turn-end
-  registration exists there yet (the mailbox guard's core is ready when one
-  does).
+  The command guard is registered for Claude Code, Codex, Goose and
+  Antigravity (`harnesses/*/hooks.json`) and runs as an opencode plugin and a
+  pi extension. The mailbox turn-end guard is Claude Code-only, because no
+  other harness exposes a turn-end event (`hooks/README.md`).
 
 ## 3-Step Verification Runbook
 

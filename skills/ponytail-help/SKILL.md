@@ -8,8 +8,7 @@ description: >
 
 # Ponytail Help
 
-Display this reference card when invoked. One-shot — do NOT change mode,
-write flag files, or persist anything.
+Display this reference card when invoked. One-shot: the current mode stays unchanged.
 
 ## Levels
 
@@ -35,26 +34,6 @@ uses the slash-command forms above.
 ## Deactivate
 
 Say "stop ponytail" or "normal mode". Resume anytime with `/ponytail`.
-`/ponytail off` also works.
-
-## Configure Default Mode
-
-Default mode = `full`, auto-active every session. Change it:
-
-**Environment variable** (highest priority):
-```bash
-export PONYTAIL_DEFAULT_MODE=ultra
-```
-
-**Config file** (`~/.config/ponytail/config.json`, Windows: `%APPDATA%\ponytail\config.json`):
-```json
-{ "defaultMode": "lite" }
-```
-
-Set `"off"` to disable auto-activation on session start — activate manually
-with `/ponytail` when wanted.
-
-Resolution: env var > config file > `full`.
 
 ## More
 

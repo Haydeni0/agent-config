@@ -76,7 +76,7 @@ Fix: timeout now derives from the refresh window.
 
 The split between visible (title) and hidden (body) serves two purposes at once: it hides verbosity AND it sorts by trust.
 
-**Title (visible) = the verified conclusion.** One line - what the agent did or observed this session, or a sound judgment it can stand behind. "Fixed the bug, tests pass" (ran them). "Recommend switching to JWT" (a judgment the agent owns). Try to verify claims before asserting them in the title. The title is the surface a reader scans and trusts; keep it to the bottom line.
+**Title (visible) = the verified conclusion.** One line - what the agent did or observed this session, or a sound judgment it can stand behind. "Fixed the bug, tests pass" (ran them). "Recommend switching to JWT" (a judgment the agent owns). Verify every claim before it goes in the title. The title is the surface a reader scans and trusts; keep it to the bottom line.
 
 **Body (hidden) = everything else.** Two kinds of content land here:
 1. **Verbose verified detail** - reasoning, the exploration path, alternative approaches considered, supporting detail. All verified, but too long for a scan. The body hides the volume so it doesn't flood the reader.

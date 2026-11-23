@@ -89,8 +89,9 @@ into another report, or it needs nothing - with no mail written, no ring:
 
 - Ring any message that answers a pending request - a correction, a reply
   the requester is waiting on - and anything the recipient must act on now.
-  Add `--no-ring` for replies and FYI mail only (a request refuses it - a 2026-10 request sat unread for hours behind it); the recipient picks it up at
-  its next `take`.
+  Add `--no-ring` only on `reply`, for a reply the requester is not waiting
+  on. `send` always rings, because an unrung request can sit unread for
+  hours. The recipient picks up an unrung reply at its next `take`.
 - A send never waits on the recipient's idle state: the ring checks once
   and falls through at once, so a busy recipient holds your send only for
   its short readback.

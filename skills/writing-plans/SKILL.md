@@ -7,12 +7,8 @@ deps: [tdd, executing-plans, work-package]
 exits: [plan.md]
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-plans)
 forked-date: 2026-09-01
-forked-note: description rewritten to require explicit user request; see Provenance line in body
+forked-note: description rewritten to require explicit user request
 ---
-
-# writing-plans
-
-Forked from writing-plans (plugin claude-plugins-official, v6.3.0) on 2026-09-01; description rewritten to require explicit user request.
 
 # Writing Plans
 
@@ -97,13 +93,13 @@ independently testable deliverable.
 
 **Tech Stack:** [Key technologies/libraries]
 
-**Spec:** [path to the spec/design doc this plan implements — the plan
+**Spec:** [path to the spec/design doc this plan implements - the plan
 argues from the spec, so the spec travels with it; executors read both]
 
 ## Global Constraints
 
-[The spec's project-wide requirements — version floors, dependency limits,
-naming and copy rules, platform requirements — one line each, with exact
+[The spec's project-wide requirements - version floors, dependency limits,
+naming and copy rules, platform requirements - one line each, with exact
 values copied verbatim from the spec. Every task's requirements implicitly
 include this section.]
 
@@ -121,8 +117,8 @@ include this section.]
 - Test: `tests/exact/path/to/test.py`
 
 **Interfaces:**
-- Consumes: [what this task uses from earlier tasks — exact signatures]
-- Produces: [what later tasks rely on — exact function names, parameter
+- Consumes: [what this task uses from earlier tasks - exact signatures]
+- Produces: [what later tasks rely on - exact function names, parameter
   and return types. A task's implementer sees only their own task; this
   block is how they learn the names and types neighboring tasks use.]
 
@@ -138,7 +134,7 @@ def test_specific_behavior():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest tests/path/test.py::test_name -v`
+Run: `uv run pytest tests/path/test.py::test_name -v`
 Expected: FAIL with "function not defined"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -150,7 +146,7 @@ def function(input):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest tests/path/test.py::test_name -v`
+Run: `uv run pytest tests/path/test.py::test_name -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -193,15 +189,14 @@ After saving the plan, offer execution choice:
 
 **"Plan complete and saved to `<path>`. Two execution options:**
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task and review each result before the next
 
 **2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
 
 **Which approach?"**
 
 **If Subagent-Driven chosen:**
-- (Original offered `subagent-driven-development`; not forked. Dispatch subagents per task manually if desired.)
-- Fresh subagent per task + two-stage review
+- Dispatch one fresh subagent per task with that task's text and the plan's Global Constraints; review each result against its task before dispatching the next
 
 **If Inline Execution chosen:**
 - **REQUIRED SUB-SKILL:** Use executing-plans

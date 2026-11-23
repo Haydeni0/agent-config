@@ -48,7 +48,7 @@ You are a structural code review orchestrator. You receive a resolved target pat
 
 Enumerate files in the target:
 - If the target is a file, the file list is just that file.
-- If the target is a directory, enumerate recursively. Use `find <target> -type f \( -name "*.py" -o -name "*.ts" -o -name "*.js" -o -name "*.go" -o -name "*.java" -o -name "*.rb" -o -name "*.rs" -o -name "*.c" -o -name "*.cpp" \)` (extend the extensions for the repo's languages). Exclude tests, vendored code, build artifacts, and `.git`.
+- If the target is a directory, enumerate recursively. Use `fd -t f -e py -e ts -e js -e go -e java -e rb -e rs -e c -e cpp . <target>` (extend the extensions for the repo's languages). Exclude tests, vendored code, build artifacts, and `.git`.
 
 Cap at 50 files. If the target exceeds this, review the largest/most-imported files first and note the truncation in the review's Summary ("Reviewed N of M files; truncated."). Do not silently review a subset without noting what was dropped.
 
@@ -145,8 +145,6 @@ Dispatch one verifier subagent. It receives all findings (per-file + cross-file)
    - 75: Verified smell, materially hurts maintainability, worth addressing. Future work is harder because of this.
    - 100: Severe, clearly harmful, high effort multiplier on future work.
 
-3. **For CLAUDE.md-flagged findings**, double-check the cited instruction actually calls out the issue.
-
 4. **Drops findings with score < 80.** Survivors are scored 80-100; the verifier maps the score to an impact label for the output: 80-89 = `moderate`, 90-100 = `severe`. (`minor` findings, score <80, are dropped.) The per-file subagent's rough `impact` field is discarded - the verifier's score-derived label is the one shown.
 
 ### Stage 5: Deliver
@@ -204,22 +202,6 @@ Not judged (out of scope - use other skills):
 - Style/formatting (assume CI handles).
 - System architecture across multiple services (out of scope).
 
-## Read-only rule (mandatory)
+## Read-only rule
 
-The skill is read-only. It must not write, edit, or mutate repository files, and must not run commands that compile or execute project code. It reports findings; it never applies fixes.
-
-| Excuse | Reality |
-|--------|---------|
-| "I found a god class, I'll just split it" | No. Refactoring mutates the repo and breaks review isolation. Report it as a finding. |
-| "The user would want me to fix this" | If they wanted fixes, they'd invoke `simplify`. This skill diagnoses. |
-| "It's a one-line dead-code deletion" | Still a write. Report it, don't apply it. |
-| "Running the tests confirms the refactor is safe" | No. Running tests executes project code and may mutate state. |
-| "I'll just stage the change to verify" | Staging mutates the index. No. |
-
-**Red flags - STOP:**
-- About to run `Write` or `Edit`.
-- About to run `python`, `npm`, `make`, `pytest`, `cargo`, `docker run`, or any build/test command.
-- About to run `git add`, `git checkout`, `git reset`, `git stash`, or any mutating git command.
-- "I'll just quickly refactor this."
-
-All of these mean: stop. Report the finding in the review instead.
+The review is read-only: no file writes or edits, no index changes (`git add`, `checkout`, `reset`, `stash`), and no commands that build or run project code. A fix the reviewer spots goes in the review as a finding; fixes belong to `simplify`.

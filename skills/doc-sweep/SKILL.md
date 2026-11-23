@@ -64,7 +64,7 @@ Most proposals should read as "enforce your own rules" - easy approvals.
 git ls-files '*.md'; git ls-files --others --exclude-standard '*.md'
 git check-ignore <paths>          # ignored = report-only tier
 git log -1 --format=%cs -- <file> # last touch
-grep -rn '<filename>' --include='*.md' .   # inbound refs (from live files only)
+rg -n '<filename>' -g '*.md' .   # inbound refs (from live files only)
 ```
 
 Per file: path, lines, class, tracked?, inbound refs. Untracked files with no

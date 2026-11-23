@@ -20,17 +20,17 @@ Default is HTML. If the user asks for a Notion page instead, follow the Notion v
 
 ### HTML
 
-- **Use `~/.claude/skills/explain-diff/render.py` instead of hand-writing HTML.**
+- **Use `<skill dir>/render.py` instead of hand-writing HTML.**
   Repeated invocations of this command tend to regenerate near-identical CSS/JS boilerplate
   every time, which wastes tokens and drifts in quality — factor that out once. Write a small
   JSON content spec (title, subtitle, slug, sections with raw HTML bodies, quiz questions with
   correct/incorrect options) and run:
   ```
-  python3 ~/.claude/skills/explain-diff/render.py <spec.json>
+  python3 <skill dir>/render.py <spec.json>
   ```
   This handles all CSS, JavaScript, page scaffolding, table of contents, quiz-option
   randomization, and the date-prefixed global filename automatically — only write the
-  content spec, not the full HTML page. Run `python3 ~/.claude/skills/explain-diff/render.py --help` for the exact JSON
+  content spec, not the full HTML page. Run `python3 <skill dir>/render.py --help` for the exact JSON
   schema if you haven't used it recently.
 - Section `html` fields in the spec are raw HTML you write directly — use `<pre>` for
   code blocks (already `white-space: pre-wrap` styled by the renderer), `.diagram`/

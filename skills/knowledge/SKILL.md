@@ -12,7 +12,7 @@ gets read. Its `AGENTS.md` is the contract and owns every rule; this skill
 never restates it - load it before any add or supersede:
 
 ```
-cat ~/gitrepos/knowledge/AGENTS.md
+cat "${KNOWLEDGE_STORE:-$HOME/gitrepos/knowledge}/AGENTS.md"
 ```
 
 ## search (before any research)

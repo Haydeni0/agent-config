@@ -12,7 +12,7 @@ forked-note: 2026-09-01 trimmed to pure spec-writer; all brainstorming dialogue 
 
 # write-spec
 
-Forked from superpowers:brainstorming (claude-plugins-official, v6.3.0) on 2026-09-01. 2026-09-01: trimmed to a pure spec-writer - the collaborative design dialogue lives in `grill-me`; this skill turns settled decisions into a document.
+This skill turns settled decisions into a document; the design dialogue lives in `grill-me`.
 
 Assumes the design is already decided (usually via grill-me). Your job: capture it faithfully in a spec, review it, get approval.
 

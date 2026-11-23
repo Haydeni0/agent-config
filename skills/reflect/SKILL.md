@@ -44,7 +44,7 @@ is never "missing".
 |---|---|
 | Missing knowledge - agent could not have known | Add the fact at the narrowest covering layer |
 | Discoverable but slow to find | Navigation pointer from a file the agent already reads |
-| Rule exists, was ignored | Not a new rule: sharpen wording or placement, add a rationalization row, or enforce mechanically |
+| Rule exists, was ignored | Not a new rule: sharpen wording or placement, put the reason beside the rule, or enforce mechanically |
 | Rule exists, is wrong or stale | Edit or delete it |
 | Skill procedure gap or misfire | Edit that skill |
 | Tool or environment gap, or an expensive tool call | Hook, script, permission, widen access, streamline the tool, or backlog |

@@ -53,7 +53,7 @@ names resolves from the repo; `manual (...)` procedure spans and `planned`
 pointers are skipped). Run from the target repo's root:
 
 ```bash
-python <this skill's directory>/lint.py docs/requirements.md
+uv run python <this skill's directory>/lint.py docs/requirements.md
 ```
 
 Exit 0 = clean; findings print one per row ID; exit 2 means no contract rows

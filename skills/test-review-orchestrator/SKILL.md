@@ -82,7 +82,7 @@ Then inline quality pass before publishing:
 1. `path::symbol`: reason.
 
 ## Recommended Actions
-1. `file` — trim|add|both — benefit — risk if skipped
+1. `file` - trim|add|both - benefit - risk if skipped
 2. ...
 ```
 

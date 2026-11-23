@@ -17,7 +17,7 @@ and published vendor + community guidance (sources at the bottom).
 | `.agents/backlog.md` | Always | Deferred work items, surfaced at session start |
 | `docs/requirements.md` | Optional | Binding product-behavior contract, created only after explicit opt-in and one concrete durable requirement |
 | `CONTRIBUTING.md` | Never | Manual reference for contribution-as-prompt - create by hand if a repo's contribution model needs it |
-| `Safety section` | Never | Hand-add from the AGENTS.md template when a repo's danger warrants detection-command machinery; simple danger rules go in Working rules |
+| `Safety section` | Never | Hand-add from `AGENTS.template.md` when a repo's danger warrants detection-command machinery; simple danger rules go in Working rules |
 
 Tool support (why AGENTS.md is the base): Codex, Cursor, Copilot,
 Devin/Windsurf, Jules, Amp, opencode, Zed, goose, Aider, and more read

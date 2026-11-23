@@ -36,9 +36,9 @@ Two gate checks govern every planned test. They come from `tdd-core/writing-good
 
 Plus: test the public surface, not internals (no tests of `_private` methods in keeper tests - exercise them through the public API that calls them). One logical assertion per test - if a test can fail for three different reasons, split it. Behavior, not text - run scripts/configs against controlled inputs and assert outputs/side effects; don't grep source.
 
-### Pillar B - why this matters for AI-generated tests
+### Pillar B - failure modes the gates catch
 
-LLM-generated tests hit roughly 45% statement / 30% branch coverage on real-world functions (versus near-100% on toy benchmarks), and over 99% of LLM-generated tests that *should* fail under semantic-altering changes actually pass on the original - models hallucinate requirements from training data, ignoring the explicit functional logic of the instance in front of them. The concrete failure modes:
+Generated tests commonly fail in these ways:
 
 - vacuous assertions (`assert result is not None`)
 - implementation-coupled tests (asserting internal calls rather than outputs - break on refactor)
@@ -46,7 +46,7 @@ LLM-generated tests hit roughly 45% statement / 30% branch coverage on real-worl
 - reinventing setup in each test instead of using fixtures
 - mocking so much that only mocks execute - the test proves nothing
 
-The two gates and the anti-pattern checklist exist to defend against these documented failure modes, not to enforce taste. When you catch yourself planning a test that "fills coverage" or "verifies the object exists", stop - that is the failure mode, not the fix.
+The two gates and the anti-pattern checklist exist to defend against these documented failure modes, not to enforce taste.
 
 ### Pillar C - test design heuristics
 

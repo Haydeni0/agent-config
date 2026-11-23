@@ -5,12 +5,8 @@ description: >
 deps: [tdd-core]
 forked-from: superpowers@claude-plugins-official v6.3.0 (writing-skills)
 forked-date: 2026-09-01
-forked-note: description rewritten to require explicit user request; see Provenance line in body
+forked-note: description rewritten to require explicit user request
 ---
-
-# writing-skills
-
-Forked from writing-skills (plugin claude-plugins-official, v6.3.0) on 2026-09-01; description rewritten to require explicit user request.
 
 # Writing Skills
 
@@ -103,6 +99,7 @@ skills/
 
 **Frontmatter (YAML):**
 - Two required fields: `name` and `description` (see [agentskills.io/specification](https://agentskills.io/specification) for all supported fields)
+- This repo also uses `layer:` (worker|orchestrator), `deps:` (skills this one names) and optional `exits:`; `scripts/check-skills.py` validates them.
 - Max 1024 characters total
 - `name`: Use letters, numbers, and hyphens only (no parentheses, special chars)
 - `description`: Third-person, describes ONLY when to use (NOT what it does)
@@ -221,7 +218,7 @@ Use words an agent would search for:
 
 ### 4. Token Efficiency (Critical)
 
-**Problem:** getting-started and frequently-referenced skills load into EVERY conversation. Every token counts.
+Only `name` and `description` load every session; the body loads when the skill triggers. Discovery rides on the description; body size is paid per use.
 
 **Target word counts:**
 - getting-started workflows: <150 words each
@@ -450,21 +447,6 @@ Different skill types need different test approaches:
 
 **Success criteria:** Agent finds and correctly applies reference information
 
-## Common Rationalizations for Skipping Testing
-
-| Excuse | Reality |
-|--------|---------|
-| "Skill is obviously clear" | Clear to you ≠ clear to other agents. Test it. |
-| "It's just a reference" | References can have gaps, unclear sections. Test retrieval. |
-| "Testing is overkill" | Untested skills have issues. Always. 15 min testing saves hours. |
-| "I'll test if problems emerge" | Problems = agents can't use skill. Test BEFORE deploying. |
-| "Too tedious to test" | Testing is less tedious than debugging bad skill in production. |
-| "I'm confident it's good" | Overconfidence guarantees issues. Test anyway. |
-| "Academic review is enough" | Reading ≠ using. Test application scenarios. |
-| "No time to test" | Deploying untested skill wastes more time fixing it later. |
-
-**All of these mean: Test before deploying. No exceptions.**
-
 ## Match the Form to the Failure
 
 Before writing guidance, classify the baseline failure. The form that bulletproofs one failure type measurably backfires on another.
@@ -488,8 +470,6 @@ Skills that enforce discipline (like TDD) need to resist rationalization. Agents
 
 **Scope:** this toolkit is for discipline failures — an agent that knows the rule and skips it under pressure. For wrong-shaped output or omitted elements, prohibition-based bulletproofing backfires; use the forms in Match the Form to the Failure instead.
 
-**Psychology note:** Understanding WHY persuasion techniques work helps you apply them systematically. See persuasion-principles.md for research foundation (Cialdini, 2021; Meincke et al., 2025) on authority, commitment, scarcity, social proof, and unity principles.
-
 ### Close Every Loophole Explicitly
 
 Don't just state the rule - forbid specific workarounds:
@@ -511,16 +491,6 @@ Write code before test? Delete it. Start over.
 - Delete means delete
 ```
 </Good>
-
-### Address "Spirit vs Letter" Arguments
-
-Add foundational principle early:
-
-```markdown
-**Violating the letter of the rules is violating the spirit of the rules.**
-```
-
-This cuts off entire class of "I'm following the spirit" rationalizations.
 
 ### Build Rationalization Table
 
@@ -628,22 +598,9 @@ step2 [label="read file"];
 helper1, helper2, step3, pattern4
 **Why bad:** Labels should have semantic meaning
 
-## STOP: Before Moving to Next Skill
-
-**After writing ANY skill, you MUST STOP and complete the deployment process.**
-
-**Do NOT:**
-- Create multiple skills in batch without testing each
-- Move to next skill before current one is verified
-- Skip testing because "batching is more efficient"
-
-**The deployment checklist below is MANDATORY for EACH skill.**
-
-Deploying untested skills = deploying untested code. It's a violation of quality standards.
+Finish testing and deployment for each skill before starting the next.
 
 ## Skill Creation Checklist (TDD Adapted)
-
-**IMPORTANT: Create a todo for EACH checklist item below.**
 
 **RED Phase - Write Failing Test:**
 - [ ] Create pressure scenarios (3+ combined pressures for discipline skills)
@@ -679,18 +636,7 @@ Deploying untested skills = deploying untested code. It's a violation of quality
 - [ ] Supporting files only for tools or heavy reference
 
 **Deployment:**
-- [ ] Commit skill to git and push to your fork (if configured)
-- [ ] Consider contributing back via PR (if broadly useful)
+- [ ] Declare cross-skill deps in `deps:`; regenerate the skill map (`uv run --locked --directory settings-sync python ../scripts/check_skill_graph.py --write`)
+- [ ] `agent-config sync`, then `agent-config check`
+- [ ] Commit only when the task calls for it, under the active authorization gate
 
-## Discovery Workflow
-
-How future agents find your skill:
-
-1. **Encounters problem** ("tests are flaky")
-2. **Searches skills** (greps descriptions, browses categories)
-3. **Finds SKILL** (description matches)
-4. **Scans overview** (is this relevant?)
-5. **Reads patterns** (quick reference table)
-6. **Loads example** (only when implementing)
-
-**Optimize for this flow** - put searchable terms early and often.

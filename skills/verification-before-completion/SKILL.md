@@ -6,20 +6,14 @@ layer: worker
 deps: [claim-verification]
 forked-from: superpowers@claude-plugins-official v6.3.0 (verification-before-completion)
 forked-date: 2026-09-01
-forked-note: description lightly edited; see Provenance line in body
+forked-note: description lightly edited
 ---
-
-# verification-before-completion
-
-Forked from verification-before-completion (plugin claude-plugins-official, v6.3.0) on 2026-09-01; description lightly edited.
 
 # Verification Before Completion
 
 ## Overview
 
 **Core principle:** Evidence before claims, always.
-
-**Violating the letter of this rule is violating the spirit of this rule.**
 
 ## The Iron Law
 
@@ -42,7 +36,7 @@ BEFORE claiming any status or expressing satisfaction:
    - If YES: State claim WITH evidence
 5. ONLY THEN: Make the claim
 
-Skip any step = lying, not verifying
+A claim made without steps 1-4 is unverified.
 ```
 
 ## Evidence per claim type
@@ -57,7 +51,6 @@ What counts as evidence for each claim type - tests, build, regression tests, ag
 - Trusting agent success reports
 - Relying on partial verification
 - Thinking "just this once"
-- Tired and wanting work over
 - **ANY wording implying success without having run verification**
 
 ## Rationalization Prevention
@@ -69,7 +62,6 @@ What counts as evidence for each claim type - tests, build, regression tests, ag
 | "Just this once" | No exceptions |
 | "Linter passed" | Linter ≠ compiler |
 | "Agent said success" | Verify independently |
-| "I'm tired" | Exhaustion ≠ excuse |
 | "Partial check is enough" | Partial proves nothing |
 | "Different words so rule doesn't apply" | Spirit over letter |
 

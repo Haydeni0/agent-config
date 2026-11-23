@@ -19,7 +19,7 @@
 
 ### Git
 
-- After a worktree-isolated subagent or `claude -w` session finishes, remove its worktree: `wt remove --foreground <branch>`. Claude Code never fires `WorktreeRemove` for hook-created git worktrees, so they leak without this (evidence: MEMORY.md 2026-10-06).
+- After a worktree-isolated subagent or `claude -w` session finishes, remove its worktree: `wt remove --foreground <branch>`. Claude Code never fires `WorktreeRemove` for hook-created git worktrees, so they leak without this.
 - Always prefix branch names with `hayden/` (e.g. `hayden/my-feature`).
 - Always create PRs as drafts (`gh pr create --draft`).
 - `git add` is allowed (used to stage changes for user review). Do not stage files likely to contain secrets (`.env`, `credentials.*`, `*.pem`, etc.).
@@ -115,21 +115,6 @@ The test: Every changed line should trace directly to the user's request.
 | Fix linter issues properly | `# noqa`, `# type: ignore`, `# pragma`, or pyproject suppressions |
 | Remove imports/symbols YOUR edit orphaned | delete pre-existing dead code unprompted |
 
-#### Rationalizations
-
-| Excuse | Reality |
-|---|---|
-| "Cleaner to reformat the whole file" | Hides the real diff from review |
-| "I'll rename to `_foo` - better encapsulation" | Rename only when asked or required |
-| "This comment is stale anyway" | Update it if wrong; don't delete unprompted |
-
-#### Red flags - stop
-
-- Whole-file or out-of-scope whitespace changes
-- Symbol renames (including `foo` → `_foo`) not required by task
-- Linter silencers or config rule changes to suppress warnings
-- Deleting section-group markers or docstrings unprompted
-
 When in doubt, leave it alone and ask.
 
 ### 4. Goal-Driven Execution
@@ -155,7 +140,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 What good code looks like. Always-loaded, so kept to universal principles only.
 Apply when writing, reviewing or editing code.
 
-- Scope: behavioral/process rules live in karpathy-guidelines. This file is about the code itself.
+- Scope: behavioral and process rules live in the Karpathy Guidelines section above; this section is about the code itself.
 - A principle belongs here only if it is (1) universal - true regardless of feature/design, (2) about the code not the process, (3) not already covered elsewhere. Design-dependent preferences ("use Protocols here") do NOT belong - they are conditional.
 
 ### Programming principles: General
@@ -279,7 +264,7 @@ Apply when writing, reviewing or editing code.
 
 ## Verification Language
 
-Don't hedge when you can verify. Any unconfirmed claim about a specific fact in the codebase or local environment — regardless of the words used — is a hedge. Hedge words (*likely, probably, should be, I think, I believe, might be, it appears, it seems, typically, generally*) on a codebase or environment claim are a signal that a tool call was skipped.
+Don't hedge when you can verify. Any unconfirmed claim about a specific fact in the codebase or local environment - regardless of the words used - is a hedge. Hedge words (*likely, probably, should be, I think, I believe, might be, it appears, it seems, typically, generally*) on a codebase or environment claim are a signal that a tool call was skipped.
 
 ### The rule
 
@@ -287,13 +272,13 @@ Before writing a claim about the codebase or environment, ask: can I verify this
 
 - **Yes** → make the call, then state the result as fact.
 - **No, and the claim is blocking** → stop and ask. Don't proceed on a guess.
-- **No, and the claim is non-blocking** → flag the assumption explicitly: "Assuming X — correct me if wrong."
+- **No, and the claim is non-blocking** → flag the assumption explicitly: "Assuming X - correct me if wrong."
 
 Before sending a terminal completion report, finalising a persisted artifact that asserts facts (report, status file, doc, PR or Linear post), or relaying a peer agent's or subagent's report, run the claim-verification skill. Chat answers verify inline per the rule above - no skill pass.
 
 **Blocking** means: the claim influences what tool call comes next, what code gets written, or what recommendation is made. If getting it wrong changes your next action, it's blocking.
 
-**"Can I verify this"** means: is the information reachable by any available tool. If the file is in the working tree, it is reachable. "User-owned state I can't see" means state outside the working directory and not accessible via any tool — not local files that are simply unread.
+**"Can I verify this"** means: is the information reachable by any available tool. If the file is in the working tree, it is reachable. "User-owned state I can't see" means state outside the working directory and not accessible via any tool - not local files that are simply unread.
 
 ### Multi-step chains
 
@@ -301,22 +286,22 @@ The hardest case: verifying a fact requires two or three chained reads. The temp
 
 Every link in the chain must be verified, not just the terminal facts.
 
-❌ Bad: "The model likely uses float32 — that's the PyTorch default."
+❌ Bad: "The model likely uses float32 - that's the PyTorch default."
 ✅ Good: read `model.py` → find `dtype=cfg.model_dtype` → read `config.yaml` → find `model_dtype: bfloat16` → state: "The model uses bfloat16, set in `config.yaml`."
 
 The path being "a few steps away" is not a reason to skip it. If the chain is reasonably followable, follow it.
 
 ### Red flags - stop
 
-- "The function probably does X" — read the function.
-- "This is likely caused by Y" — grep for Y, run the code, check the logs.
-- "That config option is probably Z" — read the config file.
-- "It should work because..." — run it and confirm.
-- "I read file A and file B, so C is probably..." — verify C directly.
+- "The function probably does X" - read the function.
+- "This is likely caused by Y" - grep for Y, run the code, check the logs.
+- "That config option is probably Z" - read the config file.
+- "It should work because..." - run it and confirm.
+- "I read file A and file B, so C is probably..." - verify C directly.
 
 ### "Assuming X" is not a free pass
 
-"Assuming X — correct me if wrong" is only valid when a tool call genuinely cannot reach the information. If the file exists in the working tree, read it. Using "Assuming X" to avoid a tool call is the same violation as hedging.
+"Assuming X - correct me if wrong" is only valid when a tool call genuinely cannot reach the information. If the file exists in the working tree, read it. Using "Assuming X" to avoid a tool call is the same violation as hedging.
 
 ### Legitimate exceptions
 
@@ -326,7 +311,7 @@ Hedging is correct when the uncertainty is genuinely unreachable:
 - Future behavior of an external system.
 - User intent or requirements that haven't been stated.
 
-In these cases, name the uncertainty precisely: "I can't verify your prod config — if X is set, then Y; otherwise Z."
+In these cases, name the uncertainty precisely: "I can't verify your prod config - if X is set, then Y; otherwise Z."
 
 ### Examples
 
@@ -334,32 +319,17 @@ In these cases, name the uncertainty precisely: "I can't verify your prod config
 ❌ "The default timeout is probably 30 seconds."
 ✅ (reads `client.py` line 12) "The default timeout is 30 seconds."
 
-**Two chained reads:**
-❌ "The model likely uses float32 — PyTorch default."
-✅ (reads `model.py` → `dtype=cfg.model_dtype`; reads `config.yaml` → `model_dtype: bfloat16`) "The model uses bfloat16, set in `config.yaml`."
-
 **Grep + read:**
 ❌ "MAX_RETRIES is probably defined somewhere in utils."
 ✅ (greps for `MAX_RETRIES` → `utils/http.py:14`; reads line) "`MAX_RETRIES = 3`, `utils/http.py:14`."
 
 **Genuine exception, non-blocking:**
 ❌ "The staging DB probably uses the same schema as prod."
-✅ "Assuming staging and prod share the same schema — correct me if wrong."
+✅ "Assuming staging and prod share the same schema - correct me if wrong."
 
 **Genuine exception, blocking:**
 ❌ "The API key is probably in your `.env` so this should work."
-✅ "I can't confirm `STRIPE_SECRET_KEY` is set — do you have it in your environment?"
-
-### Rationalizations
-
-| Excuse | Reality |
-|---|---|
-| "A quick read would slow down the response" | A wrong answer wastes more time. |
-| "It's obvious from context" | Obvious guesses are still guesses. |
-| "I said 'probably' so I'm covered" | Hedging without verifying is still unverified. |
-| "The chain is too indirect" | If it's followable, follow it. |
-| "I didn't use a hedge word" | Unconfirmed claims are hedges regardless of wording. |
-| "It's a non-blocking claim" | If it influences your next action, it's blocking. |
+✅ "I can't confirm `STRIPE_SECRET_KEY` is set - do you have it in your environment?"
 
 <!-- CODEGRAPH_START -->
 ## CodeGraph

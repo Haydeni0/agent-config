@@ -22,7 +22,7 @@ mode: the skill is idempotent (maintains, never reinstalls).
 | `CONTRIBUTING.md` | Never | Manual reference only - create by hand if the repo's contribution model needs it |
 | `README.md` | Never | The kit's own doc (tool-support matrix, what-goes-where, sources) - read it if the user asks why the kit is shaped this way |
 
-**Read before anything else**: the `AGENTS.md` and `MEMORY.md` templates
+**Read before anything else**: the `AGENTS.template.md` and `MEMORY.md` templates
 in this skill's directory - they are the shape you will merge into and
 the seed you will copy verbatim. Mode detection also depends on them
 (a repo is template-shaped iff its AGENTS.md carries the Maintenance
@@ -32,7 +32,7 @@ below assumes you have their contents in context; re-read if unsure.
 ## Mode detection (first)
 
 Scan for template shape: AGENTS.md carrying a Maintenance section
-matching the `AGENTS.md` template in this skill's directory, and
+matching `AGENTS.template.md` in this skill's directory, and
 MEMORY.md carrying the `MEMORY.md` template's frontmatter.
 
 - **Absent → install mode** (the flow below).
@@ -123,12 +123,12 @@ overrides. Plain chat text, never modal tools. Fixed order:
 4. **Danger** - always asked: "any live infra / anything dangerous
    here?" A yes earns a **Working rule** (e.g. "never restart X"), a
    named Safety section is NOT created - the user adds one by hand
-   from the AGENTS.md template when a repo warrants the full
+   from `AGENTS.template.md` when a repo warrants the full
    detection-command shape
 5. **Autonomy** - always asked: "will unattended/long runs happen
    here?" No → section cut. Yes → write fork definition + 3-tier
    table (decide-and-note / queue-to-backlog / stop) from the
-   Autonomy section of this skill's `AGENTS.md` template
+   Autonomy section of this skill's `AGENTS.template.md`
 6. **CLAUDE.md fold** - iff a fat CLAUDE.md was found: "fold into
    AGENTS.md and leave the one-line import?" (default on yes: fold -
    repo wording wins on substance, template shape holds, anything
@@ -151,14 +151,14 @@ correct in passing if wrong, don't ask):
 ### 4. Apply
 
 - Merge the repo's substance into the shape of this skill's
-  `AGENTS.md` template - template wins on **shape**, repo wording
+  `AGENTS.template.md` - template wins on **shape**, repo wording
   wins on **substance**. Never delete earned wording; flag stale
   content (dead commands, dead paths, wrong claims) in the report -
   don't silently fix it.
 - Every placeholder bracket in the template filled or its section
   cut. A section with no content gets cut, never kept as scaffolding.
 - Land: AGENTS.md (from the template), CLAUDE.md (copy this skill's
-  `CLAUDE.md` verbatim - it is exactly the import line), MEMORY.md
+  `CLAUDE.template.md` verbatim - it is exactly the import line), MEMORY.md
   (copy this skill's `MEMORY.md` template verbatim: frontmatter +
   example entry), `.agents/backlog.md` (create per the backlog
   skill's template if that skill is available; otherwise a `# Backlog`
@@ -173,7 +173,7 @@ correct in passing if wrong, don't ask):
   `Verification` pointer (automated test preferred, else the exact manual
   or visual procedure written given/when/then).
 
-  Add the corresponding Working rules from the `AGENTS.md` template:
+  Add the corresponding Working rules from `AGENTS.template.md`:
   update the requirements document with or before behavior changes;
   cite every requirement as ID plus one-line meaning, verbatim when
   interpretation matters; and never mark a requirement complete without

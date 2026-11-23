@@ -162,13 +162,7 @@ Comment-construction rules:
 - Keep each issue description concise.
 - Matter-of-fact tone. Avoid accusatory language, excessive praise, or filler like "Great job", "Thanks for".
 
-For each finding, include a full-SHA blob link to the cited lines with at least 1 line of context before and after:
-
-```
-https://github.com/<owner>/<repo>/blob/<full-sha>/<path>#L<start>-L<end>
-```
-
-Use the full SHA (run `git rev-parse HEAD`), never `$(git rev-parse HEAD)` embedded in the URL - the comment renders Markdown directly. Repo name must match the repo being reviewed. Line range format is `#L[start]-L[end]`. If commenting about lines 5-6, link to `#L4-L7`.
+Cite each finding as `path:start-end`. When the scope is `branch` or `ref:` and the lines exist at a pushed commit on a GitHub remote, also give a full-SHA blob link `https://github.com/<owner>/<repo>/blob/<sha>/<path>#L<start>-L<end>`, with one line of context either side.
 
 ## Review criteria
 
@@ -189,22 +183,6 @@ Guidelines:
 - Do not suggest stylistic changes unless they hurt readability.
 - Do not flag pre-existing issues unrelated to the current changes.
 
-## Read-only rule (mandatory)
+## Read-only rule
 
-The core is read-only. It must not write, edit, or mutate repository files, and must not run commands that compile or execute project code. The core emits its review to chat - it writes no files.
-
-| Excuse | Reality |
-|--------|---------|
-| "I found a bug, I'll just fix it" | No. The core reviews, it never fixes. Fixing mutates the repo and breaks review isolation. |
-| "The user would want me to fix this" | If they wanted fixes, they'd ask. Review output only. |
-| "It's a one-line obvious fix" | Still a write. Report it as a finding, don't apply it. |
-| "Running the tests will confirm my finding" | No. Running tests executes project code and may mutate state. Report what you see in the diff. |
-| "I'll just stage the change to verify" | Staging mutates the index. No. |
-
-**Red flags - STOP:**
-- About to run `Write` or `Edit`
-- About to run `python`, `npm`, `make`, `pytest`, `cargo`, `docker run`, or any build/test command
-- About to run `git add`, `git checkout`, `git reset`, `git stash`, or any mutating git command
-- "I'll just quickly fix this"
-
-All of these mean: stop. Report the finding in the review instead.
+The review is read-only: no file writes or edits, no index changes (`git add`, `checkout`, `reset`, `stash`), and no commands that build or run project code. A fix the reviewer spots goes in the review as a finding. The core emits its review to chat - it writes no files.

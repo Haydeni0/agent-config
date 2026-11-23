@@ -30,7 +30,7 @@ Append deferred side topics to `.agents/backlog.md` at the git root so they surv
 
 `/backlog` bare, "what's next" → print open items, ID + one line each. Don't stop at listing: recommend what to pick up next (judge by relevance to current work, age, size) and say why. If an item needs clarification before it's actionable, ask about it - one question at a time.
 
-If the trigger arrives mid-flow (interview, review, task), resume the pending step exactly after capture/recall - a deferral is never an answer, decision, or advance signal. Capture records only user-deferred topics, never conversation state (see Capture step 6).
+If the trigger arrives mid-flow (interview, review, task), resume the pending step exactly after capture/recall - a deferral is never an answer, decision, or advance signal. Capture records only user-deferred topics, never conversation state (see Capture step 5).
 
 ## Close
 

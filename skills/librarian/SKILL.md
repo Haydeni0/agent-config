@@ -7,6 +7,8 @@ description: Research open-source libraries with evidence-backed answers and Git
 
 Answer questions about open-source libraries by finding evidence with GitHub permalinks. Every claim backed by actual code.
 
+In harnesses without `fetch_content`/`web_search` (everything but Pi), clone with `git clone --depth 1` into `/tmp` (global rule, Fetching repo content), use the harness's own web search, and replace `/tmp/pi-github-repos/owner/repo` with your clone path. The Execution Model table and the Video Analysis section apply to Pi only.
+
 ## Execution Model
 
 Pi executes tool calls sequentially, even when you emit multiple calls in one turn. But batching independent calls in a single turn still saves LLM round-trips (~5-10s each). Use these patterns:
@@ -44,7 +46,7 @@ Synthesize web results + repo docs. Cite official documentation and link to rele
 The core workflow -- clone, find, permalink:
 
 1. **fetch_content** the GitHub repo URL -- this clones it locally and returns the file tree
-2. Use **bash** to search the cloned repo: `grep -rn "function_name"`, `find . -name "*.ts"`
+2. Use **bash** to search the cloned repo: `rg -n "function_name"`, `fd -e ts`
 3. Use **read** to examine specific files once you've located them
 4. Get the commit SHA: `cd /tmp/pi-github-repos/owner/repo && git rev-parse HEAD`
 5. Construct permalink: `https://github.com/owner/repo/blob/<sha>/path/to/file#L10-L20`

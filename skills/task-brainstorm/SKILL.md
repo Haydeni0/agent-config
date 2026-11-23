@@ -42,55 +42,55 @@ Groups use `###` headers. Fields appear **progressively** — only add a field w
 
 **States:** `[ ]` not started · `[-]` brainstorming · `[x]` planned · `[✓]` resolved
 
-**Task entry format** — verbatim quote + freeform source ref:
+**Task entry format** - verbatim quote + freeform source ref:
 
 ```markdown
-- `[ ]` **T1** `source` — author
+- `[ ]` **T1** `source` - author
   > Verbatim text from the original comment / ticket / thread.
 ```
 
 `source` is a freeform label: `file:line`, `LIN-123`, `slack #channel`, `conversation`, etc.
 
-**Full lifecycle example** (bug triage — one group through all 4 states):
+**Full lifecycle example** (bug triage - one group through all 4 states):
 
-Stage 1 — triage, tasks only:
+Stage 1 - triage, tasks only:
 
 ```markdown
 ### G1: Login & session bugs `[ ]`
 
 **Tasks**
-- `[ ]` **T1** `GH-142` — sarah
+- `[ ]` **T1** `GH-142` - sarah
   > Logout doesn't clear the session cookie on iOS Safari. Rare but reproducible.
   > Worth fixing now or track for next quarter?
-- `[ ]` **T2** `GH-156` — marcus
+- `[ ]` **T2** `GH-156` - marcus
   > NullPointerException in UserService.authenticate() when email field is null.
 ```
 
-Stage 2 — brainstorming, add **Take**:
+Stage 2 - brainstorming, add **Take**:
 
 ```markdown
 ### G1: Login & session bugs `[-]`
 
 **Tasks**
-- `[-]` **T1** `GH-142` — sarah
+- `[-]` **T1** `GH-142` - sarah
   > Logout doesn't clear the session cookie on iOS Safari...
-- `[x]` **T2** `GH-156` — marcus
+- `[x]` **T2** `GH-156` - marcus
   > NullPointerException in UserService.authenticate() when email is null.
 
 **Take**
-- T1: Open question — fix now vs defer. Recommend fix now: auth bugs compound. Awaiting user call.
-- T2: Clear fix — add null guard before lookup. No design question.
+- T1: Open question - fix now vs defer. Recommend fix now: auth bugs compound. Awaiting user call.
+- T2: Clear fix - add null guard before lookup. No design question.
 ```
 
-Stage 3 — plan locked, add **Plan**:
+Stage 3 - plan locked, add **Plan**:
 
 ```markdown
 ### G1: Login & session bugs `[x]`
 
 **Tasks**
-- `[x]` **T1** `GH-142` — sarah
+- `[x]` **T1** `GH-142` - sarah
   > ...
-- `[x]` **T2** `GH-156` — marcus
+- `[x]` **T2** `GH-156` - marcus
   > ...
 
 **Take**

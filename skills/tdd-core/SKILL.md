@@ -5,12 +5,8 @@ description: >
   Use when implementing any feature or bugfix with a test-first workflow - red-green-refactor: write the failing test, watch it fail, make it pass. Invoke when the user asks for TDD or test-first development, or when another skill (tdd, test-plan, systematic-debugging) directs it. Not auto-triggered for quick fixes unless the user asks.
 forked-from: superpowers@claude-plugins-official v6.3.0 (test-driven-development)
 forked-date: 2026-09-01
-forked-note: description rewritten to require explicit user request; see Provenance line in body
+forked-note: description rewritten to require explicit user request; includes writing-good-tests.md canon
 ---
-
-# tdd-core
-
-Forked from tdd-core (plugin claude-plugins-official, v6.3.0) on 2026-09-01; includes writing-good-tests.md canon; description rewritten to require explicit user request.
 
 # Test-Driven Development (TDD)
 
@@ -20,22 +16,9 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 **Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
 
-**Violating the letter of the rules is violating the spirit of the rules.**
-
 ## When to Use
 
-**Always:**
-- New features
-- Bug fixes
-- Refactoring
-- Behavior changes
-
-**Exceptions (ask your human partner):**
-- Throwaway prototypes
-- Generated code
-- Configuration files
-
-Thinking "skip TDD just this once"? Stop. That's rationalization.
+New features, bug fixes, refactoring and behavior changes, when the user asked for test-first work or another skill directs it. Throwaway prototypes, generated code and configuration files are exceptions - confirm with the user.
 
 ## The Iron Law
 
@@ -233,24 +216,6 @@ When writing or changing any test, read [writing-good-tests.md](writing-good-tes
 | "TDD will slow me down" | TDD IS the pragmatic path: catches bugs before commit, prevents regressions, lets you refactor without fear. "Pragmatic" shortcuts mean debugging in production — slower, not faster. |
 | "Manual test faster" | Manual doesn't prove edge cases. You'll re-test every change. |
 | "Existing code has no tests" | You're improving it. Add tests for existing code. |
-
-## Red Flags - STOP and Start Over
-
-- Code before test
-- Test after implementation
-- Test passes immediately
-- Can't explain why test failed
-- Tests added "later"
-- Rationalizing "just this once"
-- "I already manually tested it"
-- "Tests after achieve the same purpose"
-- "It's about spirit not ritual"
-- "Keep as reference" or "adapt existing code"
-- "Already spent X hours, deleting is wasteful"
-- "TDD is dogmatic, I'm being pragmatic"
-- "This is different because..."
-
-**All of these mean: Delete code. Start over with TDD.**
 
 ## Example: Bug Fix
 

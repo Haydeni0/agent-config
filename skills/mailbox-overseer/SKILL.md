@@ -87,11 +87,9 @@ tell the user in your next report what you saw and what you did.
 - restart a worker mid-task without first trying an interrupt, unless the
   worker is unreachable.
 
-Spawning a worker session is a buildable delegation decision, not
-execution: the "never execute project work" rule is unchanged. The "never
-spawn subagents" rule is about in-session subagents, whose output returns
-through your context - a worker session started with `mailbox spawn`
-reports only through mail, so that rule does not cover it.
+Spawning a worker session is delegation, not execution. The no-subagents
+rule covers in-session subagents, whose output returns through your context.
+A worker started with `mailbox spawn` reports only through mail.
 
 ## Working loop
 

@@ -86,8 +86,8 @@ The orchestrator writes the final doc to the output path and reports: output pat
 
 ## Why This Shape
 
-- **Guardian separate from Formatter**: the Formatter is under readability pressure and will quietly drop "old" values in comparison clauses unless the inventory is fixed first. Baseline testing dropped 4 such facts (old ssl mode, backup tier, old rate limit, leak rate) while claiming "no information removed."
-- **Verbatim contract on the Formatter**: without it, the Formatter mutates literals while formatting (spelling `4` as `four`, changing case on bolding, splitting sentences across table cells) and every mutation costs a fix-round. A 5000-word doc ran 3 rounds (~40 min) before this contract; the contract targets 0-1.
+- **Guardian separate from Formatter**: under readability pressure the Formatter drops "old" values in comparison clauses while reporting no loss, so the inventory is fixed first.
+- **Verbatim contract on the Formatter**: without it the Formatter mutates literals while formatting (`4` -> `four`, case changes on bolding, sentences split across table cells), and each mutation costs a fix round.
 - **Loss Auditor fresh-context**: an auditor that shares the Formatter's context inherits its blind spots. Fresh context is the only check that catches what the Formatter decided was disposable.
 - **Auditors in parallel**: Loss Auditor and Quality Critic read the same output, so run them concurrently - sequential ordering wastes a round trip per pass.
 - **Quality Critic advisory, not blocking**: scannability is subjective and can loop forever. Loss is finite and converges. Only the finite gate blocks.

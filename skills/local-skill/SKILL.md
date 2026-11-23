@@ -26,9 +26,10 @@ ones, so every harness sees it.
    ignore but is a tracked diff and leaks the skill's name into the repo -
    `.git/info/exclude` is the mechanism when the point is "no diff".
 
-3. Link it into native homes now: `agent-config sync <harness>`. The Claude
-   home symlinks the source checkout, so new Claude sessions pick it up even
-   without a sync; other harnesses need the sync run.
+3. Link it into native homes: `agent-config sync <harness>`. Claude gets one
+   link per skill, so Claude sees the new skill only after
+   `agent-config sync claude`. Codex's `~/.agents/skills` links the whole
+   source `skills/` directory, so Codex sees it without a sync.
 
 ## What tooling already handles
 
