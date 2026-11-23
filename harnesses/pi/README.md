@@ -45,8 +45,7 @@ The source template uses `${AGENT_CONFIG_REPO}` for extension/theme paths; sync 
 
 `packages[]` declares exact npm versions and a Git commit. `agent-config bootstrap pi` compares installed versions/revisions and installs mismatches; the vendored web-access extension uses its npm lockfile. Update a package by editing its pin and running bootstrap.
 
-`sync pi context` inlines `rules/global.md` into `~/.pi/agent/CLAUDE.md`: it adds source routing and rewrites `@skills/<n>` to ``the `<n>` skill`` (pi can't
-expand `@` imports itself). This runs by default with `agent-config sync pi`; select `config` or `context` to update one output.
+`sync pi context` inlines `rules/global.md` into `~/.pi/agent/CLAUDE.md`: it adds source routing. This runs by default with `agent-config sync pi`; select `config` or `context` to update one output.
 
 ## Set up a new machine
 

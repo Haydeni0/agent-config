@@ -27,7 +27,7 @@ def source_home(tmp_path: Path) -> Path:
     source = tmp_path / "source"
     source.mkdir()
     (source / "rules").mkdir(parents=True, exist_ok=True)
-    (source / "rules/global.md").write_text("# Rules\nSee @skills/uv.\n")
+    (source / "rules/global.md").write_text("# Rules\nSee the `uv` skill.\n")
     for name in ("harnesses/opencode", "harnesses/pi", "harnesses/goose", "harnesses/gemini", "harnesses/codex", "harnesses/no-mistakes", "harnesses/claude", "commands", "agents", "skills", "hooks", "vendor", "harnesses/claude/hooks"):
         (source / name).mkdir(parents=True)
     for name, filename in (("harnesses/opencode", "opencode.json"), ("harnesses/opencode", "tui.json"), ("harnesses/pi", "settings.json"), ("harnesses/gemini", "settings.json"), ("harnesses/claude", "settings.json")):

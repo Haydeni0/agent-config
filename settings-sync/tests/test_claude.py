@@ -27,7 +27,7 @@ def apply_claude_config(paths, mode: Mode) -> list[Outcome]:
 def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated_home: Path):
     source = tmp_path / "source repo"
     (source / "rules").mkdir(parents=True)
-    (source / "rules/global.md").write_text("# Complete rules\nSee @skills/example.\n")
+    (source / "rules/global.md").write_text("# Complete rules\nSee the `example` skill.\n")
     (source / "harnesses/claude").mkdir(parents=True)
     (source / "harnesses/claude/settings.json").write_text('{"permissions":{"allow":["shared"]}}')
     (source / "harnesses/claude/statusline-command.sh").write_text("echo status\n")
@@ -53,7 +53,7 @@ def test_external_source_claude_preserves_local_entries(tmp_path: Path, isolated
     assert local.read_text() == "Keep local skill"
     instructions = (isolated_home / ".claude/CLAUDE.md").read_text()
     assert str(source) in instructions
-    assert "# Complete rules\nSee @skills/example." in instructions
+    assert "# Complete rules\nSee the `example` skill." in instructions
     alias = isolated_home / ".claude/skills/example/SKILL.md"
     alias.write_text("Edited through runtime alias")
     assert skill.read_text() == "Edited through runtime alias"

@@ -65,7 +65,7 @@ Codex sync recursively merges the template's declared keys into `~/.codex/config
 
 ## Rules, Submodules & Hooks
 
-- Global rules live in `rules/global.md`. `@skills/<name>` references are auto-transformed into `the \`<name>\` skill` for Codex, Pi, Opencode, Goose, AGY.
+- Global rules live in `rules/global.md`; sync copies the body unchanged into every harness's global instructions. Name skills in plain text (the `uv` skill), never as `@skills/<name>`: Claude reads `@` as a file import, and a skill directory imports nothing.
 - Harness-specific rules go in `harnesses/<tool>/rules.md` (e.g. `harnesses/opencode/rules.md`).
 - Submodules (`vendor/plugins/`) are symlinked into `skills/`. Run `git submodule update --init --recursive` after clone/pull.
 - Hooks (`hooks/`) carry shared policy cores with thin per-harness adapters.

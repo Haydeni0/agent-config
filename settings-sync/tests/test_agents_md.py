@@ -5,14 +5,6 @@ import pytest
 from settings_sync.agents_md import build_agents_md
 
 
-def test_skills_ref_rewritten_to_plain_text(tmp_path: pathlib.Path):
-    claude_md = tmp_path / "CLAUDE.md"
-    claude_md.write_text("See @skills/uv for rules.\n")
-    result = build_agents_md(claude_md)
-    assert "the `uv` skill" in result
-    assert "@skills/uv" not in result
-
-
 def _apply(target: pathlib.Path, claude: pathlib.Path, mode):
     from settings_sync.actions import Mode
     from settings_sync.agents_md import plan_agents_md
@@ -26,7 +18,7 @@ def _apply(target: pathlib.Path, claude: pathlib.Path, mode):
 def test_sync_agents_md_writes_expanded_content(tmp_path: pathlib.Path):
     claude = tmp_path / "claude" / "CLAUDE.md"
     claude.parent.mkdir(parents=True)
-    claude.write_text("See @skills/uv.\n")
+    claude.write_text("See the `uv` skill.\n")
     target = tmp_path / "config" / "opencode" / "AGENTS.md"
 
     from settings_sync.actions import Mode, Status

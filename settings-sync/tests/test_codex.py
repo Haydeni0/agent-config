@@ -33,7 +33,7 @@ def codex_home(tmp_path: pathlib.Path) -> pathlib.Path:
     (home / "harnesses/codex").mkdir(parents=True)
     (home / "harnesses/codex" / "config.toml").write_text(CONFIG_TEMPLATE)
     (home / "rules").mkdir(parents=True, exist_ok=True)
-    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee the `uv` skill.\n")
     (home / "skills").mkdir(parents=True)
     (home / "skills" / "uv").mkdir(parents=True)
     (home / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody.\n")
@@ -235,7 +235,6 @@ def test_cli_codex_agents_md_creates_inlined(tmp_path: pathlib.Path, codex_home:
     assert result.exit_code == 0
     written = (codex_dir / "AGENTS.md").read_text()
     assert "the `uv` skill" in written
-    assert "@skills/uv" not in written
 
 
 def test_cli_codex_bare_runs_config_and_agents_md(tmp_path: pathlib.Path, codex_home: pathlib.Path):

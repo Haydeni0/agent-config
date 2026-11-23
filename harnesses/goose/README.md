@@ -25,7 +25,7 @@ Agent frontmatter note: goose only reads `name`, `description`, `model` from age
 
 | Source in the checkout | Target in `~/.config/goose` | Mechanism |
 |---|---|---|
-| `rules/global.md` + `@` imports | `.goosehints` | `@` imports inlined, `@skills/<n>` rewritten to `the \`<n>\` skill` (same transform as opencode `AGENTS.md` and pi `CLAUDE.md`) |
+| `rules/global.md` | `.goosehints` | copied behind a source-routing preamble (same as opencode `AGENTS.md` and pi `CLAUDE.md`) |
 | `harnesses/goose/config.yaml` | `config.yaml` | copy; refuses to clobber a diverging file without `--force` (machine-specific settings set via `goose configure` or env vars are preserved) |
 | `harnesses/goose/custom_providers/*.json` | `custom_providers/*.json` | per-file copy; orphans warned (removed with `--force`) |
 

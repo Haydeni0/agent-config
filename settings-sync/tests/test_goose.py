@@ -43,7 +43,7 @@ def goose_home(tmp_path: pathlib.Path) -> pathlib.Path:
         json.dumps({"name": "glm", "engine": "openai", "base_url": "http://example/v1"})
     )
     (home / "rules").mkdir(parents=True, exist_ok=True)
-    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee the `uv` skill.\n")
     (home / "skills").mkdir(parents=True)
     (home / "agents").mkdir()
     (home / "skills" / "uv").mkdir(parents=True)

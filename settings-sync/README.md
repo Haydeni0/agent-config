@@ -27,7 +27,7 @@ Shared `harnesses/claude/settings.json` merges into the native settings file. `r
 | `harnesses/opencode/opencode.json` (base config) | `opencode.json` | passthrough, adds `$schema` |
 | `harnesses/opencode/tui.json` (TUI config) | `tui.json` | passthrough, adds `$schema` |
 | `harnesses/opencode/rules.md` (opencode-only rules) | appended to `AGENTS.md` | safety rules appended after CLAUDE.md content |
-| `rules/global.md` | `AGENTS.md` | `@skills/<n>` rewritten to `the \`<n>\` skill` |
+| `rules/global.md` | `AGENTS.md` | copied behind a source-routing preamble |
 | `agents/*.md` | `agents/*.md` | frontmatter transform (see below) |
 | `commands/` | `commands/*.md` | generated commands and skill stubs |
 | `plugins/cache/.../superpowers/<v>/.opencode/plugins/superpowers.js` | `plugins/superpowers.js` | relative symlink, highest semver resolved |
@@ -41,7 +41,7 @@ Hooks (`hooks/`) are not bridged — opencode's plugin hook model differs. Recre
 |---|---|---|
 | `harnesses/pi/settings.json` (pointer template) | `settings.json` | merge declared defaults; preserve local keys |
 | `harnesses/pi/keybindings.json` (optional) | `keybindings.json` | generated file with ownership tracking |
-| `rules/global.md` | `CLAUDE.md` | `@skills/<n>` rewritten (pi can't expand `@` refs) - skills/commands read directly (via pointers), doctor validates discovery |
+| `rules/global.md` | `CLAUDE.md` | copied behind a source-routing preamble - skills/commands read directly (via pointers), doctor validates discovery |
 | `skills/` | (native) | pi reads `~/.claude/skills` directly (via pointers); doctor validates discovery |
 | `commands/` | (native) | pi reads `~/.claude/commands` directly (via pointers) |
 
@@ -51,7 +51,7 @@ Pi settings merge declared keys while retaining local state, including `lastChan
 
 | Source in the checkout | Target in `~/.config/goose` | Mechanism |
 |---|---|---|
-| `rules/global.md` | `.goosehints` | `@skills/<n>` rewritten (same transform as opencode `AGENTS.md`) |
+| `rules/global.md` | `.goosehints` | copied behind a source-routing preamble |
 | `harnesses/goose/config.yaml` (base config) | `config.yaml` | merge declared defaults; preserve local keys |
 | `harnesses/goose/custom_providers/*.json` | `custom_providers/*.json` | generated files; remove only unchanged managed orphans |
 | `skills/` | (native) | goose reads `~/.claude/skills` directly via compat path; doctor validates discovery |
@@ -64,7 +64,7 @@ goose discovers skills and agents from `~/.claude` natively (backward-compat pat
 | Source in the checkout | Target | Mechanism |
 |---|---|---|
 | `harnesses/gemini/settings.json` | `~/.gemini/antigravity-cli/settings.json` | merge declared defaults; preserve local keys |
-| `rules/global.md` | `~/.gemini/config/AGENTS.md` | `@skills/<n>` rewritten to `the \`<n>\` skill` |
+| `rules/global.md` | `~/.gemini/config/AGENTS.md` | copied behind a source-routing preamble |
 | `skills/` | `~/.gemini/config/skills/` | managed relative links; preserve foreign entries |
 
 `agy` (Antigravity) reads agent settings from `antigravity-cli/settings.json`, global rules from `AGENTS.md`, and discovers custom skills from `skills/`.
@@ -96,7 +96,7 @@ Fully derived: regenerated on every sync with no force gate, so hand edits to `~
 | Source in the checkout | Target in `~/.codex` | Mechanism |
 |---|---|---|
 | `harnesses/codex/config.toml` | `config.toml` | merge declared defaults; preserve local keys and formatting; plain `codex` loads them |
-| `rules/global.md` | `AGENTS.md` | `@skills/<n>` rewritten (same transform as opencode's AGENTS.md) |
+| `rules/global.md` | `AGENTS.md` | copied behind a source-routing preamble |
 | `skills/` | (native) | codex reads `~/.agents/skills`, linked directly to the source checkout's `skills/`; inspect discovery with Codex's `/skills` |
 
 Commands, hooks, and plugins are not bridged - codex uses different formats. See [`harnesses/codex/README.md`](../harnesses/codex/README.md).

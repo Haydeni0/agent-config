@@ -16,7 +16,7 @@ def defaults_source(tmp_path: Path) -> Path:
     (source / "skills").mkdir()
     (source / "harnesses/codex" / "config.toml").write_text('model = "example-model"\n[features]\nhooks = true\n')
     (source / "rules").mkdir(parents=True, exist_ok=True)
-    (source / "rules/global.md").write_text("# Rules\nSee @skills/uv.\n")
+    (source / "rules/global.md").write_text("# Rules\nSee the `uv` skill.\n")
     install_hook_sources(source)
     return source
 

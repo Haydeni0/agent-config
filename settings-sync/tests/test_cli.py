@@ -11,7 +11,7 @@ def _make_claude_home(tmp_path: pathlib.Path) -> pathlib.Path:
     home = tmp_path / "claude"
     home.mkdir(parents=True)
     (home / "rules").mkdir(parents=True, exist_ok=True)
-    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee @skills/uv.\n")
+    (home / "rules/global.md").write_text("# Rules\nExtra rules.\nSee the `uv` skill.\n")
     (home / "harnesses/opencode").mkdir(parents=True)
     (home / "harnesses/opencode" / "opencode.json").write_text(json.dumps({"model": "test/model"}))
     (home / "harnesses/opencode" / "tui.json").write_text(json.dumps({"theme": "tokyonight"}))

@@ -123,7 +123,7 @@ def test_cli_agy_all(tmp_path: pathlib.Path):
     claude = tmp_path / "claude"
     claude.mkdir(parents=True)
     (claude / "rules").mkdir(parents=True, exist_ok=True)
-    (claude / "rules/global.md").write_text("# Rules\nSee @skills/uv.\n")
+    (claude / "rules/global.md").write_text("# Rules\nSee the `uv` skill.\n")
     (claude / "skills" / "uv").mkdir(parents=True)
     (claude / "skills" / "uv" / "SKILL.md").write_text("---\nname: uv\ndescription: d\n---\nBody\n")
     (claude / "harnesses/gemini").mkdir(parents=True)

@@ -25,7 +25,7 @@ For a custom Codex home, pass `--codex-dir /path/to/codex-home` before the `code
 |---|---|---|
 | `harnesses/codex/config.toml` | `config.toml` | merge declared keys; retain local keys and formatting |
 | `harnesses/codex/config.toml` `sqlite_home` | configured local path | create directory with mode `0700` |
-| `rules/global.md` | `AGENTS.md` | `@skills/<n>` rewritten to `the \`<n>\` skill` (codex reads global instructions from `$CODEX_HOME/AGENTS.md`) |
+| `rules/global.md` | `AGENTS.md` | copied behind a source-routing preamble (codex reads global instructions from `$CODEX_HOME/AGENTS.md`) |
 | `skills/` | (native) | codex reads `~/.agents/skills` (user-scope root), linked directly to the source checkout's `skills/` |
 
 Use Codex's `/skills` to inspect discovery, including nested and symlinked skills. Opencode-specific skill lint runs through `agent-config doctor opencode`; `sync codex` manages its defaults and global instructions.

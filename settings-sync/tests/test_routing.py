@@ -12,7 +12,7 @@ from settings_sync.cli import agent_config_app
     ("goose", ".config/goose/.goosehints"), ("agy", ".gemini/config/AGENTS.md"),
 ])
 def test_routing_preserves_complete_rule_body(source_home: Path, isolated_home: Path, harness: str, target: str):
-    body = "# Rules\nFirst section.\nSee @skills/uv.\n## Last section\nKeep every paragraph.\n"
+    body = "# Rules\nFirst section.\nSee the `uv` skill.\n## Last section\nKeep every paragraph.\n"
     (source_home / "rules/global.md").write_text(body)
     result = CliRunner().invoke(agent_config_app, ["--source", str(source_home), "sync", harness])
     assert result.exit_code == 0, result.output
@@ -20,8 +20,7 @@ def test_routing_preserves_complete_rule_body(source_home: Path, isolated_home: 
     assert str(source_home) in installed
     assert f"agent-config sync {harness}" in installed
     assert "rules/global.md" in installed
-    expected = body if harness == "claude" else body.replace("@skills/uv", "the `uv` skill")
-    assert installed.endswith(expected)
+    assert installed.endswith(body)
 
 
 def test_runtime_superpowers_cache_used(source_home: Path, isolated_home: Path):

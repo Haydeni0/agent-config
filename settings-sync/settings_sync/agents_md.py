@@ -1,21 +1,11 @@
-"""Build AGENTS.md from CLAUDE.md (rewriting @skills/<n> refs)."""
+"""Build a harness's global instructions file from rules/global.md."""
 
-import re
 from pathlib import Path
 
 from settings_sync.actions import Action, File, Report, Status
 
-SKILLS_REF = re.compile(r"@skills/([a-zA-Z0-9_-]+)")
-
-
-def _rewrite_skills_refs(markdown: str) -> str:
-    return SKILLS_REF.sub(r"the `\1` skill", markdown)
-
-
 def build_agents_md(claude_md: Path, rules_path: Path | None = None, *, source_root: Path | None = None, harness: str = "") -> str:
     markdown = claude_md.read_text()
-    if harness != "claude":
-        markdown = _rewrite_skills_refs(markdown)
     if rules_path is not None and rules_path.is_file():
         markdown = markdown.rstrip() + "\n\n" + rules_path.read_text()
     if source_root is not None:
