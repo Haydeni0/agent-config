@@ -233,6 +233,7 @@ flowchart LR
     test_pr_core[test-pr-core]
     test_review_orchestrator[test-review-orchestrator]
     test_trim[test-trim]
+    tui[tui]
     %% typer[typer]
     uv[uv]
     verification_before_completion[verification-before-completion]
@@ -311,6 +312,9 @@ flowchart LR
     test_review_orchestrator --> test_trim
     test_review_orchestrator --> test_add
     test_trim --> test_pr_core
+    tui --> prototype
+    tui --> tdd_core
+    tui --> writing_plans
     verification_before_completion --> claim_verification
     write_spec --> grill_me
     write_spec --> writing_plans
