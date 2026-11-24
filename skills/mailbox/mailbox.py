@@ -2320,6 +2320,15 @@ class WatchState:
     episodes: dict[str, Episode] = field(default_factory=dict)
     last_fire: dict[str, dict[str, str]] = field(default_factory=dict)
 
+    def hung_clock_start(self) -> float:
+        """When hung time started: the latest of the transcript write, the turn's start and a designed wait's end.
+
+        A turn that starts after a long idle has an old transcript write; counting from it alone
+        would read a fresh turn as hung.
+        """
+        assert self.transcript_write is not None
+        return max(t for t in (self.transcript_write, self.status_since, self.designed_wait_left_at) if t is not None)
+
 
 @dataclass(frozen=True, slots=True)
 class Observation:
@@ -2432,7 +2441,7 @@ class Watcher:
         if rule.check == "hung":
             if st.status != "working" or st.designed_wait or st.transcript_write is None or rule.after is None:
                 return None
-            age = now - max(st.transcript_write, st.designed_wait_left_at or st.transcript_write)
+            age = now - st.hung_clock_start()
             return f"working, transcript quiet {age:.0f}s (after {rule.after:.0f}s)" if age >= rule.after else None
         if rule.check == "blocked":
             if st.status != "blocked" or st.status_since is None or rule.after is None:
@@ -2523,7 +2532,7 @@ class Watcher:
                     elif rule.check == "blocked" and st.status == "blocked" and st.status_since is not None:
                         candidate = st.status_since + rule.after
                     elif rule.check == "hung" and st.status == "working" and st.transcript_write is not None:
-                        candidate = max(st.transcript_write, st.designed_wait_left_at or st.transcript_write) + rule.after
+                        candidate = st.hung_clock_start() + rule.after
                 if candidate is not None and (best is None or candidate < best):
                     best = candidate
         return best

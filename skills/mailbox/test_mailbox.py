@@ -3590,6 +3590,18 @@ def test_hung_needs_working_and_a_quiet_transcript() -> None:
     assert watcher.due(now + 1802) == []
 
 
+def test_hung_clock_starts_no_earlier_than_the_turn() -> None:
+    helper = load_helper(HELPER)
+    watcher = helper.Watcher(make_policy(helper, {"w": (rule(helper, "hung", after=1800),)}), clock=lambda: 0)
+    t0 = 10_000.0
+
+    watcher.observe("w", observe(helper, status="idle", transcript_write=t0 - 5000), t0)
+    watcher.observe("w", observe(helper, status="working", transcript_write=t0 - 5000), t0 + 60)
+
+    assert watcher.due(t0 + 60 + 1800 - 1) == []
+    assert len(watcher.due(t0 + 60 + 1800 + 1)) == 1
+
+
 def test_a_designed_wait_cancels_hung_and_leaving_it_re_arms_the_clock() -> None:
     helper = load_helper(HELPER)
     watcher = helper.Watcher(make_policy(helper, {"w": (rule(helper, "hung", after=1800),)}), clock=lambda: 0)
