@@ -315,6 +315,7 @@ flowchart LR
     tui --> prototype
     tui --> tdd_core
     tui --> writing_plans
+    tui --> work_package
     verification_before_completion --> claim_verification
     write_spec --> grill_me
     write_spec --> writing_plans

@@ -24,7 +24,7 @@ Build TUIs the way this user's accepted TUIs were built: one fixed look ported f
 7. **Simulated-input green proves nothing.** Pilot/synthetic key tests pass while the real terminal is broken; at least one real-pty test layer is mandatory for keys and mouse.
 8. **Performance is a gate, not a hope.** Budgets are pytest tests; measure before optimizing - the profile-first overturns are recorded in methodology.md (Performance).
 9. **Theme fidelity over framework defaults.** One theme module owns every colour; no literal colour string survives outside it.
-10. **Keyboard-first.** Every action is reachable by keys. Mouse is strictly optional enhancement - it is still flaky over SSH in the reference build even after the SGR fixes - and no feature may depend on it.
+10. **Keyboard-first.** Every action is reachable by keys. Mouse is strictly optional enhancement and no feature may depend on it: its bytes cross terminal and multiplexer layers the app does not control (methodology.md, Mouse and terminal input).
 
 ## The iterate loop
 
@@ -47,4 +47,5 @@ Read only what the current phase needs:
 - A colour literal outside the theme module, or a second palette for one view.
 - A theme switcher, passthrough CLI args, or an auto-scaling y-axis - all explicitly rejected by the user.
 - All tests green, but no test has ever fed real terminal bytes or run in a real pty.
+- A mouse fix chosen before a trace of the user's real mouse in the user's real terminal showed which stage the click is lost in.
 - Claiming "fast" with no measured number, or optimizing before a profile named the dominant phase.
